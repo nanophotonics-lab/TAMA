@@ -2,18 +2,18 @@
 
 ## Environment
 
-The public-release CI validates the following source-build environment. All
-Python, PyMeep, MPI, compiler, and TAMA components must come from the same
-conda environment because the native extension links directly to Meep and MPI.
+The validated source-build environment is listed below. All Python, PyMeep,
+MPI, compiler, and TAMA components must come from the same conda environment
+because the native extension links directly to Meep and MPI.
 
 | Component | Validated support |
 |---|---|
-| Operating system | Ubuntu 26.04 x86_64 (GitHub-hosted public preview) |
+| Operating system | Ubuntu 26.04 x86_64 |
 | Python | CPython 3.11, 3.12, or 3.13 |
 | Meep | conda-forge PyMeep 1.34.0 `mpi_mpich` build |
-| MPI | MPICH 4.3.2 (latest PyMeep-compatible release) with mpi4py 4.1.2 |
+| MPI | MPICH 4.3.2 with mpi4py 4.1.2 |
 | Distribution | Source archive/sdist built inside the target environment |
-| Parallel tests | Serial and MPI 2/4/8 ranks on Python 3.11-3.13 |
+| Validated execution | Serial and MPI with 2/4/8 ranks on Python 3.11-3.13 |
 
 OpenMPI, macOS, and Windows are outside the validated support matrix for this
 release. Prebuilt binary wheels are not distributed, and a locally built wheel
@@ -69,13 +69,6 @@ python -m pip install --no-build-isolation .
 python -c "import tama; print(tama.__version__); print(tama.native_sampler_available())"
 ```
 
-For development, use `python -m pip install --no-build-isolation -e .`
-instead.
-
-The installed package includes inline type annotations, the native-extension
-stub, and a PEP 561 `py.typed` marker for editor hover and static-analysis
-support.
-
 ## Native Sampler
 
 TAMA includes a C++ extension for field sampling, exact point-monitor
@@ -83,10 +76,6 @@ transposes, and native MaterialGrid-transpose gradients. This extension is
 required for all TAMA runtime use. The normal package installation builds
 it automatically with CMake using Python, NumPy, MPI, and Meep from the active
 conda environment.
-
-`build_native_sampler.sh` remains available as a development convenience. It
-reinstalls the source tree in editable mode and can use `MEEP_CONDA_PREFIX`
-when Meep is not provided by the currently active prefix.
 
 Verify that the installed package can find the native sampler:
 
@@ -101,13 +90,8 @@ the module origin should end with the platform's compiled-extension suffix
 MPI, activate the conda environment containing the MPI-enabled pymeep build and
 install the package again.
 
-Importing TAMA requires the compiled extension. Before the first native
-operation, TAMA checks the API version and required operations across the
-active Meep ranks; an absent extension or one with an incompatible TAMA native
-API fails with a reinstall instruction. Rebuild TAMA after updating or
-rebuilding PyMeep, even when the Meep version string is unchanged. Native
-runtime errors raise in serial and abort MPI runs instead of silently switching
-sampling or gradient semantics.
+Importing TAMA requires the compiled extension. Rebuild TAMA after updating or
+rebuilding PyMeep, even when the Meep version string is unchanged.
 
 ## Basic Imports
 

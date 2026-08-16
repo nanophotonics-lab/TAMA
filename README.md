@@ -19,8 +19,6 @@ The current pre-release is `v0.5.0-alpha.2` (Python package version
 `0.5.0a2`). APIs, examples, and native-sampler build details may change
 before the first stable release.
 
-This is the first public pre-release in this repository.
-
 The native `DesignGrid` path supports 2D TMz/TEz, 3D scalar-permittivity
 designs using the full `Ex`/`Ey`/`Ez` gradient contraction, and Meep
 cylindrical simulations with `m=-1`, `0`, or `+1`. Full-vector refers to the
@@ -43,14 +41,6 @@ available in the repository under [`docs/`](docs/index.md):
 - [running and testing](docs/running-and-testing.md)
 - [troubleshooting](docs/troubleshooting.md)
 
-To build the HTML manual without importing TAMA, Meep, or the native
-extension, use pip 25.1 or newer:
-
-```bash
-python -m pip install --group docs
-python -m sphinx -W --keep-going -b html docs docs/_build/html
-```
-
 ## Install From Source
 
 TAMA is validated on Linux with CPython 3.11-3.13 and the conda-forge
@@ -65,12 +55,6 @@ conda env create -f environment.yml
 conda activate tama
 python -m pip install --no-build-isolation .
 python -c "import tama; print(tama.__version__); print(tama.native_sampler_available())"
-```
-
-For development, replace the install command with:
-
-```bash
-python -m pip install --no-build-isolation -e .
 ```
 
 After a successful build, `native_sampler_available()` must print `True`.

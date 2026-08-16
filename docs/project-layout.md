@@ -39,10 +39,10 @@ TAMA/
 │       ├── eigenmode.py
 │       ├── fabrication.py
 │       ├── flux.py
-│       ├── fastmeep_grid.py  # compatibility shim
+│       ├── fastmeep_grid.py
 │       ├── native_design.py
 │       ├── native_sampler.cpp
-│       ├── native_sampler.py  # missing-extension error marker
+│       ├── native_sampler.py
 │       ├── native_sampler.pyi
 │       ├── nyquist.py
 │       ├── sampling_grid.py

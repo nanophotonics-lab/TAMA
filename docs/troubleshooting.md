@@ -1,10 +1,12 @@
 # Troubleshooting
 
-If the native sampler is unavailable or incompatible:
+If `import tama` fails or the native sampler is unavailable or incompatible,
+reinstall TAMA so the required extension is rebuilt:
 
 ```bash
 cd <tama-source-directory>
-python -m pip install --no-build-isolation --no-cache-dir --force-reinstall -e .
+python -m pip install --no-build-isolation --no-cache-dir --force-reinstall .
+python -c "import tama; print(tama.__file__); print(tama.native_sampler_available())"
 ```
 
 If `mpic++` is missing:
@@ -12,15 +14,6 @@ If `mpic++` is missing:
 ```bash
 which mpic++
 conda install -c conda-forge mpi4py mpich cxx-compiler
-```
-
-If `import tama` fails, install the source checkout so the required native
-extension is built:
-
-```bash
-cd <tama-source-directory>
-python -m pip install --no-build-isolation -e .
-python -c "import tama; print(tama.__file__)"
 ```
 
 If MPI execution differs from serial, verify that regularizable adjoint sources

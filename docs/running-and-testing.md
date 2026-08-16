@@ -33,6 +33,3 @@ mpirun -np 2 python -m pytest -q -p no:cacheprovider -m mpi2
 mpirun -np 4 python -m pytest -q -p no:cacheprovider -m mpi4
 mpirun -np 8 python -m pytest -q -p no:cacheprovider -m mpi8
 ```
-
-The `mpi2` and `mpi4` groups run in the main CI workflow. The more expensive
-`mpi8` group has a separate weekly or manually dispatched workflow.

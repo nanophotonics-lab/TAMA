@@ -34,8 +34,6 @@ The current pre-release is `v0.5.0-alpha.2` (Python package version
 `0.5.0a2`). APIs, examples, and native-sampler build details may change
 before the first stable release.
 
-This is the first public pre-release in this repository.
-
 **The native `DesignGrid` path supports 2D TMz/TEz, 3D
 scalar-permittivity designs using the full
 `Ex`/`Ey`/`Ez` gradient contraction, and Meep cylindrical simulations with
