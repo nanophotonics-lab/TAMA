@@ -1,0 +1,76 @@
+[build-system]
+requires = ["scikit-build-core>=1.0", "numpy"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "tama"
+version = "0.5.0a2"
+description = "Time-domain Adjoint with Memory-efficient Acceleration for Meep"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = { text = "GPL-2.0-or-later" }
+authors = [
+  { name = "JaeHyeon Park" }
+]
+dependencies = [
+  "autograd",
+  "numpy",
+  "scipy",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Topic :: Scientific/Engineering :: Physics",
+]
+
+[project.urls]
+Homepage = "https://github.com/nanophotonics-lab/TAMA"
+Documentation = "https://tama-adjoint.readthedocs.io/en/latest/"
+Repository = "https://github.com/nanophotonics-lab/TAMA"
+Issues = "https://github.com/nanophotonics-lab/TAMA/issues"
+
+[dependency-groups]
+docs = [
+  "Sphinx==9.1.0",
+  "myst-parser==5.1.0",
+  "sphinx-rtd-theme==3.1.0",
+]
+
+[tool.scikit-build]
+minimum-version = "1.0"
+cmake.version = ">=3.20"
+wheel.packages = ["src/tama"]
+sdist.inclusion-mode = "explicit"
+sdist.include = [
+  "LICENSE",
+  "CITATION.cff",
+  "README.md",
+  "pyproject.toml",
+  "CMakeLists.txt",
+  "build_native_sampler.sh",
+  "environment.yml",
+  "docs/**",
+  "examples/**",
+  "src/tama/**",
+  "tests/**",
+]
+sdist.exclude = [
+  "**/__pycache__/**",
+  "**/*:Zone.Identifier",
+  "docs/_build/**",
+]
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers"
+markers = [
+  "mpi2: tests scheduled with two MPI ranks",
+  "mpi4: tests scheduled with four MPI ranks",
+  "mpi8: tests scheduled with eight MPI ranks",
+]
