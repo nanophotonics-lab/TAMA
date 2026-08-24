@@ -2153,131 +2153,201 @@ class MultiTDAObjective:
             None if band_objective is None else float(band_objective)
         ), filtered_adjoint
 
-    def _single_eigenmode_fom_and_overlap_covector(
+    def _eigenmode_fom_values_and_overlap_covectors(
         self,
         overlap_history: np.ndarray,
         *,
         need_gradient: bool,
     ):
-        """Evaluate one modal band from its contracted E/H histories."""
-        filtered_overlaps = temporal_convolve_signal(
-            overlap_history,
-            self.weighted_kernels[0],
-            self.dt,
-        )
-        band_history = _coefficient_history_from_overlaps(
-            filtered_overlaps
+        """Evaluate modal bands from their contracted E/H histories."""
+        overlap_history = np.asarray(overlap_history)
+        band_count = len(self.wavelength_bands)
+        if (
+            overlap_history.ndim != 2
+            or overlap_history.shape[1] != 2 * band_count
+        ):
+            raise ValueError(
+                "eigenmode overlap history must have shape "
+                "(n_time, 2 * n_bands)"
+            )
+        overlaps_by_band = overlap_history.reshape(
+            overlap_history.shape[0],
+            band_count,
+            2,
         )
         fom_fns, adjoint_signal_fns = self._resolved_band_callbacks(
             validate_pairs=need_gradient,
         )
-        band_fom_fn = fom_fns[0]
-        band_adjoint_signal_fn = adjoint_signal_fns[0]
-        band_objective = (
-            np.sum(np.abs(band_history) ** 2) * self.dt
-            if band_fom_fn is None
-            else float(band_fom_fn(band_history, self.dt))
-        )
-        if not need_gradient:
-            return float(band_objective), None
+        band_objectives = []
+        overlap_covectors = []
+        for band_index in range(band_count):
+            filtered_overlaps = temporal_convolve_signal(
+                overlaps_by_band[:, band_index, :],
+                self.weighted_kernels[band_index],
+                self.dt,
+            )
+            band_history = _coefficient_history_from_overlaps(
+                filtered_overlaps
+            )
+            band_fom_fn = fom_fns[band_index]
+            band_adjoint_signal_fn = adjoint_signal_fns[band_index]
+            band_objective = (
+                np.sum(np.abs(band_history) ** 2) * self.dt
+                if band_fom_fn is None
+                else float(band_fom_fn(band_history, self.dt))
+            )
+            band_objectives.append(float(band_objective))
+            if not need_gradient:
+                continue
 
-        if band_adjoint_signal_fn is not None:
-            band_signal = np.asarray(
-                band_adjoint_signal_fn(band_history, self.dt)
+            if band_adjoint_signal_fn is not None:
+                band_signal = np.asarray(
+                    band_adjoint_signal_fn(band_history, self.dt)
+                )
+                signal_name = "adjoint_signal_fn"
+                signal_scale = 1.0
+            elif band_fom_fn is not None:
+                band_signal = np.asarray(
+                    grad(band_fom_fn, 0)(band_history, self.dt)
+                )
+                signal_name = "fom_fn derivative"
+                signal_scale = 1.0 / self.dt
+            else:
+                band_signal = 2.0 * np.conjugate(band_history)
+                signal_name = "default eigenmode derivative"
+                signal_scale = 1.0
+            if band_signal.shape != band_history.shape:
+                raise ValueError(
+                    f"{signal_name} must match each filtered band history shape"
+                )
+            overlap_covectors.append(
+                _coefficient_overlap_pullback(
+                    signal_scale * band_signal,
+                    filtered_overlaps.shape[0],
+                )
             )
-            signal_name = "adjoint_signal_fn"
-            signal_scale = 1.0
-        elif band_fom_fn is not None:
-            band_signal = np.asarray(
-                grad(band_fom_fn, 0)(band_history, self.dt)
-            )
-            signal_name = "fom_fn derivative"
-            signal_scale = 1.0 / self.dt
-        else:
-            band_signal = 2.0 * np.conjugate(band_history)
-            signal_name = "default eigenmode derivative"
-            signal_scale = 1.0
-        if band_signal.shape != band_history.shape:
-            raise ValueError(
-                f"{signal_name} must match each filtered band history shape"
-            )
-        return float(band_objective), _coefficient_overlap_pullback(
-            signal_scale * band_signal,
-            filtered_overlaps.shape[0],
+        return np.asarray(band_objectives), (
+            np.stack(overlap_covectors, axis=1)
+            if need_gradient
+            else None
         )
 
-    def _single_eigenmode_adjoint_sources(
+    def _filter_transpose_eigenmode_overlap_covectors(
         self,
-        overlap_monitor: FastEigenmodeOverlapMonitor,
-        indexed_stencils,
+        filtered_overlap_covectors: np.ndarray,
+        band_coeffs: np.ndarray,
+    ) -> np.ndarray:
+        """Pull modal covectors back through each band's temporal filter."""
+        values = np.asarray(filtered_overlap_covectors)
+        band_count = len(self.wavelength_bands)
+        if values.ndim != 3 or values.shape[1:] != (band_count, 2):
+            raise ValueError(
+                "filtered eigenmode overlap covectors must have shape "
+                "(n_time, n_bands, 2)"
+            )
+        return np.stack(
+            [
+                np.conjugate(
+                    temporal_convolve_signal_transpose(
+                        np.conjugate(
+                            values[:, band_index, :]
+                            * band_coeffs[band_index]
+                        ),
+                        self.weighted_kernels[band_index],
+                        self.dt,
+                    )
+                )
+                for band_index in range(band_count)
+            ],
+            axis=1,
+        )
+
+    def _eigenmode_adjoint_sources(
+        self,
+        overlap_monitors,
+        indexed_stencils_by_band,
         overlap_covectors: np.ndarray,
         monitor_times: np.ndarray,
         actual_time: float,
         dt: float,
         effective_source_amplitudes,
     ) -> list:
-        """Expand two modal covectors into batched exact indexed sources."""
+        """Expand modal covectors into batched exact indexed sources."""
         values = np.asarray(overlap_covectors)
         times = np.asarray(monitor_times, dtype=float)
-        if values.shape != (times.size, 2):
+        band_count = len(self.wavelength_bands)
+        if values.shape != (times.size, band_count, 2):
             raise ValueError(
-                "eigenmode overlap covectors must have shape (n_time, 2)"
+                "eigenmode overlap covectors must have shape "
+                "(n_time, n_bands, 2)"
+            )
+        if (
+            len(overlap_monitors) != band_count
+            or len(indexed_stencils_by_band) != band_count
+        ):
+            raise ValueError(
+                "eigenmode overlap monitors must match the band count"
             )
 
-        adjoint_values = values[::-1].copy()
-        adjoint_values[:, 1] *= -1.0
         t_array = float(actual_time) - times[::-1]
-        base_functions = _tabulated_cubic_sources(
-            t_array,
-            adjoint_values,
-        )
-        shifted_magnetic_function = (
-            _shift_tabulated_cubic_source(base_functions[1], dt)
-            if t_array.size >= 4
-            else _tabulated_cubic_sources(
-                t_array + dt,
-                adjoint_values[:, 1:2],
-            )[0]
-        )
-        time_sources = (
-            (mp.CustomSource(src_func=base_functions[0]),),
-            (
-                mp.CustomSource(src_func=base_functions[1]),
-                mp.CustomSource(src_func=shifted_magnetic_function),
-            ),
-        )
-
         source_amplitudes = np.asarray(
             effective_source_amplitudes,
             dtype=np.complex128,
         )
         sources = []
-        for component, projection_weights in (
-            overlap_monitor.component_weights.items()
+        for band_index, (overlap_monitor, indexed_stencils) in enumerate(
+            zip(overlap_monitors, indexed_stencils_by_band)
         ):
-            component_slice = self._target_component_slices[0][component]
-            flat_indices = np.arange(
-                component_slice.start,
-                component_slice.stop,
-                dtype=np.intp,
+            adjoint_values = values[:, band_index, :][::-1].copy()
+            adjoint_values[:, 1] *= -1.0
+            base_functions = _tabulated_cubic_sources(
+                t_array,
+                adjoint_values,
             )
-            monitor_indices = self._flat_to_monitor_indices[flat_indices]
-            point_amplitudes = (
-                projection_weights * source_amplitudes[monitor_indices]
+            shifted_magnetic_function = (
+                _shift_tabulated_cubic_source(base_functions[1], dt)
+                if t_array.size >= 4
+                else _tabulated_cubic_sources(
+                    t_array + dt,
+                    adjoint_values[:, 1:2],
+                )[0]
             )
-            channel = 1 if _is_magnetic_component(component) else 0
-            if channel == 1:
-                point_amplitudes = 0.5 * point_amplitudes
-            if not np.any(point_amplitudes != 0.0):
-                continue
-            for time_source in time_sources[channel]:
-                sources.extend(
-                    _adjoint_indexed_profile_sources(
-                        time_source,
-                        point_amplitudes,
-                        indexed_stencils[component],
-                    )
+            time_sources = (
+                (mp.CustomSource(src_func=base_functions[0]),),
+                (
+                    mp.CustomSource(src_func=base_functions[1]),
+                    mp.CustomSource(src_func=shifted_magnetic_function),
+                ),
+            )
+
+            for component, projection_weights in (
+                overlap_monitor.component_weights.items()
+            ):
+                component_slice = self._target_component_slices[
+                    band_index
+                ][component]
+                flat_indices = np.arange(
+                    component_slice.start,
+                    component_slice.stop,
+                    dtype=np.intp,
                 )
+                monitor_indices = self._flat_to_monitor_indices[flat_indices]
+                point_amplitudes = (
+                    projection_weights * source_amplitudes[monitor_indices]
+                )
+                channel = 1 if _is_magnetic_component(component) else 0
+                if channel == 1:
+                    point_amplitudes = 0.5 * point_amplitudes
+                if not np.any(point_amplitudes != 0.0):
+                    continue
+                for time_source in time_sources[channel]:
+                    sources.extend(
+                        _adjoint_indexed_profile_sources(
+                            time_source,
+                            point_amplitudes,
+                            indexed_stencils[component],
+                        )
+                    )
         return sources
 
     def _resolved_band_callbacks(self, *, validate_pairs: bool):
@@ -3577,7 +3647,7 @@ class MultiTDAObjective:
         sim_fwd = None
         sim_adj = None
         fwd_monitor = None
-        eigenmode_overlap_monitor = None
+        eigenmode_overlap_monitors = None
         adjoint_indexed_stencils = None
         distributed_history_layout = None
         distributed_history_active = False
@@ -3585,8 +3655,8 @@ class MultiTDAObjective:
         self.last_target_history_layout = None
         streaming_eigenmode_overlap = bool(
             self._uses_simulation_spec
-            and len(self._eigenmode_target_mask) == 1
-            and self._eigenmode_target_mask[0]
+            and self._eigenmode_target_mask
+            and all(self._eigenmode_target_mask)
         )
         try:
             balance_enabled = bool(
@@ -3696,13 +3766,14 @@ class MultiTDAObjective:
                 self._reference_mode_fields = tuple(reference_mode_fields)
             eigenmode_projection_weights = None
             if streaming_eigenmode_overlap:
-                eigenmode_projection_weights = (
+                eigenmode_projection_weights = tuple(
                     _coefficient_projection_weights(
-                        self._reference_mode_fields[0],
-                        self.target_normals[0],
-                        self.target_spatial_weights[0],
+                        self._reference_mode_fields[target_index],
+                        self.target_normals[target_index],
+                        self.target_spatial_weights[target_index],
                         cylindrical=self._is_cylindrical,
                     )
+                    for target_index in range(len(self.wavelength_bands))
                 )
             sampling_interval = self._resolve_sampling_interval(dt)
             self.last_sampling_interval = sampling_interval
@@ -3746,7 +3817,7 @@ class MultiTDAObjective:
                     (
                         n_monitor_expected,
                         (
-                            2
+                            2 * len(self.wavelength_bands)
                             if streaming_eigenmode_overlap
                             else len(self._monitor_target_positions)
                         ),
@@ -3760,7 +3831,7 @@ class MultiTDAObjective:
             )
             fwd_monitor = {
                 "groups": None,
-                "overlap": None,
+                "overlaps": None,
                 "overlap_stencils": None,
             }
             fwd_count = {"value": 0}
@@ -3771,27 +3842,37 @@ class MultiTDAObjective:
                 nonlocal distributed_history_layout
                 if (
                     streaming_eigenmode_overlap
-                    and fwd_monitor["overlap"] is None
+                    and fwd_monitor["overlaps"] is None
                 ):
-                    electric_weights, magnetic_weights = (
-                        eigenmode_projection_weights
-                    )
-                    fwd_monitor["overlap"] = FastEigenmodeOverlapMonitor(
-                        sim,
-                        self.target_positions[0],
+                    overlap_monitors = []
+                    overlap_stencils_by_band = []
+                    for target_index, (
                         electric_weights,
                         magnetic_weights,
-                    )
-                    overlap_stencils = (
-                        fwd_monitor["overlap"].indexed_transpose_stencils()
-                    )
-                    for component, stencil in overlap_stencils.items():
-                        _validate_indexed_monitor_support(
+                    ) in enumerate(eigenmode_projection_weights):
+                        overlap_monitor = FastEigenmodeOverlapMonitor(
                             sim,
-                            (component,) * len(self.target_positions[0]),
-                            stencil[0],
+                            self.target_positions[target_index],
+                            electric_weights,
+                            magnetic_weights,
                         )
-                    fwd_monitor["overlap_stencils"] = overlap_stencils
+                        overlap_stencils = (
+                            overlap_monitor.indexed_transpose_stencils()
+                        )
+                        for component, stencil in overlap_stencils.items():
+                            _validate_indexed_monitor_support(
+                                sim,
+                                (component,) * len(
+                                    self.target_positions[target_index]
+                                ),
+                                stencil[0],
+                            )
+                        overlap_monitors.append(overlap_monitor)
+                        overlap_stencils_by_band.append(overlap_stencils)
+                    fwd_monitor["overlaps"] = tuple(overlap_monitors)
+                    fwd_monitor["overlap_stencils"] = tuple(
+                        overlap_stencils_by_band
+                    )
                 elif (
                     not streaming_eigenmode_overlap
                     and fwd_monitor["groups"] is None
@@ -3865,8 +3946,16 @@ class MultiTDAObjective:
                     ),
                 )
                 if streaming_eigenmode_overlap:
-                    monitor_bindings = (
-                        (fwd_monitor["overlap"], monitor_history),
+                    monitor_bindings = tuple(
+                        (
+                            overlap_monitor,
+                            monitor_history[
+                                :, 2 * band_index : 2 * band_index + 2
+                            ],
+                        )
+                        for band_index, overlap_monitor in enumerate(
+                            fwd_monitor["overlaps"]
+                        )
                     )
                 else:
                     monitor_bindings = tuple(
@@ -3927,7 +4016,14 @@ class MultiTDAObjective:
                 prepare_fwd_monitors(sim)
                 monitor_row = monitor_history[sample_index]
                 if streaming_eigenmode_overlap:
-                    fwd_monitor["overlap"].sample_history_into(monitor_row)
+                    for band_index, overlap_monitor in enumerate(
+                        fwd_monitor["overlaps"]
+                    ):
+                        overlap_monitor.sample_history_into(
+                            monitor_row[
+                                2 * band_index : 2 * band_index + 2
+                            ]
+                        )
                 else:
                     for group in fwd_monitor["groups"]:
                         group["monitor"].sample_history_into(group["values"])
@@ -3961,9 +4057,11 @@ class MultiTDAObjective:
             if distributed_history_active:
                 pass
             elif streaming_eigenmode_overlap:
-                eigenmode_overlap_monitor = fwd_monitor["overlap"]
-                monitor_history = eigenmode_overlap_monitor.reduce_history(
-                    monitor_history
+                eigenmode_overlap_monitors = fwd_monitor["overlaps"]
+                monitor_history = (
+                    eigenmode_overlap_monitors[0].reduce_history(
+                        monitor_history
+                    )
                 )
             else:
                 # Every component group uses the same active Meep communicator.
@@ -4038,7 +4136,7 @@ class MultiTDAObjective:
                         )
             fwd_timing = self.chunk_balancer.capture_timing(sim_fwd) if balance_enabled else None
             fwd_monitor["groups"] = None
-            fwd_monitor["overlap"] = None
+            fwd_monitor["overlaps"] = None
             fwd_monitor["overlap_stencils"] = None
             if native_history is not None:
                 native_history.release_forward()
@@ -4054,13 +4152,12 @@ class MultiTDAObjective:
                     distributed_history_layout
                 )
             elif streaming_eigenmode_overlap:
-                band_objective, filtered_adjoint_signals = (
-                    self._single_eigenmode_fom_and_overlap_covector(
+                band_objectives, filtered_adjoint_signals = (
+                    self._eigenmode_fom_values_and_overlap_covectors(
                         monitor_history,
                         need_gradient=need_gradient,
                     )
                 )
-                band_objectives = np.asarray([band_objective])
             elif self._uses_deduplicated_monitors:
                 band_objectives = (
                     self._distributed_deduplicated_band_objectives(
@@ -4121,13 +4218,10 @@ class MultiTDAObjective:
                 )
                 adj_signals = None
             elif streaming_eigenmode_overlap:
-                adj_signals = np.conjugate(
-                    temporal_convolve_signal_transpose(
-                        np.conjugate(
-                            filtered_adjoint_signals * band_coeffs[0]
-                        ),
-                        self.weighted_kernels[0],
-                        self.dt,
+                adj_signals = (
+                    self._filter_transpose_eigenmode_overlap_covectors(
+                        filtered_adjoint_signals,
+                        band_coeffs,
                     )
                 )
             elif self._uses_deduplicated_monitors:
@@ -4165,8 +4259,8 @@ class MultiTDAObjective:
                 )
                 distributed_adjoint_histories = None
             elif streaming_eigenmode_overlap:
-                adjoint_sources = self._single_eigenmode_adjoint_sources(
-                    eigenmode_overlap_monitor,
+                adjoint_sources = self._eigenmode_adjoint_sources(
+                    eigenmode_overlap_monitors,
                     adjoint_indexed_stencils,
                     adj_signals,
                     monitor_times,
@@ -4354,8 +4448,8 @@ class MultiTDAObjective:
                 native_history.release_forward()
             if fwd_monitor is not None:
                 fwd_monitor["groups"] = None
-                fwd_monitor["overlap"] = None
-            eigenmode_overlap_monitor = None
+                fwd_monitor["overlaps"] = None
+            eigenmode_overlap_monitors = None
             gc.collect()
             try:
                 try:

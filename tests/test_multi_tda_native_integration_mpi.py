@@ -280,11 +280,11 @@ def _make_objective(
                         center=mp.Vector3(0.7),
                         size=mp.Vector3(0.0, 4.0),
                     ),
-                    frequency=frequency,
+                    frequency=(1.65, 1.25)[band_index],
                     spatial_weights=(0.5, 0.5),
                     eig_parity=mp.ODD_Z,
                 )
-                for frequency in (1.65, 1.25)
+                for band_index in selected_band_indices
             ]
         }
         if eigenmode_targets
@@ -610,6 +610,93 @@ def test_native_multi_tda_paths_match_legacy_python_paths():
     assert np.allclose(
         reused_gradient,
         separate_gradient,
+        rtol=1.0e-11,
+        atol=1.0e-12,
+    )
+
+
+@pytest.mark.mpi2
+def test_multiple_eigenmode_targets_stream_and_match_independent_bands(
+    monkeypatch,
+):
+    if mp.count_processors() < 2:
+        pytest.skip("requires at least two MPI ranks")
+
+    native_forward_loop = multi_tda_module._run_native_forward_loop
+    monitor_widths = []
+
+    def record_monitor_widths(sim, monitor_bindings, native_history, **kwargs):
+        monitor_widths.append(
+            tuple(history.shape[1] for _, history in monitor_bindings)
+        )
+        return native_forward_loop(
+            sim,
+            monitor_bindings,
+            native_history,
+            **kwargs,
+        )
+
+    def reject_raw_point_histories(*args, **kwargs):
+        raise AssertionError("raw point-monitor histories were allocated")
+
+    monkeypatch.setattr(
+        multi_tda_module,
+        "_run_native_forward_loop",
+        record_monitor_widths,
+    )
+    monkeypatch.setattr(
+        multi_tda_module,
+        "FastPointMonitor",
+        reject_raw_point_histories,
+    )
+
+    scalarization_weights = np.asarray((0.4, 1.7))
+    combined_objective = _make_objective(
+        eigenmode_targets=True,
+        use_simulation_spec=True,
+    )
+    combined_objective.scalarization_fn = lambda values: (
+        float(scalarization_weights @ values),
+        scalarization_weights,
+    )
+    combined_value, combined_gradient = combined_objective.evaluate(
+        np.zeros(4),
+        need_gradient=True,
+    )
+    independent_results = [
+        _make_objective(
+            eigenmode_targets=True,
+            use_simulation_spec=True,
+            band_indices=(band_index,),
+        ).evaluate(
+            np.zeros(4),
+            need_gradient=True,
+        )
+        for band_index in range(2)
+    ]
+
+    assert monitor_widths[0] == (2, 2)
+    assert np.allclose(
+        combined_value,
+        sum(
+            weight * value
+            for weight, (value, _) in zip(
+                scalarization_weights,
+                independent_results,
+            )
+        ),
+        rtol=1.0e-12,
+        atol=1.0e-12,
+    )
+    assert np.allclose(
+        combined_gradient,
+        sum(
+            weight * gradient
+            for weight, (_, gradient) in zip(
+                scalarization_weights,
+                independent_results,
+            )
+        ),
         rtol=1.0e-11,
         atol=1.0e-12,
     )
