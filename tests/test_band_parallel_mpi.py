@@ -55,13 +55,15 @@ def test_distributed_band_filters_match_local_reference_exactly():
         )
         for band_index in range(len(bands))
     ])
-    distributed_transpose = objective._distributed_band_transform(
+    distributed_transpose = objective._distributed_target_transform(
         expected_filtered,
         lambda band_index: temporal_convolve_signal_transpose(
-            expected_filtered[:, band_index] * coefficients[band_index],
+            expected_filtered[:, band_index:band_index + 1]
+            * coefficients[band_index],
             objective.weighted_kernels[band_index],
             dt,
         ),
+        output_time_count=signals.shape[0],
     )
     assert np.array_equal(distributed_transpose, expected_transpose)
 

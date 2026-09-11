@@ -7,7 +7,6 @@ from autograd import grad, value_and_grad
 import meep as mp
 import numpy as np
 from scipy.fft import fft, ifft, irfft, next_fast_len, rfft
-from scipy.ndimage import convolve1d
 from scipy.signal import firwin2
 
 from .objectives import (
@@ -376,8 +375,12 @@ def _power_complementary_kernels(
     ]
 
 
-def temporal_convolve_signal(signal: np.ndarray, kernel: np.ndarray, dt: float) -> np.ndarray:
-    """Convolve a time signal with a temporal kernel.
+def temporal_convolve_signal(
+    signal: np.ndarray,
+    kernel: np.ndarray,
+    dt: float,
+) -> np.ndarray:
+    """Return the full linear convolution of a time signal and temporal kernel.
 
     Args:
         signal: Time-domain signal. Convolution is applied along axis 0.
@@ -385,23 +388,30 @@ def temporal_convolve_signal(signal: np.ndarray, kernel: np.ndarray, dt: float) 
         dt: Time step used to scale the discrete convolution as a Riemann sum.
 
     Returns:
-        Filtered signal with the same shape as `signal`.
+        All N + K - 1 output samples, preserving the remaining signal axes.
+        The time axis must be nonempty. Integer and boolean signals are promoted
+        to floating point.
     """
+    signal = np.asarray(signal)
     kernel = np.asarray(kernel)
-    return _temporal_fft_convolve_same(
+    if signal.ndim == 0 or signal.shape[0] == 0:
+        raise ValueError("full convolution requires a nonempty time axis")
+    return _temporal_fft_convolve(
         signal,
         kernel,
-        crop_start=kernel.size // 2,
+        output_start=0,
+        output_length=signal.shape[0] + kernel.size - 1,
     ) * dt
 
 
-def _temporal_fft_convolve_same(
+def _temporal_fft_convolve(
     signal: np.ndarray,
     kernel: np.ndarray,
     *,
-    crop_start: int,
+    output_start: int,
+    output_length: int,
 ) -> np.ndarray:
-    """Apply zero-padded linear convolution and retain the input time grid."""
+    """Apply bounded-workspace linear convolution and retain a selected interval."""
     signal = np.asarray(signal)
     kernel = np.asarray(kernel)
     if kernel.ndim != 1:
@@ -411,31 +421,21 @@ def _temporal_fft_convolve_same(
     if signal.ndim == 0:
         raise ValueError("signal must have a time axis")
 
-    # Preserve scipy.ndimage's exact conversion semantics for integer and
-    # boolean inputs; FFT roundoff can otherwise change values when casting.
-    if not np.issubdtype(signal.dtype, np.inexact):
-        origin = crop_start - kernel.size // 2
-        return convolve1d(
-            signal,
-            kernel,
-            axis=0,
-            mode="constant",
-            cval=0.0,
-            origin=origin,
-        )
-
     sample_count = signal.shape[0]
-    output_dtype = signal.dtype
+    output_dtype = (
+        signal.dtype if np.issubdtype(signal.dtype, np.inexact)
+        else np.result_type(signal.dtype, kernel.dtype, np.float64)
+    )
     if np.iscomplexobj(kernel) and not np.iscomplexobj(signal):
         output_dtype = np.result_type(output_dtype, np.complex64)
-    output = np.empty(signal.shape, dtype=output_dtype)
+    output = np.empty((output_length,) + signal.shape[1:], dtype=output_dtype)
     if sample_count == 0 or signal.size == 0:
         return output
 
     full_length = sample_count + kernel.size - 1
     fft_length = next_fast_len(full_length)
     flat_signal = signal.reshape(sample_count, -1)
-    flat_output = output.reshape(sample_count, -1)
+    flat_output = output.reshape(output_length, -1)
 
     real_itemsize = np.empty((), dtype=output.dtype).real.dtype.itemsize
     complex_dtype = np.complex64 if real_itemsize <= 4 else np.complex128
@@ -460,7 +460,7 @@ def _temporal_fft_convolve_same(
         1,
         workspace_bytes // (fft_length * np.dtype(complex_dtype).itemsize),
     )
-    stop = crop_start + sample_count
+    stop = output_start + output_length
     for first_column in range(0, flat_signal.shape[1], columns_per_block):
         last_column = min(
             first_column + columns_per_block,
@@ -479,13 +479,13 @@ def _temporal_fft_convolve_same(
                 n=fft_length,
                 axis=0,
                 overwrite_x=True,
-            )[crop_start:stop]
+            )[output_start:stop]
         else:
             filtered = ifft(
                 spectrum,
                 axis=0,
                 overwrite_x=True,
-            )[crop_start:stop]
+            )[output_start:stop]
         if not np.issubdtype(output.dtype, np.complexfloating):
             filtered = filtered.real
         flat_output[:, first_column:last_column] = filtered
@@ -499,16 +499,24 @@ def temporal_convolve_signal_transpose(
 ) -> np.ndarray:
     """Apply the exact Hermitian adjoint of `temporal_convolve_signal()`.
 
-    The forward operator uses zero padding and returns an output with the same
-    time length as its input. Its adjoint uses the conjugate-reversed kernel
-    and shifts the origin by one sample for even-length FIRs. For real kernels,
-    this is also the ordinary transpose.
+    Apply valid convolution with the conjugate-reversed kernel, returning
+    N = signal.shape[0] - kernel.size + 1 samples; N must be positive. For real
+    kernels this is also the ordinary transpose. Integer and boolean signals
+    are promoted to floating point.
     """
+    signal = np.asarray(signal)
     kernel = np.asarray(kernel)
-    return _temporal_fft_convolve_same(
+    if kernel.ndim != 1:
+        raise ValueError("kernel must be one-dimensional")
+    if (
+        signal.ndim == 0 or signal.shape[0] == 0 or signal.shape[0] < kernel.size
+    ):
+        raise ValueError("full transpose requires at least kernel.size time samples")
+    return _temporal_fft_convolve(
         signal,
         np.conjugate(kernel[::-1]),
-        crop_start=(kernel.size - 1) // 2,
+        output_start=kernel.size - 1,
+        output_length=signal.shape[0] - kernel.size + 1,
     ) * dt
 
 
@@ -643,8 +651,10 @@ class MultiTDAObjective:
                 the adjoint run. Arbitrary factories use ordinary Cartesian
                 `mp.Source` injection and do not support cylindrical gradient
                 evaluation.
-            t_final: Positive finite main forward run time before the extra
-                filter tail is added.
+            t_final: Positive finite physical forward recording duration.
+                No filter tail is added to the FDTD run. The duration must
+                independently capture the physical response; sparse-history
+                alignment may extend it to the next stored time step.
             monitor_positions: Point-monitor positions. The current API expects
                 one monitor position per wavelength band. For cylindrical
                 gradients, targets may lie on or near `r=0`; on-axis
@@ -1724,7 +1734,7 @@ class MultiTDAObjective:
         ]
         self.dt = configured_dt
         self.filter_time = self.kernel_length * configured_dt
-        self.run_time = self.t_final + self.filter_time
+        self.run_time = self.t_final
         self.kernels = kernels
         self.weighted_kernels = weighted_kernels
 
@@ -1943,6 +1953,8 @@ class MultiTDAObjective:
         self,
         signals: np.ndarray,
         transform,
+        *,
+        output_time_count: Optional[int] = None,
     ) -> np.ndarray:
         """Evaluate one potentially spatial transform per wavelength band."""
         signals = np.asarray(signals)
@@ -1953,12 +1965,14 @@ class MultiTDAObjective:
                 "(n_time, total_target_points)"
             )
         nproc = mp.count_processors()
+        if output_time_count is None:
+            output_time_count = signals.shape[0]
         requires_complex = bool(
             np.iscomplexobj(signals)
             and np.any(signals.imag != 0.0)
         )
         local = np.zeros(
-            signals.shape,
+            (output_time_count, signals.shape[1]),
             dtype=np.complex128 if requires_complex else np.float64,
         )
         transform_error = None
@@ -1969,13 +1983,14 @@ class MultiTDAObjective:
                 nproc if nproc > 1 else 1,
             ):
                 transformed = np.asarray(transform(target_index))
-                expected_shape = self._raw_target_history(
-                    signals,
-                    target_index,
-                ).shape
+                expected_shape = (
+                    output_time_count,
+                    self._target_slices[target_index].stop
+                    - self._target_slices[target_index].start,
+                )
                 if transformed.shape != expected_shape:
                     raise ValueError(
-                        "target transform must preserve each raw target shape"
+                        "target transform must match the requested target shape"
                     )
                 transformed_is_complex = bool(
                     np.iscomplexobj(transformed)
@@ -3172,6 +3187,10 @@ class MultiTDAObjective:
         return self._distributed_target_transform(
             filtered_adjoint_signals,
             pullback,
+            output_time_count=(
+                filtered_adjoint_signals.shape[0]
+                - self.kernel_length + 1
+            ),
         )
 
     def _distributed_deduplicated_band_objectives(
@@ -4472,7 +4491,7 @@ class MultiTDAObjective:
                 target `i` is filtered by kernel `i` and weight `i`.
 
         Returns:
-            Filtered monitor history with the same flat shape as `signals`.
+            Flat filtered history with all `n_time + kernel_length - 1` rows.
         """
         if self.dt is None:
             raise RuntimeError(
@@ -4485,7 +4504,15 @@ class MultiTDAObjective:
                 "signals must have shape "
                 "(n_time, total_raw_target_channels)"
             )
-        filtered = np.empty_like(signals)
+        output_time_count = signals.shape[0] + self.kernel_length - 1
+        output_dtype = signals.dtype
+        if not np.issubdtype(output_dtype, np.inexact):
+            output_dtype = np.result_type(output_dtype, np.float64)
+        if any(np.iscomplexobj(kernel) for kernel in self.kernels):
+            output_dtype = np.result_type(output_dtype, np.complex64)
+        filtered = np.empty(
+            (output_time_count, signals.shape[1]), dtype=output_dtype,
+        )
         for band_index in range(len(self._target_slices)):
             band_history = self._raw_target_history(signals, band_index)
             filtered[:, self._target_slices[band_index]] = (
@@ -4493,7 +4520,7 @@ class MultiTDAObjective:
                     band_history,
                     self.weights[band_index] * self.kernels[band_index],
                     self.dt,
-                ).reshape(band_history.shape[0], -1)
+                )
             )
         return filtered
 
@@ -4505,4 +4532,5 @@ class MultiTDAObjective:
                 self.weights[band_index] * self.kernels[band_index],
                 self.dt,
             ),
+            output_time_count=signals.shape[0] + self.kernel_length - 1,
         )

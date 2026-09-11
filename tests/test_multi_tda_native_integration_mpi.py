@@ -367,8 +367,12 @@ def _use_serial_target_transforms(objective):
         objective.filter_monitor_signals
     )
 
-    def serial_transform(signals, transform):
-        result = np.empty_like(signals)
+    def serial_transform(signals, transform, *, output_time_count=None):
+        if output_time_count is None:
+            output_time_count = signals.shape[0]
+        result = np.empty(
+            (output_time_count, signals.shape[1]), dtype=signals.dtype,
+        )
         for target_index, target_slice in enumerate(
             objective._target_slices
         ):

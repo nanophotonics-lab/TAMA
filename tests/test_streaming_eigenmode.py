@@ -158,6 +158,7 @@ def test_contracted_history_matches_dense_projection_after_fir_filtering():
         kernel,
         dt,
     )
+    assert filtered_overlaps.shape == (n_samples + kernel.size - 1, 2)
 
     expected_filtered = _dense_coefficient_reference(
         filtered_histories,
@@ -165,6 +166,7 @@ def test_contracted_history_matches_dense_projection_after_fir_filtering():
         normal,
         spatial_weights,
     )
+    assert expected_filtered.shape == (n_samples + kernel.size - 2,)
     np.testing.assert_allclose(
         coefficient_history(
             filtered_histories,

@@ -8,8 +8,7 @@ import meep as mp
 import numpy as np
 import pytest
 import scipy.interpolate as spi
-from scipy.ndimage import convolve1d
-from scipy.signal import freqz
+from scipy.signal import convolve, freqz
 
 import tama as tm
 import tama.eigenmode as eigenmode_module
@@ -657,7 +656,7 @@ def test_power_complementary_filter_transpose_satisfies_bilinear_identity(
     rng = np.random.default_rng(20260812 + int(complex_signals))
     obj = _make_joint_filter_bank()
     signals = rng.standard_normal((257, 4))
-    filtered_covectors = rng.standard_normal(signals.shape)
+    filtered_covectors = rng.standard_normal((257 + obj.kernel_length - 1, 4))
     if complex_signals:
         signals = signals + 1j * rng.standard_normal(signals.shape)
         filtered_covectors = (
@@ -765,7 +764,7 @@ def test_multi_tda_objective_exports_and_filters_signals():
     signal[16, 0] = 1.0
     filtered = obj.filter_monitor_signals(signal)
 
-    assert filtered.shape == signal.shape
+    assert filtered.shape == (signal.shape[0] + obj.kernel_length - 1, 1)
     assert np.iscomplexobj(filtered)
     assert obj.last_total_fom is None
 
@@ -783,28 +782,25 @@ def test_temporal_fft_convolution_matches_direct_linear_convolution(
     kernel = rng.standard_normal(kernel_length)
     dt = 0.0125
 
-    expected = convolve1d(
+    expected = convolve(
         signal,
-        kernel,
-        axis=0,
-        mode="constant",
-        cval=0.0,
+        kernel[:, None],
+        mode="full",
+        method="direct",
     ) * dt
     actual = multi_tda_module.temporal_convolve_signal(signal, kernel, dt)
 
     assert np.allclose(actual, expected, rtol=2.0e-12, atol=2.0e-12)
 
-    transpose_origin = 0 if kernel_length % 2 else -1
-    expected_transpose = convolve1d(
-        signal,
-        kernel[::-1],
-        axis=0,
-        mode="constant",
-        cval=0.0,
-        origin=transpose_origin,
+    cotangent = rng.standard_normal(expected.shape) + 1j * rng.standard_normal(expected.shape)
+    expected_transpose = convolve(
+        cotangent,
+        kernel[::-1, None].conj(),
+        mode="valid",
+        method="direct",
     ) * dt
     actual_transpose = multi_tda_module.temporal_convolve_signal_transpose(
-        signal,
+        cotangent,
         kernel,
         dt,
     )
@@ -829,29 +825,26 @@ def test_temporal_real_fft_convolution_matches_direct_linear_convolution(
     dt = 0.0125
     tolerance = 2.0e-5 if dtype is np.float32 else 2.0e-12
 
-    expected = convolve1d(
+    expected = convolve(
         signal,
-        kernel,
-        axis=0,
-        mode="constant",
-        cval=0.0,
+        kernel[:, None],
+        mode="full",
+        method="direct",
     ) * dt
     actual = multi_tda_module.temporal_convolve_signal(signal, kernel, dt)
 
     assert actual.dtype == signal.dtype
     np.testing.assert_allclose(actual, expected, rtol=tolerance, atol=tolerance)
 
-    transpose_origin = 0 if kernel_length % 2 else -1
-    expected_transpose = convolve1d(
-        signal,
-        kernel[::-1],
-        axis=0,
-        mode="constant",
-        cval=0.0,
-        origin=transpose_origin,
+    cotangent = rng.standard_normal(expected.shape).astype(dtype)
+    expected_transpose = convolve(
+        cotangent,
+        kernel[::-1, None],
+        mode="valid",
+        method="direct",
     ) * dt
     actual_transpose = multi_tda_module.temporal_convolve_signal_transpose(
-        signal,
+        cotangent,
         kernel,
         dt,
     )
@@ -870,12 +863,11 @@ def test_temporal_real_fft_convolution_handles_multiple_workspace_blocks():
     signal = rng.standard_normal((65536, 17))
     kernel = rng.standard_normal(4)
 
-    expected = convolve1d(
+    expected = convolve(
         signal,
-        kernel,
-        axis=0,
-        mode="constant",
-        cval=0.0,
+        kernel[:, None],
+        mode="full",
+        method="direct",
     )
     actual = multi_tda_module.temporal_convolve_signal(signal, kernel, 1.0)
 
@@ -892,40 +884,28 @@ def test_temporal_real_fft_convolution_handles_multiple_workspace_blocks():
         ),
     ),
 )
-def test_temporal_convolution_preserves_nonfloating_conversion(signal, kernel):
-    expected = convolve1d(
-        signal,
-        kernel,
-        axis=0,
-        mode="constant",
-        cval=0.0,
-    )
+def test_temporal_convolution_promotes_nonfloating_signal(signal, kernel):
+    expected = np.convolve(signal.astype(float), kernel, "full")
     actual = multi_tda_module.temporal_convolve_signal(signal, kernel, 1.0)
 
-    np.testing.assert_array_equal(actual, expected)
+    assert actual.dtype == np.float64
+    np.testing.assert_allclose(actual, expected, rtol=2e-12, atol=2e-12)
 
-    transpose_origin = 0 if kernel.size % 2 else -1
-    expected_transpose = convolve1d(
-        signal,
-        kernel[::-1],
-        axis=0,
-        mode="constant",
-        cval=0.0,
-        origin=transpose_origin,
-    )
+    cotangent = np.arange(expected.size).astype(signal.dtype)
+    expected_transpose = np.convolve(cotangent.astype(float), kernel[::-1], "valid")
     actual_transpose = multi_tda_module.temporal_convolve_signal_transpose(
-        signal,
+        cotangent,
         kernel,
         1.0,
     )
 
-    np.testing.assert_array_equal(actual_transpose, expected_transpose)
+    assert actual_transpose.dtype == np.float64
+    np.testing.assert_allclose(actual_transpose, expected_transpose, rtol=2e-12, atol=2e-12)
 
 
 def test_temporal_convolve_signal_transpose_satisfies_dot_product_identity():
     rng = np.random.default_rng(20260710)
     x = rng.standard_normal(23) + 1j * rng.standard_normal(23)
-    y = rng.standard_normal(23) + 1j * rng.standard_normal(23)
     dt = 0.125
 
     for kernel_length in (4, 5):
@@ -934,6 +914,7 @@ def test_temporal_convolve_signal_transpose_satisfies_dot_product_identity():
             + 1j * rng.standard_normal(kernel_length)
         )
         filtered_x = multi_tda_module.temporal_convolve_signal(x, kernel, dt)
+        y = rng.standard_normal(filtered_x.shape) + 1j * rng.standard_normal(filtered_x.shape)
         transpose_y = multi_tda_module.temporal_convolve_signal_transpose(
             y,
             kernel,
@@ -951,12 +932,12 @@ def test_temporal_convolve_signal_transpose_satisfies_dot_product_identity():
 def test_temporal_real_convolve_signal_transpose_satisfies_dot_product_identity():
     rng = np.random.default_rng(20260804)
     x = rng.standard_normal((31, 4))
-    y = rng.standard_normal((31, 4))
     dt = 0.125
 
     for kernel_length in (4, 5):
         kernel = rng.standard_normal(kernel_length)
         filtered_x = multi_tda_module.temporal_convolve_signal(x, kernel, dt)
+        y = rng.standard_normal(filtered_x.shape)
         transpose_y = multi_tda_module.temporal_convolve_signal_transpose(
             y,
             kernel,
@@ -1005,7 +986,10 @@ def test_complex_band_adjoint_signal_matches_directional_finite_difference():
     )
 
 
-def test_custom_band_fom_and_scalarization_match_directional_finite_difference():
+@pytest.mark.parametrize("kernel_length", (4, 5))
+def test_custom_band_fom_and_scalarization_match_directional_finite_difference(
+    kernel_length,
+):
     rng = np.random.default_rng(20260727)
     dt = 0.075
     signals = (
@@ -1017,8 +1001,8 @@ def test_custom_band_fom_and_scalarization_match_directional_finite_difference()
         + 1j * rng.standard_normal(signals.shape)
     )
     kernels = [
-        np.array([0.2, -0.4, 0.7, 0.1]),
-        np.array([-0.3, 0.5, 0.8, -0.2, 0.4]),
+        np.array([0.2, -0.4, 0.7, 0.1, 0.3])[:kernel_length],
+        np.array([-0.3, 0.5, 0.8, -0.2, 0.4])[:kernel_length],
     ]
 
     def fom_fn(history, sample_dt):
@@ -1037,6 +1021,7 @@ def test_custom_band_fom_and_scalarization_match_directional_finite_difference()
         fom_fn=fom_fn,
         scalarization_fn=scalarization_fn,
         dt=dt,
+        kernel_length=kernel_length,
     )
     obj.weighted_kernels = kernels
 
@@ -1090,7 +1075,10 @@ def test_custom_band_fom_and_scalarization_match_directional_finite_difference()
     )
 
 
-def test_mixed_custom_and_default_band_foms_match_directional_finite_difference():
+@pytest.mark.parametrize("kernel_length", (4, 5))
+def test_mixed_custom_and_default_band_foms_match_directional_finite_difference(
+    kernel_length,
+):
     rng = np.random.default_rng(20260801)
     dt = 0.075
     signals = (
@@ -1102,8 +1090,8 @@ def test_mixed_custom_and_default_band_foms_match_directional_finite_difference(
         + 1j * rng.standard_normal(signals.shape)
     )
     kernels = (
-        np.array([0.2, -0.4, 0.7, 0.1]),
-        np.array([-0.3, 0.5, 0.8, -0.2, 0.4]),
+        np.array([0.2, -0.4, 0.7, 0.1, 0.3])[:kernel_length],
+        np.array([-0.3, 0.5, 0.8, -0.2, 0.4])[:kernel_length],
     )
 
     def first_fom(history, sample_dt):
@@ -1121,6 +1109,7 @@ def test_mixed_custom_and_default_band_foms_match_directional_finite_difference(
         adjoint_signal_fn=(first_adjoint, None),
         scalarization_fn=lambda values: values[0] + 0.4 * values[1],
         dt=dt,
+        kernel_length=kernel_length,
     )
     obj.weighted_kernels = list(kernels)
 
@@ -1197,6 +1186,7 @@ def test_multi_tda_flux_filter_pullback_matches_directional_finite_difference():
         dt=dt,
     )
     kernel = np.array([0.2, -0.4, 0.7, 0.1])
+    obj.kernel_length = kernel.size
     obj.kernels = [kernel]
     obj.weighted_kernels = [kernel]
     signals = (
@@ -2525,7 +2515,7 @@ def test_multi_tda_objective_updates_time_grid_from_meep_fields_dt(monkeypatch):
 
     assert obj.dt == dt
     assert obj.filter_time == 5 * dt
-    assert obj.run_time == obj.t_final + obj.filter_time
+    assert obj.run_time == obj.t_final
 
 
 def test_multi_tda_objective_falls_back_to_simulation_resolution():
@@ -2615,7 +2605,7 @@ def test_multi_tda_objective_adjoint_source_uses_reversed_forward_sample_times()
         update_design=lambda _: None,
         design=_make_design(),
         sim_factory=lambda sources=None: _OffsetSampleSimulation(dt, 4, sample_start, actual_time),
-        t_final=0.1,
+        t_final=sample_start + 3 * dt,
         monitor_positions=[mp.Vector3()],
         component=mp.Ez,
         wavelength_bands=[(0.4, 0.5)],
@@ -2999,7 +2989,7 @@ def test_multi_tda_objective_uses_automatic_scalarization_coefficients():
         update_design=lambda _: None,
         design=_make_design(),
         sim_factory=lambda sources=None: _FakeSimulation(dt, 8),
-        t_final=0.2,
+        t_final=7 * dt,
         monitor_positions=[mp.Vector3(), mp.Vector3(0.1)],
         component=mp.Ez,
         wavelength_bands=[(0.4, 0.5), (0.5, 0.6)],
@@ -3016,8 +3006,8 @@ def test_multi_tda_objective_uses_automatic_scalarization_coefficients():
         np.array([4.0, 5.0, 6.0]),
     ]
     filtered = np.column_stack([
-        np.linspace(1.0, 2.0, 8) + 1j * np.linspace(0.2, 0.9, 8),
-        np.linspace(3.0, 4.0, 8) - 1j * np.linspace(0.4, 1.1, 8),
+        np.linspace(1.0, 2.0, 10) + 1j * np.linspace(0.2, 0.9, 10),
+        np.linspace(3.0, 4.0, 10) - 1j * np.linspace(0.4, 1.1, 10),
     ]).astype(np.complex128)
     obj._distributed_filter_monitor_signals = lambda _: filtered
 
@@ -3071,7 +3061,7 @@ def test_multi_tda_objective_uses_custom_per_band_adjoint_signals():
         update_design=lambda _: None,
         design=_make_design(),
         sim_factory=lambda sources=None: _FakeSimulation(dt, 8),
-        t_final=0.2,
+        t_final=7 * dt,
         monitor_positions=[mp.Vector3(), mp.Vector3(0.1)],
         component=mp.Ez,
         wavelength_bands=[(0.4, 0.5), (0.5, 0.6)],
@@ -3090,8 +3080,8 @@ def test_multi_tda_objective_uses_custom_per_band_adjoint_signals():
         np.array([4.0, 5.0, 6.0]),
     ]
     filtered = np.column_stack([
-        np.linspace(1.0, 2.0, 8) + 1j * np.linspace(0.2, 0.9, 8),
-        np.linspace(3.0, 4.0, 8) - 1j * np.linspace(0.4, 1.1, 8),
+        np.linspace(1.0, 2.0, 10) + 1j * np.linspace(0.2, 0.9, 10),
+        np.linspace(3.0, 4.0, 10) - 1j * np.linspace(0.4, 1.1, 10),
     ]).astype(np.complex128)
     obj._distributed_filter_monitor_signals = lambda _: filtered
 
@@ -3349,7 +3339,7 @@ def test_multi_tda_field_regions_preserve_each_band_history_shape_and_sources():
         design=_make_design(),
         simulation=simulation,
         targets=targets,
-        t_final=0.2,
+        t_final=7 * dt,
         wavelength_bands=[
             (0.4, 0.5),
             (0.5, 0.6),
@@ -3366,7 +3356,7 @@ def test_multi_tda_field_regions_preserve_each_band_history_shape_and_sources():
     with _fake_native_path():
         value, gradient = obj.evaluate(np.array([0.0]), need_gradient=True)
 
-    expected_shapes = [(8,), (8, 1, 2), (8, 3)]
+    expected_shapes = [(10,), (10, 1, 2), (10, 3)]
     assert fom_shapes == expected_shapes
     assert adjoint_shapes == expected_shapes
     assert np.isfinite(value)
@@ -3644,7 +3634,7 @@ def test_multi_tda_flux_target_filters_fields_before_power(monkeypatch):
         update_design=lambda _: None,
         sim_factory=lambda sources=None: _FluxFakeSimulation(dt, 8),
         targets=[target],
-        t_final=0.2,
+        t_final=7 * dt,
         wavelength_bands=[(0.4, 0.5)],
         weights=[1.25],
         kernel_length=3,
@@ -3668,7 +3658,7 @@ def test_multi_tda_flux_target_filters_fields_before_power(monkeypatch):
         target.normal,
         target.spatial_weights,
     )
-    assert callback_shapes == [(7,)]
+    assert callback_shapes == [(9,)]
     assert value == pytest.approx(np.sum(expected_power) * dt)
     assert gradient is None
 
@@ -4013,7 +4003,7 @@ def test_multi_tda_flux_target_combines_electric_and_magnetic_adjoint_sources():
                 normal=mp.Vector3(1.0),
             )
         ],
-        t_final=0.2,
+        t_final=7 * dt,
         wavelength_bands=[(0.4, 0.5)],
         weights=[1.0],
         kernel_length=3,
@@ -4026,7 +4016,7 @@ def test_multi_tda_flux_target_combines_electric_and_magnetic_adjoint_sources():
     with _fake_native_path():
         _, gradient = obj.evaluate(np.array([0.0]), need_gradient=True)
 
-    assert callback_shapes == [(7,), (7,)]
+    assert callback_shapes == [(9,), (9,)]
     assert obj.gradient_components == (mp.Ex, mp.Ey, mp.Ez)
     assert len(simulation.make_calls) == 2
     assert [len(sources) for sources in simulation.make_calls[1:]] == [6]
@@ -4223,7 +4213,7 @@ def test_multi_tda_cylindrical_flux_value_plain_factory_uses_runtime_channels(
         update_design=lambda values: None,
         sim_factory=lambda sources=None: simulation,
         targets=[target],
-        t_final=0.2,
+        t_final=7 * dt,
         wavelength_bands=[(0.4, 0.5)],
         weights=[1.0],
         kernel_length=3,
@@ -4286,7 +4276,7 @@ def test_multi_tda_cylindrical_eigenmode_value_plain_factory_uses_runtime_channe
         update_design=lambda values: None,
         sim_factory=lambda sources=None: simulation,
         targets=[target],
-        t_final=0.2,
+        t_final=7 * dt,
         wavelength_bands=[(0.4, 0.5)],
         weights=[1.0],
         kernel_length=3,
@@ -4563,7 +4553,7 @@ def test_multi_tda_objective_groups_forward_monitors_by_component(monkeypatch):
         update_design=lambda _: None,
         sim_factory=lambda sources=None: _FakeSimulation(0.05, 8),
         targets=targets,
-        t_final=0.2,
+        t_final=7 * 0.05,
         wavelength_bands=[(0.4, 0.5), (0.5, 0.6), (0.6, 0.7)],
         weights=[1.0, 1.0, 1.0],
         kernel_length=3,
@@ -4579,7 +4569,10 @@ def test_multi_tda_objective_groups_forward_monitors_by_component(monkeypatch):
 
     def capture_monitor_history(history):
         monitor_histories.append(np.array(history, copy=True))
-        return np.zeros_like(history)
+        return np.zeros(
+            (history.shape[0] + obj.kernel_length - 1, history.shape[1]),
+            dtype=history.dtype,
+        )
 
     obj._distributed_filter_monitor_signals = capture_monitor_history
 

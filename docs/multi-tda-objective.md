@@ -14,11 +14,26 @@ the Fourier convention `sum_n h[n] * exp(-2*pi*i*f*tau[n]) * dt` and NumPy's
 `sinc(x) = sin(pi*x)/(pi*x)`. In the default independent mode, each real,
 centered windowed-sinc FIR is normalized to unit response magnitude at the
 band center. Floating histories are filtered by zero-padded FFT/IFFT linear
-convolution and cropped back to the input time grid; this is an offline
-same-length linear filter, not circular convolution or a causal source filter.
-Odd independent kernels have an integer-sample center. Even independent
-kernels retain their half-sample center, and the exact transpose applies the
-required one-sample origin correction.
+convolution. TAMA always retains all `N + K - 1`
+samples for an `N`-sample raw history and a `K`-tap FIR, including both tails.
+This is offline linear filtering, not circular convolution or a causal source
+filter. The full output sample times are
+`(j - (K - 1) / 2) * dt`, relative to the first raw sample. Odd kernels have
+an integer-sample center; even kernels have a half-sample center. The filter
+transpose returns exactly `N` raw-history covectors before the adjoint sources
+are constructed. Flux and modal histories additionally apply the existing
+electric/magnetic time centering, reducing the filtered history by one sample.
+
+`t_final` specifies the physical FDTD recording duration, independent of the
+FIR length. Filtering assumes zero field outside this recorded interval, so
+the duration must still capture the source and device ringdown. Retaining
+the FIR tails does not simulate missing physical fields or establish that a
+shorter recording is converged. Sparse design-history alignment may extend
+the actual endpoint to the next stored sample.
+
+Reference normalization values must use the same recording duration and
+filters as the device calculation. Custom callbacks receive the full history;
+any explicit temporal gate must use the full output grid.
 
 For ordered, contiguous wavelength bands, `filter_bank="power_complementary"`
 instead constructs coordinated complementary target responses and fits each
@@ -265,7 +280,10 @@ rank-local active source-channel count for the duration of the adjoint run.
 `MultiTDAObjective.filter_monitor_signals(signals)` is a low-level diagnostic
 helper that applies the configured band filters after `dt` has been resolved.
 It accepts a flat history with shape
-`(time, total_raw_target_channels)` and returns the same shape. The public
+`(N, total_raw_target_channels)` and returns `N + K - 1` rows.
+The standalone `temporal_convolve_signal` helper also returns full convolution;
+`temporal_convolve_signal_transpose` maps its covectors back to the original
+`N` rows. The public
 `auto_pixel_chunk` helper only preserves legacy pixel-block sizing behavior;
 it does not control current objective-gradient memory.
 
@@ -295,12 +313,12 @@ simulation state are unchanged and restart-safe.
 | `targets` | Optional list containing one `PointTarget`, `FieldRegionTarget`, `FluxTarget`, or `EigenmodeCoefficientTarget` per wavelength band. Exact targets may contain different point counts. Regional output shapes may also differ. Their gradients require direct `SimulationSpec` use. Flux and eigenmode targets combine electric and time-centered magnetic sources in one adjoint run. Cylindrical surface targets use radial or axial normals and explicit `2*pi*r` physical quadrature; cylindrical eigenmode targets additionally require fixed reference fields and a matching `reference_m`. Other targets may mix electric components or mix magnetic components, but not both groups in one adjoint run. |
 | `update_design` | Same role as in `TDAObjective`: writes the design vector into the active Meep design object. |
 | `sim_factory` | Same role as in `TDAObjective`: returns forward or adjoint `mp.Simulation` objects. Arbitrary factories use ordinary Cartesian `mp.Source` injection and do not support cylindrical gradient evaluation. |
-| `t_final` | Main forward simulation time. The class internally runs until `t_final + kernel_length * dt` so the temporal filter has enough tail. |
+| `t_final` | Physical FDTD recording duration. Choose it from source completion and response convergence, independently of filter length. |
 | `monitor_positions` | Point-monitor locations, one per wavelength band. They may override bundled `PointTarget` positions, but cannot be combined with a regional, flux, or eigenmode target. The indexed path injects the exact transpose of the native Yee-grid interpolation. Cylindrical targets use `(r, 0, z)` with `r >= 0`, may lie on or near `r=0`, and include modal axis parity in the transpose. |
 | `component` | Shared Meep monitor/source component. It may override bundled `PointTarget` components, but cannot be combined with a regional, flux, or eigenmode target. Otherwise non-surface targets may independently select components from the same electric or magnetic group. The native path maps 2D TMz to `Ez`, 2D TEz to `Ex`/`Ey`, 3D scalar-isotropic designs to `Ex`/`Ey`/`Ez`, and cylindrical targets according to the [design-gradient component table](design-gradients.md#supported-components). |
 | `wavelength_bands` | List of `(lambda_min, lambda_max)` intervals. Each interval creates one bandpass temporal-convolution kernel. |
 | `weights` | Per-band amplitude weights applied to monitor filtering and the matching adjoint filter. The power-complementary bank requires unit values; use `scalarization_fn` for unequal objective priorities. |
-| `kernel_length` | Number of time samples in the temporal-convolution bandpass kernel. Larger values give narrower filtering but increase runtime and temporary storage. |
+| `kernel_length` | Number of FIR taps. Larger values generally sharpen the spectral response and increase filtering work and temporary storage, but do not extend FDTD duration. |
 | `kernel_window` | Window used to taper each independent bandpass kernel. Canonical names and accepted aliases are listed above. Default is `hamming`; it is not applied to the power-complementary bank. |
 | `kernel_window_params` | Required as `{"beta": value}` for `kernel_window="kaiser"`; other windows accept no parameters. Applies only to independent filters. |
 | `filter_bank` | `"independent"` (default) creates the existing per-band windowed-sinc FIRs. `"power_complementary"` constructs coordinated complementary target responses and fits each FIR on a shared frequency grid for at least two ordered, contiguous bands; it requires an odd kernel length and unit `weights`. |
