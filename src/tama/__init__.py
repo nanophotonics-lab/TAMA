@@ -6,7 +6,7 @@ regional-field, signed-flux, and fixed-eigenmode objectives and computes their
 time-domain adjoint gradients.
 """
 
-__version__ = "0.5.0a2"
+__version__ = "0.5.0a3"
 
 from .chunking import regularize_source_size_and_amplitude
 from .adaptive_chunking import (

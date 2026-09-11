@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/nanophotonics-lab/TAMA/actions/workflows/ci.yml/badge.svg)](https://github.com/nanophotonics-lab/TAMA/actions/workflows/ci.yml)
 [![License: GPL v2+](https://img.shields.io/badge/License-GPL_v2%2B-blue.svg)](../LICENSE)
-[![Release](https://img.shields.io/badge/release-v0.5.0--alpha.2-orange.svg)](https://github.com/nanophotonics-lab/TAMA/releases/tag/v0.5.0-alpha.2)
+[![Release](https://img.shields.io/badge/release-v0.5.0--alpha.3-orange.svg)](https://github.com/nanophotonics-lab/TAMA/releases/tag/v0.5.0-alpha.3)
 
 TAMA (Time-domain Adjoint with Memory-efficient Acceleration, imported as
 `tama`) is a time-domain adjoint optimization package built on Meep. Users create Meep
@@ -30,8 +30,8 @@ troubleshooting
 
 ## Status
 
-The current pre-release is `v0.5.0-alpha.2` (Python package version
-`0.5.0a2`). APIs, examples, and native-sampler build details may change
+The current pre-release is `v0.5.0-alpha.3` (Python package version
+`0.5.0a3`). APIs, examples, and native-sampler build details may change
 before the first stable release.
 
 **The native `DesignGrid` path supports 2D TMz/TEz, 3D

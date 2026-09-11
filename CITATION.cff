@@ -3,12 +3,12 @@ message: >-
   If you use TAMA in research, please cite the software using this metadata.
 title: "TAMA: Time-domain Adjoint with Memory-efficient Acceleration"
 type: software
-version: "0.5.0a2"
-date-released: 2026-08-16
+version: "0.5.0a3"
+date-released: 2026-09-11
 authors:
   - family-names: Park
     given-names: JaeHyeon
 repository-code: "https://github.com/nanophotonics-lab/TAMA"
-repository-artifact: "https://github.com/nanophotonics-lab/TAMA/releases/tag/v0.5.0-alpha.2"
+repository-artifact: "https://github.com/nanophotonics-lab/TAMA/releases/tag/v0.5.0-alpha.3"
 url: "https://tama-adjoint.readthedocs.io/en/latest/"
 license: GPL-2.0-or-later
