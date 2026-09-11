@@ -14,8 +14,12 @@ import tama as tm
 import tama.eigenmode as eigenmode_module
 import tama.flux as flux_module
 import tama.multi_tda_objective as multi_tda_module
-from tama.native_design import _centered_derivative_into
-from tama.nyquist import _WindowedSincReconstructor
+from tama.objectives import _tabulated_cubic_source
+from _objective_test_helpers import (
+    _FakeFields,
+    _fake_indexed_transpose_stencil,
+    _run_fake_adjoint_loop,
+)
 
 
 def _make_minimal_multi_tda(**kwargs):
@@ -813,67 +817,6 @@ def test_temporal_fft_convolution_matches_direct_linear_convolution(
     )
 
 
-@pytest.mark.parametrize("kernel_length", (4, 5))
-@pytest.mark.parametrize("dtype", (np.float32, np.float64))
-def test_temporal_real_fft_convolution_matches_direct_linear_convolution(
-    kernel_length,
-    dtype,
-):
-    rng = np.random.default_rng(20260804 + kernel_length)
-    signal = rng.standard_normal((37, 3)).astype(dtype)
-    kernel = rng.standard_normal(kernel_length).astype(dtype)
-    dt = 0.0125
-    tolerance = 2.0e-5 if dtype is np.float32 else 2.0e-12
-
-    expected = convolve(
-        signal,
-        kernel[:, None],
-        mode="full",
-        method="direct",
-    ) * dt
-    actual = multi_tda_module.temporal_convolve_signal(signal, kernel, dt)
-
-    assert actual.dtype == signal.dtype
-    np.testing.assert_allclose(actual, expected, rtol=tolerance, atol=tolerance)
-
-    cotangent = rng.standard_normal(expected.shape).astype(dtype)
-    expected_transpose = convolve(
-        cotangent,
-        kernel[::-1, None],
-        mode="valid",
-        method="direct",
-    ) * dt
-    actual_transpose = multi_tda_module.temporal_convolve_signal_transpose(
-        cotangent,
-        kernel,
-        dt,
-    )
-
-    assert actual_transpose.dtype == signal.dtype
-    np.testing.assert_allclose(
-        actual_transpose,
-        expected_transpose,
-        rtol=tolerance,
-        atol=tolerance,
-    )
-
-
-def test_temporal_real_fft_convolution_handles_multiple_workspace_blocks():
-    rng = np.random.default_rng(20260804)
-    signal = rng.standard_normal((65536, 17))
-    kernel = rng.standard_normal(4)
-
-    expected = convolve(
-        signal,
-        kernel[:, None],
-        mode="full",
-        method="direct",
-    )
-    actual = multi_tda_module.temporal_convolve_signal(signal, kernel, 1.0)
-
-    np.testing.assert_allclose(actual, expected, rtol=2.0e-12, atol=2.0e-12)
-
-
 @pytest.mark.parametrize(
     ("signal", "kernel"),
     (
@@ -901,55 +844,6 @@ def test_temporal_convolution_promotes_nonfloating_signal(signal, kernel):
 
     assert actual_transpose.dtype == np.float64
     np.testing.assert_allclose(actual_transpose, expected_transpose, rtol=2e-12, atol=2e-12)
-
-
-def test_temporal_convolve_signal_transpose_satisfies_dot_product_identity():
-    rng = np.random.default_rng(20260710)
-    x = rng.standard_normal(23) + 1j * rng.standard_normal(23)
-    dt = 0.125
-
-    for kernel_length in (4, 5):
-        kernel = (
-            rng.standard_normal(kernel_length)
-            + 1j * rng.standard_normal(kernel_length)
-        )
-        filtered_x = multi_tda_module.temporal_convolve_signal(x, kernel, dt)
-        y = rng.standard_normal(filtered_x.shape) + 1j * rng.standard_normal(filtered_x.shape)
-        transpose_y = multi_tda_module.temporal_convolve_signal_transpose(
-            y,
-            kernel,
-            dt,
-        )
-
-        assert np.allclose(
-            np.vdot(filtered_x, y),
-            np.vdot(x, transpose_y),
-            rtol=1.0e-12,
-            atol=1.0e-12,
-        )
-
-
-def test_temporal_real_convolve_signal_transpose_satisfies_dot_product_identity():
-    rng = np.random.default_rng(20260804)
-    x = rng.standard_normal((31, 4))
-    dt = 0.125
-
-    for kernel_length in (4, 5):
-        kernel = rng.standard_normal(kernel_length)
-        filtered_x = multi_tda_module.temporal_convolve_signal(x, kernel, dt)
-        y = rng.standard_normal(filtered_x.shape)
-        transpose_y = multi_tda_module.temporal_convolve_signal_transpose(
-            y,
-            kernel,
-            dt,
-        )
-
-        assert np.allclose(
-            np.vdot(filtered_x, y),
-            np.vdot(x, transpose_y),
-            rtol=2.0e-12,
-            atol=2.0e-12,
-        )
 
 
 def test_complex_band_adjoint_signal_matches_directional_finite_difference():
@@ -1290,10 +1184,15 @@ def test_scalarization_rejects_non_scalar_automatic_result():
         )
 
 
-def test_native_tabulated_cubic_matches_legacy_interp1d():
+@pytest.mark.parametrize(
+    "source_factory",
+    [_tabulated_cubic_source, multi_tda_module._tabulated_cubic_source],
+    ids=["shared", "multi"],
+)
+def test_native_tabulated_cubic_matches_legacy_interp1d(source_factory):
     times = np.linspace(0.07, 0.37, 9)
     values = np.exp(1j * (0.4 * times + 0.2 * times**2))
-    native_source = multi_tda_module._tabulated_cubic_source(times, values)
+    native_source = source_factory(times, values)
     reference = spi.interp1d(
         times,
         values,
@@ -1485,15 +1384,6 @@ def test_multi_tda_objective_requires_design_only_for_gradients(monkeypatch):
     with np.testing.assert_raises_regex(ValueError, "requires design=DesignGrid"):
         obj.evaluate(np.array([0.25]), need_gradient=True)
     assert len(update_calls) == 1
-
-
-class _FakeFields:
-    def __init__(self, dt):
-        self.dt = dt
-        self.reset_timer_calls = 0
-
-    def reset_timers(self):
-        self.reset_timer_calls += 1
 
 
 class _FakeSimulation:
@@ -1818,87 +1708,6 @@ class _FakeNativeAccumulator:
 
     def release(self):
         pass
-
-
-def _run_fake_adjoint_loop(
-    sim,
-    accumulator,
-    field_histories,
-    *,
-    fine_step_count,
-    actual_time,
-    dt,
-    sampling_interval,
-    reconstruction_half_width,
-    reconstruction_window,
-    reconstruction_window_params,
-):
-    reconstructors = {}
-    buffers = {}
-    if sampling_interval > 1:
-        for component, history in field_histories.items():
-            reconstructor = _WindowedSincReconstructor(
-                history,
-                sampling_interval,
-                half_width=reconstruction_half_width,
-                window=reconstruction_window,
-                window_params=reconstruction_window_params,
-            )
-            reconstructors[component] = reconstructor
-            buffers[component] = tuple(
-                np.empty(reconstructor.history.shape[1], dtype=reconstructor.dtype)
-                for _ in range(3)
-            )
-
-    status = {"step": 0}
-
-    def accumulate(active_sim):
-        fine_index = fine_step_count - status["step"]
-        if fine_index < 0:
-            raise RuntimeError(
-                "adjoint callback count exceeds the forward time grid"
-            )
-        for component, history in field_histories.items():
-            if sampling_interval > 1:
-                current, neighbor, derivative = buffers[component]
-                forward_derivative = _centered_derivative_into(
-                    reconstructors[component].sample_into,
-                    fine_index,
-                    fine_step_count,
-                    dt,
-                    current,
-                    neighbor,
-                    derivative,
-                )
-            elif fine_index == 0:
-                forward_derivative = (history[1] - history[0]) / dt
-            elif fine_index == fine_step_count:
-                forward_derivative = (history[-1] - history[-2]) / dt
-            else:
-                forward_derivative = (
-                    history[fine_index + 1] - history[fine_index - 1]
-                ) / (2.0 * dt)
-            accumulator.accumulate(
-                active_sim,
-                component,
-                forward_derivative,
-            )
-        status["step"] += 1
-
-    sim.run(accumulate, until=actual_time)
-    if status["step"] != fine_step_count + 1:
-        raise RuntimeError(
-            "adjoint callback count does not match the forward time grid"
-        )
-    return 0.0
-
-
-def _fake_indexed_transpose_stencil(monitor):
-    return (
-        np.arange(len(monitor.positions) + 1, dtype=np.intp),
-        tuple(object() for _ in monitor.positions),
-        np.ones(len(monitor.positions), dtype=float),
-    )
 
 
 class _NativePathPointMonitor:

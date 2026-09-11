@@ -113,6 +113,19 @@ class _SequenceMeepBalancer(_FakeMeepBalancer):
         return candidate
 
 
+def _sequence_balancer(layout, split_positions, **kwargs):
+    sim = _FakeSimulation(layout)
+    balancer = tm.AdaptiveAdjointChunkBalancer(
+        sensitivity=1.0,
+        protected_gap_cells=0.0,
+        min_chunk_cells=1,
+        **kwargs,
+    )
+    meep_balancer = _SequenceMeepBalancer(split_positions)
+    balancer._meep_balancer = meep_balancer
+    return sim, balancer, meep_balancer
+
+
 class _FakeProbeStructure:
     def __init__(self, layout):
         self.layout = layout
@@ -975,15 +988,9 @@ def test_adaptive_balancer_keeps_layout_below_threshold():
 
 def test_adaptive_balancer_evaluates_third_candidate_on_fourth_call():
     first_layout = mp.BinaryPartition(data=[(mp.X, -1.0), 0, 1])
-    sim = _FakeSimulation(first_layout)
-    balancer = tm.AdaptiveAdjointChunkBalancer(
-        sensitivity=1.0,
-        imbalance_threshold=1.01,
-        protected_gap_cells=0.0,
-        min_chunk_cells=1,
+    sim, balancer, meep_balancer = _sequence_balancer(
+        first_layout, (-0.5, 0.0, 0.5, 1.0), imbalance_threshold=1.01,
     )
-    meep_balancer = _SequenceMeepBalancer((-0.5, 0.0, 0.5, 1.0))
-    balancer._meep_balancer = meep_balancer
     timings = iter(
         (
             _timing([10.0, 1.0]),
@@ -1027,14 +1034,9 @@ def test_adaptive_balancer_evaluates_third_candidate_on_fourth_call():
 
 def test_adaptive_balancer_freezes_after_two_consecutive_balanced_observations():
     initial_layout = mp.BinaryPartition(data=[(mp.X, -1.0), 0, 1])
-    sim = _FakeSimulation(initial_layout)
-    balancer = tm.AdaptiveAdjointChunkBalancer(
-        sensitivity=1.0,
-        protected_gap_cells=0.0,
-        min_chunk_cells=1,
+    sim, balancer, meep_balancer = _sequence_balancer(
+        initial_layout, (0.0, 0.5),
     )
-    meep_balancer = _SequenceMeepBalancer((0.0, 0.5))
-    balancer._meep_balancer = meep_balancer
     timings = iter(
         (
             _timing([10.0, 1.0]),
@@ -1070,15 +1072,9 @@ def test_adaptive_balancer_freezes_after_two_consecutive_balanced_observations()
 
 def test_adaptive_balancer_freezes_after_two_subpercent_best_improvements():
     initial_layout = mp.BinaryPartition(data=[(mp.X, -1.0), 0, 1])
-    sim = _FakeSimulation(initial_layout)
-    balancer = tm.AdaptiveAdjointChunkBalancer(
-        sensitivity=1.0,
-        imbalance_threshold=1.01,
-        protected_gap_cells=0.0,
-        min_chunk_cells=1,
+    sim, balancer, meep_balancer = _sequence_balancer(
+        initial_layout, (0.0, 0.5, 1.0, 1.5, 2.0), imbalance_threshold=1.01,
     )
-    meep_balancer = _SequenceMeepBalancer((0.0, 0.5, 1.0, 1.5, 2.0))
-    balancer._meep_balancer = meep_balancer
     timings = iter(
         (
             _timing([10.0, 1.0]),
@@ -1116,15 +1112,9 @@ def test_adaptive_balancer_freezes_after_two_subpercent_best_improvements():
 
 def test_adaptive_balancer_freezes_after_repeated_no_move_proposals_stall_score():
     initial_layout = mp.BinaryPartition(data=[(mp.X, 0.0), 0, 1])
-    sim = _FakeSimulation(initial_layout)
-    balancer = tm.AdaptiveAdjointChunkBalancer(
-        sensitivity=1.0,
-        imbalance_threshold=1.01,
-        protected_gap_cells=0.0,
-        min_chunk_cells=1,
+    sim, balancer, meep_balancer = _sequence_balancer(
+        initial_layout, (0.0, 0.0), imbalance_threshold=1.01,
     )
-    meep_balancer = _SequenceMeepBalancer((0.0, 0.0))
-    balancer._meep_balancer = meep_balancer
     balancer.capture_timing = lambda _sim: _timing([10.0, 1.0])
 
     with _two_rank_meep():
@@ -1147,17 +1137,10 @@ def test_adaptive_balancer_freezes_after_repeated_no_move_proposals_stall_score(
 
 def test_adaptive_balancer_freezes_best_layout_after_eight_observations():
     initial_layout = mp.BinaryPartition(data=[(mp.X, -1.0), 0, 1])
-    sim = _FakeSimulation(initial_layout)
-    balancer = tm.AdaptiveAdjointChunkBalancer(
-        sensitivity=1.0,
+    sim, balancer, meep_balancer = _sequence_balancer(
+        initial_layout, (-0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5),
         imbalance_threshold=1.01,
-        protected_gap_cells=0.0,
-        min_chunk_cells=1,
     )
-    meep_balancer = _SequenceMeepBalancer(
-        (-0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5)
-    )
-    balancer._meep_balancer = meep_balancer
     timings = iter(
         _timing([score, 1.0])
         for score in (100.0, 80.0, 64.0, 51.0, 40.0, 32.0, 25.0, 20.0)
@@ -1181,14 +1164,9 @@ def test_adaptive_balancer_freezes_best_layout_after_eight_observations():
 
 def test_adaptive_balancer_selects_best_by_rank_work_not_wall_time():
     initial_layout = mp.BinaryPartition(data=[(mp.X, -1.0), 0, 1])
-    sim = _FakeSimulation(initial_layout)
-    balancer = tm.AdaptiveAdjointChunkBalancer(
-        sensitivity=1.0,
-        imbalance_threshold=1.01,
-        protected_gap_cells=0.0,
-        min_chunk_cells=1,
+    sim, balancer, _ = _sequence_balancer(
+        initial_layout, (0.0, 0.5), imbalance_threshold=1.01,
     )
-    balancer._meep_balancer = _SequenceMeepBalancer((0.0, 0.5))
     timings = iter((_timing([10.0, 1.0]), _timing([8.0, 1.0])))
     balancer.capture_timing = lambda _sim: next(timings)
 
@@ -1212,15 +1190,9 @@ def test_adaptive_balancer_selects_best_by_rank_work_not_wall_time():
 
 def test_adaptive_balancer_rolls_back_two_percent_regression_immediately():
     initial_layout = mp.BinaryPartition(data=[(mp.X, -1.0), 0, 1])
-    sim = _FakeSimulation(initial_layout)
-    balancer = tm.AdaptiveAdjointChunkBalancer(
-        sensitivity=1.0,
-        imbalance_threshold=1.01,
-        protected_gap_cells=0.0,
-        min_chunk_cells=1,
+    sim, balancer, meep_balancer = _sequence_balancer(
+        initial_layout, (0.0, 1.0), imbalance_threshold=1.01,
     )
-    meep_balancer = _SequenceMeepBalancer((0.0, 1.0))
-    balancer._meep_balancer = meep_balancer
     timings = iter((_timing([5.0, 1.0]), _timing([5.10, 1.0])))
     balancer.capture_timing = lambda _sim: next(timings)
 
@@ -1245,15 +1217,9 @@ def test_adaptive_balancer_rolls_back_two_percent_regression_immediately():
 
 def test_adaptive_balancer_rolls_back_regression_before_convergence_freeze():
     initial_layout = mp.BinaryPartition(data=[(mp.X, -1.0), 0, 1])
-    sim = _FakeSimulation(initial_layout)
-    balancer = tm.AdaptiveAdjointChunkBalancer(
-        sensitivity=1.0,
-        imbalance_threshold=1.01,
-        protected_gap_cells=0.0,
-        min_chunk_cells=1,
+    sim, balancer, meep_balancer = _sequence_balancer(
+        initial_layout, (0.0, 0.5), imbalance_threshold=1.01,
     )
-    meep_balancer = _SequenceMeepBalancer((0.0, 0.5))
-    balancer._meep_balancer = meep_balancer
     timings = iter(
         (
             _timing([10.0, 1.0]),

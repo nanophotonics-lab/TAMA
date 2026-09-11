@@ -583,45 +583,24 @@ def test_native_3d_field_region_matches_directional_fd(objective_kind):
 
 
 @pytest.mark.parametrize("objective_kind", ["tda", "multi"])
-def test_native_3d_flux_target_matches_directional_fd(objective_kind):
+@pytest.mark.parametrize(
+    ("target_kind", "seed"),
+    [("flux", 20260731), ("eigenmode", 20260802)],
+)
+def test_native_3d_indexed_target_matches_directional_fd(
+    objective_kind,
+    target_kind,
+    seed,
+):
     mp.verbosity(0)
     objective, _ = _make_3d_problem(
         mp.Ey,
         objective_kind,
-        flux_target=True,
+        flux_target=target_kind == "flux",
+        eigenmode_target=target_kind == "eigenmode",
         t_final=20.0,
     )
-    rng = np.random.default_rng(20260731)
-    design = rng.uniform(0.2, 0.8, 8)
-    direction = rng.uniform(0.2, 1.0, 8)
-    direction /= np.linalg.norm(direction)
-
-    _, gradient = objective.fom_and_grad(design)
-    step = 2e-4
-    finite_difference = (
-        objective.fom(design + step * direction)
-        - objective.fom(design - step * direction)
-    ) / (2.0 * step)
-    adjoint_derivative = float(gradient @ direction)
-    relative_error = abs(adjoint_derivative - finite_difference) / abs(
-        finite_difference
-    )
-
-    assert objective.gradient_components == (mp.Ex, mp.Ey, mp.Ez)
-    assert np.sign(adjoint_derivative) == np.sign(finite_difference)
-    assert relative_error < 0.02
-
-
-@pytest.mark.parametrize("objective_kind", ["tda", "multi"])
-def test_native_3d_eigenmode_target_matches_directional_fd(objective_kind):
-    mp.verbosity(0)
-    objective, _ = _make_3d_problem(
-        mp.Ey,
-        objective_kind,
-        eigenmode_target=True,
-        t_final=20.0,
-    )
-    rng = np.random.default_rng(20260802)
+    rng = np.random.default_rng(seed)
     design = rng.uniform(0.2, 0.8, 8)
     direction = rng.uniform(0.2, 1.0, 8)
     direction /= np.linalg.norm(direction)

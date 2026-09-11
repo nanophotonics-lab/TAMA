@@ -771,47 +771,33 @@ def test_native_reduction_failure_raises_in_serial():
             sampling_grid.FastFieldGrid.reduce(local)
 
 
-@pytest.mark.parametrize("dtype", (np.complex64, np.complex128))
-def test_native_inplace_reduction_reuses_owned_buffer(dtype):
+@pytest.mark.parametrize("dtype, reducer", (
+    (np.complex64, "reduce_inplace"),
+    (np.complex128, "reduce_inplace"),
+    (np.float32, "reduce_real_inplace"),
+    (np.float64, "reduce_real_inplace"),
+))
+def test_native_inplace_reduction_reuses_owned_buffer(dtype, reducer):
     local = np.arange(6, dtype=dtype).reshape(2, 3)
     with _native_sampler(_FakeNativeSampler()):
-        reduced = sampling_grid.FastFieldGrid.reduce_inplace(local)
+        reduced = getattr(sampling_grid.FastFieldGrid, reducer)(local)
 
     assert reduced is local
     assert reduced.dtype == dtype
 
 
-@pytest.mark.parametrize("dtype", (np.float32, np.float64))
-def test_native_real_inplace_reduction_reuses_owned_buffer(dtype):
-    local = np.arange(6, dtype=dtype).reshape(2, 3)
-    with _native_sampler(_FakeNativeSampler()):
-        reduced = sampling_grid.FastFieldGrid.reduce_real_inplace(local)
-
-    assert reduced is local
-    assert reduced.dtype == dtype
-
-
-@pytest.mark.parametrize("dtype", (np.complex64, np.complex128))
-def test_compiled_native_inplace_reduction_preserves_serial_buffer(dtype):
+@pytest.mark.parametrize("dtype, reducer", (
+    (np.complex64, "reduce_complex_grid_sum_inplace"),
+    (np.complex128, "reduce_complex_grid_sum_inplace"),
+    (np.float32, "reduce_real_grid_sum_inplace"),
+    (np.float64, "reduce_real_grid_sum_inplace"),
+))
+def test_compiled_native_inplace_reduction_preserves_serial_buffer(dtype, reducer):
     local = np.arange(6, dtype=dtype).reshape(2, 3)
     expected = local.copy()
     pointer = local.__array_interface__["data"][0]
 
-    reduced = sampling_grid.native_sampler.reduce_complex_grid_sum_inplace(local)
-
-    assert reduced is local
-    assert reduced.dtype == dtype
-    assert local.__array_interface__["data"][0] == pointer
-    assert np.array_equal(local, expected)
-
-
-@pytest.mark.parametrize("dtype", (np.float32, np.float64))
-def test_compiled_native_real_reduction_preserves_serial_buffer(dtype):
-    local = np.arange(6, dtype=dtype).reshape(2, 3)
-    expected = local.copy()
-    pointer = local.__array_interface__["data"][0]
-
-    reduced = sampling_grid.native_sampler.reduce_real_grid_sum_inplace(local)
+    reduced = getattr(sampling_grid.native_sampler, reducer)(local)
 
     assert reduced is local
     assert reduced.dtype == dtype

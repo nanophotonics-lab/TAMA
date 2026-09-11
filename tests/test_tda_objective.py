@@ -5,17 +5,11 @@ import pytest
 import tama as tm
 import tama.objectives as objectives_module
 import tama.tda_objective as tda_module
-from tama.native_design import _centered_derivative_into
-from tama.nyquist import _WindowedSincReconstructor
-
-
-class _FakeFields:
-    def __init__(self, dt):
-        self.dt = dt
-        self.reset_timer_calls = 0
-
-    def reset_timers(self):
-        self.reset_timer_calls += 1
+from _objective_test_helpers import (
+    _FakeFields,
+    _fake_indexed_transpose_stencil,
+    _run_fake_adjoint_loop,
+)
 
 
 class _FakeSimulation:
@@ -319,87 +313,6 @@ class _FakeNativeDesignAccumulator:
 
     def release(self):
         self.release_calls += 1
-
-
-def _run_fake_adjoint_loop(
-    sim,
-    accumulator,
-    field_histories,
-    *,
-    fine_step_count,
-    actual_time,
-    dt,
-    sampling_interval,
-    reconstruction_half_width,
-    reconstruction_window,
-    reconstruction_window_params,
-):
-    reconstructors = {}
-    buffers = {}
-    if sampling_interval > 1:
-        for component, history in field_histories.items():
-            reconstructor = _WindowedSincReconstructor(
-                history,
-                sampling_interval,
-                half_width=reconstruction_half_width,
-                window=reconstruction_window,
-                window_params=reconstruction_window_params,
-            )
-            reconstructors[component] = reconstructor
-            buffers[component] = tuple(
-                np.empty(reconstructor.history.shape[1], dtype=reconstructor.dtype)
-                for _ in range(3)
-            )
-
-    status = {"step": 0}
-
-    def accumulate(active_sim):
-        fine_index = fine_step_count - status["step"]
-        if fine_index < 0:
-            raise RuntimeError(
-                "adjoint callback count exceeds the forward time grid"
-            )
-        for component, history in field_histories.items():
-            if sampling_interval > 1:
-                current, neighbor, derivative = buffers[component]
-                forward_derivative = _centered_derivative_into(
-                    reconstructors[component].sample_into,
-                    fine_index,
-                    fine_step_count,
-                    dt,
-                    current,
-                    neighbor,
-                    derivative,
-                )
-            elif fine_index == 0:
-                forward_derivative = (history[1] - history[0]) / dt
-            elif fine_index == fine_step_count:
-                forward_derivative = (history[-1] - history[-2]) / dt
-            else:
-                forward_derivative = (
-                    history[fine_index + 1] - history[fine_index - 1]
-                ) / (2.0 * dt)
-            accumulator.accumulate(
-                active_sim,
-                component,
-                forward_derivative,
-            )
-        status["step"] += 1
-
-    sim.run(accumulate, until=actual_time)
-    if status["step"] != fine_step_count + 1:
-        raise RuntimeError(
-            "adjoint callback count does not match the forward time grid"
-        )
-    return 0.0
-
-
-def _fake_indexed_transpose_stencil(monitor):
-    return (
-        np.arange(len(monitor.positions) + 1, dtype=np.intp),
-        tuple(object() for _ in monitor.positions),
-        np.ones(len(monitor.positions), dtype=float),
-    )
 
 
 def _install_fake_native_backend(monkeypatch):
@@ -2207,29 +2120,6 @@ def test_cylindrical_electric_components_follow_mode_polarization(
         cylindrical=True,
         m=m,
     ) == expected
-
-
-def test_tda_native_tabulated_cubic_matches_scipy_reference():
-    times = np.linspace(0.07, 0.37, 9)
-    values = np.exp(1j * (0.4 * times + 0.2 * times**2))
-    source = objectives_module._tabulated_cubic_source(times, values)
-    reference = objectives_module.spi.interp1d(
-        times,
-        values,
-        kind="cubic",
-        fill_value=0j,
-        bounds_error=False,
-    )
-    query = np.linspace(times[0], times[-1], 257)
-
-    assert np.allclose(
-        np.asarray([source(time) for time in query]),
-        reference(query),
-        rtol=2.0e-14,
-        atol=2.0e-14,
-    )
-    assert source(times[0] - 0.01) == 0j
-    assert source(times[-1] + 0.01) == 0j
 
 
 def test_tda_real_cubic_sources_share_one_batched_spline():
