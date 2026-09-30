@@ -1,0 +1,35 @@
+TAMA licensing and component provenance
+
+The combined TAMA distribution is licensed under the GNU General Public License,
+version 3 or, at your option, any later version (GPL-3.0-or-later). The complete
+GPL version 3 text is in LICENSE, obtained without modification from:
+https://www.gnu.org/licenses/gpl-3.0.txt
+
+Original TAMA source: https://github.com/nanophotonics-lab/TAMA
+Base commit: 587c3afd063cf26ca3547607d3939c91cfa78c75
+The original Meep Python implementation, shared nyquist.py and native sampler
+were provided under GPL-2.0-or-later. Those original license permissions and
+notices are preserved; the combined distribution exercises the option to use
+GPL version 3 or later. The original GPL version 2 text is preserved in
+licenses/GPL-2.0-or-later.txt. The separately packaged native/meep sampler
+continues to use GPL-2.0-or-later and includes its own original LICENSE.
+
+The implementation under src/tama/backends/fdtdx is provided under
+GPL-3.0-or-later. It incorporates the TAMA_FDTDX 0.1.0 implementation and
+its TAMA integration adapter. The shared tama.nyquist module comes from
+the original GPL-2.0-or-later TAMA source identified above.
+
+External runtime dependencies retain their own licenses:
+
+- FDTDX 0.6.2: MIT; https://github.com/ymahlau/fdtdx
+- JAX 0.11.0 and JAXlib 0.11.0: Apache-2.0;
+  https://github.com/jax-ml/jax
+- Equinox 0.13.8: Apache-2.0; https://github.com/patrick-kidger/equinox
+- Meep: GPL-2.0-or-later; https://github.com/NanoComp/meep
+
+This list identifies the engine and automatic-differentiation dependencies;
+it is not an exhaustive license inventory of transitive dependencies or binary
+wheel contents. Refer to each dependency's distributed license and notices.
+FDTDX and Meep remain separately installed dependencies. No FDTDX engine
+implementation is vendored or patched. fdtdx_source_sha256.json records the
+official FDTDX 0.6.2 Python engine artifact accepted by the backend.

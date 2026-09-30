@@ -1,5 +1,7 @@
 # MPI Chunk Topology and Source-Boundary Safety
 
+This guide describes the Meep backend. See [backend selection](backends.md) and [FDTDX](fdtdx.md) for the other engine.
+
 Leave `SimulationSpec.chunk_layout` unset to use the default automatic chunk
 balancer. In MPI, before the first value or gradient evaluation, TAMA performs
 one source-free Meep initialization, captures Meep's native

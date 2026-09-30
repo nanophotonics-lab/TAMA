@@ -89,7 +89,7 @@ endif()
 
 Python_add_library(
     native_sampler MODULE WITH_SOABI
-    src/tama/native_sampler.cpp
+    native_sampler.cpp
 )
 target_compile_features(native_sampler PRIVATE cxx_std_17)
 target_include_directories(
@@ -118,4 +118,4 @@ elseif(UNIX)
     )
 endif()
 
-install(TARGETS native_sampler LIBRARY DESTINATION tama)
+install(TARGETS native_sampler LIBRARY DESTINATION tama_meep_native)

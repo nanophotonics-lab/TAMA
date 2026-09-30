@@ -1,11 +1,13 @@
 # Troubleshooting
 
-If `import tama` fails or the native sampler is unavailable or incompatible,
-reinstall TAMA so the required extension is rebuilt:
+This guide describes the Meep backend. See [backend selection](backends.md) and [FDTDX](fdtdx.md) for the other engine.
+
+If the Meep native sampler is unavailable or incompatible, rebuild its separate
+package inside the active Meep/MPI environment:
 
 ```bash
 cd <tama-source-directory>
-python -m pip install --no-build-isolation --no-cache-dir --force-reinstall .
+python -m pip install --no-deps --no-build-isolation --no-cache-dir --force-reinstall ./native/meep
 python -c "import tama; print(tama.__file__); print(tama.native_sampler_available())"
 ```
 

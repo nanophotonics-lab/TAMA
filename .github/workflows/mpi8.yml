@@ -41,22 +41,33 @@ jobs:
             ninja
             gsl
             scikit-build-core
+            python-build
+            setuptools>=77
             autograd
             numpy
             scipy
             pytest
             pip
 
-      - name: Install package
+      - name: Build and install source release
         shell: micromamba-shell {0}
-        run: python -m pip install --no-build-isolation .
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/dist" "$RUNNER_TEMP/wheelhouse" "$RUNNER_TEMP/release"
+          python -m build --sdist --no-isolation --outdir "$RUNNER_TEMP/dist"
+          tar -xzf "$RUNNER_TEMP"/dist/tama-*.tar.gz -C "$RUNNER_TEMP/release"
+          source_dir=$(find "$RUNNER_TEMP/release" -mindepth 1 -maxdepth 1 -type d -name 'tama-*')
+          python -m pip wheel --no-build-isolation --no-deps --wheel-dir "$RUNNER_TEMP/wheelhouse" "$source_dir" "$source_dir/native/meep"
+          python -m pip install --no-deps "$RUNNER_TEMP"/wheelhouse/*.whl
+          echo "TAMA_RELEASE_SOURCE=${source_dir}" >> "$GITHUB_ENV"
 
       - name: Verify native extension
         shell: micromamba-shell {0}
         run: >-
           python -c "from importlib.machinery import EXTENSION_SUFFIXES;
           import importlib.util, tama;
-          origin = importlib.util.find_spec('tama.native_sampler').origin;
+          origin = importlib.util.find_spec('tama_meep_native.native_sampler').origin;
           print(origin);
           assert any(origin.endswith(suffix) for suffix in EXTENSION_SUFFIXES);
           assert tama.native_sampler_available()"
@@ -64,6 +75,8 @@ jobs:
       - name: Verify validation environment
         shell: micromamba-shell {0}
         run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
           grep -q '^VERSION_ID="26.04"$' /etc/os-release
           mpichversion | grep -Eq 'MPICH Version:[[:space:]]+4\.3\.2'
           python -c "import re, sys, meep, mpi4py; from mpi4py import MPI; \
@@ -75,5 +88,8 @@ jobs:
 
       - name: Run mpi8 test group
         shell: micromamba-shell {0}
-        run: >-
-          mpirun -np 8 python -m pytest -q -p no:cacheprovider -m mpi8
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "$TAMA_RELEASE_SOURCE"
+          mpirun -np 8 python -m pytest -q -p no:cacheprovider tests/meep -m mpi8

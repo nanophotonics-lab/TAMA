@@ -15,3 +15,4 @@ export PATH="${CONDA_ENV_PREFIX}/bin:${PATH}"
 export MEEP_CONDA_PREFIX="${CONDA_ENV_PREFIX}"
 
 "${PYTHON_BIN}" -m pip install --no-build-isolation --editable "${SCRIPT_DIR}"
+"${PYTHON_BIN}" -m pip install --no-build-isolation "${SCRIPT_DIR}/native/meep"

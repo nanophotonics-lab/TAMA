@@ -1,5 +1,7 @@
 # Objective Conventions and Targets
 
+This guide describes the Meep backend. See [backend selection](backends.md) and [FDTDX](fdtdx.md) for the other engine.
+
 ## Objective Conventions and Weights
 
 For a real scalar objective and a possibly complex callback history `u`, a

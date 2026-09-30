@@ -5,7 +5,7 @@ import numpy as np
 
 
 EXAMPLE = (
-    Path(__file__).resolve().parents[1]
+    Path(__file__).resolve().parents[2]
     / "examples"
     / "tda_3d_gamma_rgb_router.py"
 )

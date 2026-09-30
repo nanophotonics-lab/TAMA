@@ -1,5 +1,7 @@
 # MultiTDAObjective
 
+This guide describes the Meep backend. See [backend selection](backends.md) and [FDTDX](fdtdx.md) for the other engine.
+
 ## Example
 
 `MultiTDAObjective` is a multi-band temporal-convolution objective. It

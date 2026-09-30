@@ -1,6 +1,6 @@
-"""Import guard used when the required native sampler extension is absent."""
+"""Compatibility alias for the separately built Meep native sampler."""
 
-raise ImportError(
-    "TAMA native sampler extension is not built; reinstall TAMA from "
-    "the active Meep/MPI conda environment"
-)
+from importlib import import_module as _import_module
+import sys as _sys
+
+_sys.modules[__name__] = _import_module(".backends.meep.native_sampler", "tama")

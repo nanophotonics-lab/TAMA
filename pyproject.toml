@@ -1,14 +1,15 @@
 [build-system]
-requires = ["scikit-build-core>=1.0", "numpy"]
-build-backend = "scikit_build_core.build"
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "tama"
-version = "0.5.0a3"
-description = "Time-domain Adjoint with Memory-efficient Acceleration for Meep"
+version = "0.6.0a1"
+description = "Time-domain Adjoint with Memory-efficient Acceleration for Meep and FDTDX"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
-license = { text = "GPL-2.0-or-later" }
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.txt", "licenses/GPL-2.0-or-later.txt", "src/tama/backends/fdtdx/LICENSE"]
 authors = [
   { name = "JaeHyeon Park" }
 ]
@@ -20,7 +21,6 @@ dependencies = [
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)",
   "Operating System :: POSIX :: Linux",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
@@ -28,6 +28,17 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: Implementation :: CPython",
   "Topic :: Scientific/Engineering :: Physics",
+]
+
+[project.optional-dependencies]
+meep = ["tama-meep-native==0.6.0a1"]
+fdtdx = [
+  "fdtdx==0.6.2",
+  "jax==0.11.0",
+  "jaxlib==0.11.0",
+  "equinox==0.13.8",
+  "numpy>=2",
+  "scipy>=1.13",
 ]
 
 [project.urls]
@@ -43,33 +54,21 @@ docs = [
   "sphinx-rtd-theme==3.1.0",
 ]
 
-[tool.scikit-build]
-minimum-version = "1.0"
-cmake.version = ">=3.20"
-wheel.packages = ["src/tama"]
-sdist.inclusion-mode = "explicit"
-sdist.include = [
-  "LICENSE",
-  "CITATION.cff",
-  "README.md",
-  "pyproject.toml",
-  "CMakeLists.txt",
-  "build_native_sampler.sh",
-  "environment.yml",
-  "docs/**",
-  "examples/**",
-  "src/tama/**",
-  "tests/**",
-]
-sdist.exclude = [
-  "**/__pycache__/**",
-  "**/*:Zone.Identifier",
-  "docs/_build/**",
-]
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["tama*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.pyi", "py.typed"]
+"tama.backends.fdtdx" = ["*.json", "LICENSE", "THIRD_PARTY_NOTICES.txt"]
 
 [tool.pytest.ini_options]
-addopts = "--strict-markers"
+addopts = "--strict-markers -m 'not fdtdx_gpu'"
 markers = [
+  "fdtdx_gpu: requires an actual CUDA device; run explicitly for release validation",
   "mpi2: tests scheduled with two MPI ranks",
   "mpi4: tests scheduled with four MPI ranks",
   "mpi8: tests scheduled with eight MPI ranks",

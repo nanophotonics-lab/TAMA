@@ -1,5 +1,7 @@
 # TDAObjective
 
+This guide describes the Meep backend. See [backend selection](backends.md) and [FDTDX](fdtdx.md) for the other engine.
+
 ## Example
 
 Minimal shape of a TAMA time-domain adjoint setup:

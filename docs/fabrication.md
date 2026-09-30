@@ -1,5 +1,7 @@
 # Periodic Fabrication Filter
 
+This guide describes the Meep backend. See [backend selection](backends.md) and [FDTDX](fdtdx.md) for the other engine.
+
 TAMA exposes a normalized conic density filter and its discrete transpose for
 full-cell periodic `MaterialGrid` designs. Array axes follow `DesignGrid.shape`:
 `(x, y)` in 2D and `(x, y, z)` in 3D. Reshape a flat optimizer vector in NumPy

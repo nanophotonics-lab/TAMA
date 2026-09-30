@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  meep:
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     strategy:
@@ -55,6 +55,7 @@ jobs:
             ninja
             gsl
             python-build
+            setuptools>=77
             scikit-build-core
             twine
             autograd
@@ -66,15 +67,21 @@ jobs:
       - name: Build and install source release
         shell: micromamba-shell {0}
         run: |
-          mkdir -p "${RUNNER_TEMP}/dist" "${RUNNER_TEMP}/wheelhouse"
+          #!/usr/bin/env bash
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/dist" "${RUNNER_TEMP}/wheelhouse" "${RUNNER_TEMP}/release"
           python -m build --sdist --no-isolation \
             --outdir "${RUNNER_TEMP}/dist"
           python -m twine check "${RUNNER_TEMP}"/dist/*.tar.gz
+          tar -xzf "${RUNNER_TEMP}"/dist/tama-*.tar.gz -C "${RUNNER_TEMP}/release"
+          source_dir=$(find "${RUNNER_TEMP}/release" -mindepth 1 -maxdepth 1 -type d -name 'tama-*')
           python -m pip wheel --no-build-isolation --no-deps \
             --wheel-dir "${RUNNER_TEMP}/wheelhouse" \
-            "${RUNNER_TEMP}"/dist/*.tar.gz
+            "${source_dir}" "${source_dir}/native/meep"
           python -m pip install --no-deps \
             "${RUNNER_TEMP}"/wheelhouse/*.whl
+          python -m twine check "${RUNNER_TEMP}"/wheelhouse/*.whl
+          echo "TAMA_RELEASE_SOURCE=${source_dir}" >> "$GITHUB_ENV"
 
       - name: Verify installed artifact
         shell: micromamba-shell {0}
@@ -83,7 +90,8 @@ jobs:
           import importlib.util, os, pathlib, subprocess, tama;
           package_dir = pathlib.Path(tama.__file__).parent;
           assert (package_dir / 'py.typed').is_file();
-          origin = importlib.util.find_spec('tama.native_sampler').origin;
+          assert 'site-packages' in package_dir.parts;
+          origin = importlib.util.find_spec('tama_meep_native.native_sampler').origin;
           print(origin);
           dynamic = subprocess.check_output(['readelf', '-d', origin], text=True);
           assert any(origin.endswith(suffix) for suffix in EXTENSION_SUFFIXES);
@@ -94,6 +102,8 @@ jobs:
       - name: Verify validation environment
         shell: micromamba-shell {0}
         run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
           grep -q '^VERSION_ID="26.04"$' /etc/os-release
           mpichversion | grep -Eq 'MPICH Version:[[:space:]]+4\.3\.2'
           python -c "import re, sys, meep, mpi4py; from mpi4py import MPI; \
@@ -111,18 +121,60 @@ jobs:
       - name: Run serial tests
         if: matrix.run_tests
         shell: micromamba-shell {0}
-        run: python -m pytest -q
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "$TAMA_RELEASE_SOURCE"
+          python -m pytest -q tests/common tests/meep
 
       - name: Run mpi2 test group
         if: matrix.run_tests
         shell: micromamba-shell {0}
-        run: >-
-          mpirun -np 2 python -m pytest -q -p no:cacheprovider
-          -m mpi2
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "$TAMA_RELEASE_SOURCE"
+          mpirun -np 2 python -m pytest -q -p no:cacheprovider tests/meep -m mpi2
 
       - name: Run mpi4 test group
         if: matrix.run_tests
         shell: micromamba-shell {0}
-        run: >-
-          mpirun -np 4 python -m pytest -q -p no:cacheprovider
-          -m mpi4
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "$TAMA_RELEASE_SOURCE"
+          mpirun -np 4 python -m pytest -q -p no:cacheprovider tests/meep -m mpi4
+
+  fdtdx-cpu:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    env:
+      JAX_PLATFORMS: cpu
+      PYTHONPATH: ""
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Build and install pure release without Meep
+        run: |
+          python -m pip install "setuptools>=77" build twine pytest
+          mkdir -p "$RUNNER_TEMP/dist" "$RUNNER_TEMP/release"
+          python -m build --no-isolation --outdir "$RUNNER_TEMP/dist"
+          python -m twine check "$RUNNER_TEMP"/dist/*
+          wheel=("$RUNNER_TEMP"/dist/tama-*-py3-none-any.whl)
+          python -m pip install "${wheel[0]}[fdtdx]"
+          tar -xzf "$RUNNER_TEMP"/dist/tama-*.tar.gz -C "$RUNNER_TEMP/release"
+          source_dir=$(find "$RUNNER_TEMP/release" -mindepth 1 -maxdepth 1 -type d -name 'tama-*')
+          echo "TAMA_RELEASE_SOURCE=${source_dir}" >> "$GITHUB_ENV"
+          python -c "import importlib.util, pathlib, tama; assert importlib.util.find_spec('meep') is None; assert importlib.util.find_spec('tama_meep_native') is None; assert 'site-packages' in pathlib.Path(tama.__file__).parts"
+      - name: Run installed CPU backend and isolation checks
+        run: |
+          cd "$TAMA_RELEASE_SOURCE"
+          python -m pytest -q tests/common tests/fdtdx -m 'not fdtdx_gpu'
