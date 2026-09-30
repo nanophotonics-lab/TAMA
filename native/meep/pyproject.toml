@@ -1,0 +1,27 @@
+[build-system]
+requires = ["scikit-build-core>=1.0", "numpy"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "tama-meep-native"
+version = "0.6.0a1"
+description = "Meep/MPI native sampler for TAMA"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = { text = "GPL-2.0-or-later" }
+authors = [{ name = "JaeHyeon Park" }]
+dependencies = ["numpy"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)",
+  "Programming Language :: Python :: 3",
+  "Operating System :: POSIX :: Linux",
+]
+
+[tool.scikit-build]
+minimum-version = "1.0"
+cmake.version = ">=3.20"
+wheel.packages = ["src/tama_meep_native"]
+sdist.inclusion-mode = "explicit"
+sdist.include = ["LICENSE", "README.md", "pyproject.toml", "CMakeLists.txt", "native_sampler.cpp", "src/tama_meep_native/**"]
+sdist.exclude = ["**/__pycache__/**", "**/*:Zone.Identifier"]

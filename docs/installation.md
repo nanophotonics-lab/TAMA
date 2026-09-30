@@ -1,105 +1,80 @@
 # Installation
 
-## Environment
+## Python package
 
-The validated source-build environment is listed below. All Python, PyMeep,
-MPI, compiler, and TAMA components must come from the same conda environment
-because the native extension links directly to Meep and MPI.
+TAMA is a pure Python package containing both backend implementations. Installing
+it alone does not install an FDTD engine or build a native module:
 
-| Component | Validated support |
-|---|---|
-| Operating system | Ubuntu 26.04 x86_64 |
-| Python | CPython 3.11, 3.12, or 3.13 |
-| Meep | conda-forge PyMeep 1.34.0 `mpi_mpich` build |
-| MPI | MPICH 4.3.2 with mpi4py 4.1.2 |
-| Distribution | Source archive/sdist built inside the target environment |
-| Validated execution | Serial and MPI with 2/4/8 ranks on Python 3.11-3.13 |
+```bash
+python -m pip install .
+python -c "import tama; print(tama.__version__)"
+```
 
-OpenMPI, macOS, and Windows are outside the validated support matrix for this
-release. Prebuilt binary wheels are not distributed, and a locally built wheel
-must not be copied between conda environments. Use a conda environment with
-MPI-enabled Meep and the Python dependencies used by the example scripts.
+Run these commands from the root of a cloned repository or unpacked source
+distribution. The source includes `native/meep`, so it is sufficient to build
+both distributions. The commands use local source paths and do not depend on
+`0.6.0a1` being available on a public package index.
 
-From a source checkout, create the validated environment with:
+## FDTDX
+
+Use Python 3.12 or 3.13. The exact dependencies are FDTDX 0.6.2,
+JAX/JAXlib 0.11.0 and Equinox 0.13.8, with NumPy >=2 and SciPy >=1.13.
+JAX's Python requirement prevents selecting this extra on Python 3.11;
+the Meep Python 3.11 support remains available.
+
+```bash
+python -m pip install '.[fdtdx]'
+# Linux/WSL CUDA 12 setup, if not already installed in this environment:
+python -m pip install 'jax[cuda12]==0.11.0'
+JAX_PLATFORMS=cuda python -c "import jax, tama; print(jax.devices()); print(tama.get_backend('fdtdx'))"
+```
+
+The tested GPU lane uses the CUDA 12 plugin/PJRT version 0.11.0 and an NVIDIA
+driver suitable for that runtime. This command does not install the host driver.
+CPU evaluation is available for small tests; CPU offload requires an actual
+CUDA device. CUDA on native Windows is not validated; use Linux or WSL.
+FDTDX selection never falls back to Meep or silently accepts CPU for a GPU test.
+
+Float64/complex128 scenes require `jax.config.update('jax_enable_x64', True)`
+before creating native arrays. Use `False` before constructing float32/complex64
+scenes; mixed-precision field/source caches are rejected.
+
+## Meep
+
+The existing conda environment definition retains PyMeep 1.34.0 MPICH,
+MPICH 4.3.2, mpi4py 4.1.2, the compiler and native build dependencies.
+Python 3.11, 3.12 and 3.13 are covered by the CI matrix, including the original
+NumPy 1.26 compatibility lane. See
+[integration validation](refactor-validation.md) for locally executed versions
+and tests; a configured CI matrix is not itself a completed run.
 
 ```bash
 conda env create -f environment.yml
 conda activate tama
+python -m pip install .
+python -m pip install --no-build-isolation ./native/meep
+python -c "import tama; print(tama.get_backend('meep').native_sampler_available())"
+python -c "import tama_meep_native.native_sampler as n; print(n.__file__)"
 ```
 
-The equivalent manual environment creation command is:
+The last path must point to a compiled extension. `build_native_sampler.sh`
+provides the combined installation helper. Rebuild the native package after
+changing PyMeep, MPI or the compiler environment, even if version strings match.
+Local native wheels are environment-specific; they are not portable Meep wheels.
+OpenMPI, macOS and native Windows builds are outside the validated native lane.
 
-```bash
-conda create -n <env-name> --override-channels -c conda-forge \
-  python=3.11 \
-  "pymeep=1.34.0=mpi_mpich_*" \
-  mpi4py=4.1.2 mpich=4.3.2 cxx-compiler cmake ninja pip \
-  "scikit-build-core>=1.0" gsl \
-  nlopt scipy matplotlib autograd numpy pytest
-conda activate <env-name>
-```
+The `meep` extra depends on `tama-meep-native==0.6.0a1`; it does not install
+PyMeep from PyPI. Build the native distribution locally before using the extra.
+The pure wheel and native wheel have different distribution names, so wheel
+selection no longer ambiguously chooses an engine build of the same package.
 
-For an existing environment:
+## Migrating an existing installation
 
-```bash
-conda activate <env-name>
-conda install --override-channels -c conda-forge \
-  "pymeep=1.34.0=mpi_mpich_*" \
-  mpi4py=4.1.2 mpich=4.3.2 cxx-compiler cmake ninja pip \
-  "scikit-build-core>=1.0" gsl \
-  nlopt scipy matplotlib autograd numpy pytest
-```
+Reinstall the core package and install the new native package in the existing
+Meep environment. Root-level Meep classes and old Python submodule paths remain
+available as aliases. Old extensions under `tama/native_sampler.so` are not the
+new native package: verify the `tama_meep_native` path shown above.
 
-Check the environment:
-
-```bash
-python -c "import meep as mp; print(mp.__version__)"
-which python
-which mpic++
-```
-
-## Install From Source
-
-From a source checkout or unpacked source release, install TAMA into the
-active environment:
-
-```bash
-cd <tama-source-directory>
-python -m pip install --no-build-isolation .
-python -c "import tama; print(tama.__version__); print(tama.native_sampler_available())"
-```
-
-## Native Sampler
-
-TAMA includes a C++ extension for field sampling, exact point-monitor
-transposes, and native MaterialGrid-transpose gradients. This extension is
-required for all TAMA runtime use. The normal package installation builds
-it automatically with CMake using Python, NumPy, MPI, and Meep from the active
-conda environment.
-
-Verify that the installed package can find the native sampler:
-
-```bash
-python -c "import tama; print(tama.__version__); print(tama.native_sampler_available())"
-python -c "import importlib.util; print(importlib.util.find_spec('tama.native_sampler').origin)"
-```
-
-After a successful build, `native_sampler_available()` should print `True` and
-the module origin should end with the platform's compiled-extension suffix
-(for example, `.so` on Linux). If package configuration cannot find Meep or
-MPI, activate the conda environment containing the MPI-enabled pymeep build and
-install the package again.
-
-Importing TAMA requires the compiled extension. Rebuild TAMA after updating or
-rebuilding PyMeep, even when the Meep version string is unchanged.
-
-## Basic Imports
-
-After installation, scripts can import TAMA from any working directory in
-the same Python environment.
-
-```python
-import meep as mp
-import numpy as np
-import tama as tm
-```
+For FDTDX, install the core with its `fdtdx` extra. The former standalone
+`tama_fdtdx` package is not needed by this version. Scene and target conventions
+are described in [backend migration](backends.md) and [FDTDX](fdtdx.md).

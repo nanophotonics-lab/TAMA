@@ -1,0 +1,20 @@
+This TAMA FDTDX adapter is licensed under the GNU General Public License,
+version 3 or, at your option, any later version (GPL-3.0-or-later).
+See the adjacent LICENSE and the repository's THIRD_PARTY_NOTICES.txt.
+
+This adapter incorporates the TAMA_FDTDX 0.1.0 implementation. External
+dependencies and original TAMA code retain their own licenses.
+
+The standalone _nyquist.py was copied from TAMA commit
+587c3afd063cf26ca3547607d3939c91cfa78c75, src/tama/nyquist.py,
+licensed GPL-2.0-or-later. The refactored component imports that same shared
+tama.nyquist implementation instead of distributing a duplicate copy.
+
+FDTDX 0.6.2 is an external MIT-licensed engine dependency:
+https://github.com/ymahlau/fdtdx
+JAX 0.11.0, JAXlib 0.11.0 and Equinox 0.13.8 are external Apache-2.0-licensed
+dependencies; their own distributed license files and notices apply.
+No engine implementation files are vendored or patched.
+fdtdx_source_sha256.json records the official Python source files accepted by
+the version compatibility guard. These notices do not claim an exhaustive audit
+of transitive dependencies or binary wheel contents.

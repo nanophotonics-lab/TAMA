@@ -1,0 +1,60 @@
+name: FDTDX CUDA release validation
+
+# Run on a reviewed commit before releasing. Untrusted pull requests must never
+# run on the persistent GPU host.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tama-fdtdx-cuda
+  cancel-in-progress: false
+
+jobs:
+  cuda:
+    runs-on: [self-hosted, linux, x64, cuda]
+    timeout-minutes: 60
+    env:
+      JAX_PLATFORMS: cuda
+      XLA_PYTHON_CLIENT_PREALLOCATE: "false"
+      PYTHONPATH: ""
+      MPLBACKEND: Agg
+      OMP_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Build and install in a fresh environment
+        run: |
+          python -m venv "$RUNNER_TEMP/fdtdx-venv"
+          echo "$RUNNER_TEMP/fdtdx-venv/bin" >> "$GITHUB_PATH"
+          source "$RUNNER_TEMP/fdtdx-venv/bin/activate"
+          python -m pip install "setuptools>=77" build pytest
+          mkdir -p "$RUNNER_TEMP/dist" "$RUNNER_TEMP/release" "$RUNNER_TEMP/gpu-results"
+          python -m build --no-isolation --outdir "$RUNNER_TEMP/dist"
+          wheel=("$RUNNER_TEMP"/dist/tama-*-py3-none-any.whl)
+          python -m pip install "${wheel[0]}[fdtdx]" "jax[cuda12]==0.11.0"
+          tar -xzf "$RUNNER_TEMP"/dist/tama-*.tar.gz -C "$RUNNER_TEMP/release"
+          source_dir=$(find "$RUNNER_TEMP/release" -mindepth 1 -maxdepth 1 -type d -name 'tama-*')
+          echo "TAMA_RELEASE_SOURCE=${source_dir}" >> "$GITHUB_ENV"
+      - name: Verify actual CUDA device and installed artifact
+        run: |
+          nvidia-smi > "$RUNNER_TEMP/gpu-results/nvidia-smi.txt"
+          python -m pip freeze > "$RUNNER_TEMP/gpu-results/environment.txt"
+          python -c "import importlib.util, pathlib, jax, tama; print(jax.devices()); assert jax.default_backend() == 'gpu'; assert all(device.platform == 'gpu' for device in jax.devices()); assert importlib.util.find_spec('meep') is None; assert 'site-packages' in pathlib.Path(tama.__file__).parts"
+      - name: Run numerical, sparse and offload release checks
+        shell: bash
+        run: |
+          cd "$TAMA_RELEASE_SOURCE"
+          python -m pytest -q tests/fdtdx -m fdtdx_gpu --basetemp "$RUNNER_TEMP/gpu-tests" --junitxml "$RUNNER_TEMP/gpu-results/junit.xml" | tee "$RUNNER_TEMP/gpu-results/pytest.txt"
+      - name: Preserve validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fdtdx-cuda-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/gpu-results
+            ${{ runner.temp }}/gpu-tests
