@@ -1,35 +1,55 @@
-# Running and Testing
+# Running and testing
 
-## Running
+Install the built distribution into the test environment first. Tests must not
+prepend `src` or the former standalone FDTDX package to PYTHONPATH. Test scenes
+are loaded from examples, while implementation imports come from the installed
+package. Common tests use subprocesses to check import isolation.
 
-Install TAMA in the active environment, then run scripts from any working
-directory in that environment.
-
-Single process:
-
-```bash
-python <path-to-your-script.py>
-```
-
-MPI:
+## Meep
 
 ```bash
-mpirun -np 4 python <path-to-your-script.py>
+python examples/tda_3d_projected_gradient.py --iterations 1
+python examples/tda_3d_gamma_rgb_router.py --dry-run
+python examples/tda_cylindrical_mode.py --target point
+python -m pytest -q tests/common tests/meep
+mpirun -np 2 python -m pytest -q -p no:cacheprovider tests/meep -m mpi2
+mpirun -np 4 python -m pytest -q -p no:cacheprovider tests/meep -m mpi4
+mpirun -np 8 python -m pytest -q -p no:cacheprovider tests/meep -m mpi8
 ```
 
-## Testing
+The existing Meep CI builds the core source distribution, then builds and
+installs the pure core and native sampler from that unpacked source release.
+It retains the Python and NumPy compatibility lanes and the weekly MPI-8 job.
 
-Run the test suite from a source checkout in the same Meep environment:
+## FDTDX
 
 ```bash
-cd <tama-source-directory>
-python -m pytest -q
+JAX_PLATFORMS=cpu python -m pytest -q tests/common tests/fdtdx -m 'not fdtdx_gpu'
+JAX_PLATFORMS=cuda XLA_PYTHON_CLIENT_PREALLOCATE=false \
+  python -m pytest -q tests/fdtdx -m fdtdx_gpu
+JAX_PLATFORMS=cuda XLA_PYTHON_CLIENT_PREALLOCATE=false \
+  python tests/fdtdx/run_validation.py --output verification/fdtdx
+JAX_PLATFORMS=cuda XLA_PYTHON_CLIENT_PREALLOCATE=false \
+  python examples/fdtdx/optimize_broadband.py --cpu-offload on --iterations 3
 ```
 
-Run the MPI marker groups with their matching rank counts:
+Ordinary pytest excludes the marked GPU tests by default. Selecting `fdtdx_gpu`
+requires an actual CUDA device and fails if none is available. CPU tests cannot
+certify offload or GPU execution. Backend tests are selected explicitly in CI;
+do not run Meep tests in a Meep-free environment.
 
-```bash
-mpirun -np 2 python -m pytest -q -p no:cacheprovider -m mpi2
-mpirun -np 4 python -m pytest -q -p no:cacheprovider -m mpi4
-mpirun -np 8 python -m pytest -q -p no:cacheprovider -m mpi8
-```
+The manual GPU workflow uses a self-hosted CUDA runner. It does not automatically
+execute untrusted pull-request code on that runner. A maintainer must provision
+the runner and execute the GPU release check on the intended revision; a
+workflow definition alone is not evidence that GitHub Actions has run.
+
+## Release checks
+
+Releases require clean source-distribution builds, installed-artifact import
+checks, legacy module identities, Meep regression including MPI/cylindrical,
+FDTDX CPU/GPU AD and finite differences, sparse rejection and offload parity.
+Changing FDTDX pins or hashes requires rerunning the supported backend matrix.
+Benchmark claims require warmed repeated timing and actual memory measurements;
+diagnostic solver timings do not suffice. See
+[integration validation](refactor-validation.md) for executed checks and
+limitations of the `0.6.0a1` alpha.

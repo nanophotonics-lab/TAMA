@@ -1,5 +1,7 @@
 # Design Gradients and Grid Coordinates
 
+This guide describes the Meep backend. See [backend selection](backends.md) and [FDTDX](fdtdx.md) for the other engine.
+
 Use `centered_grid_coords` when a low-level field-sampling task needs a regular
 coordinate grid centered on a Meep region.
 

@@ -1,5 +1,6 @@
-"""Compatibility imports for the previous sampling-grid module name."""
+"""Compatibility alias for :mod:`tama.backends.meep.fastmeep_grid`."""
 
-from .sampling_grid import FastFieldGrid, FastGradientGrid, native_sampler_available
+from importlib import import_module as _import_module
+import sys as _sys
 
-__all__ = ["FastFieldGrid", "FastGradientGrid", "native_sampler_available"]
+_sys.modules[__name__] = _import_module(".backends.meep.fastmeep_grid", "tama")

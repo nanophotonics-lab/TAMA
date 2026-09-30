@@ -1,59 +1,29 @@
-# Project Layout
-
-## Files
-
-The principal source-release files are:
+# Project layout
 
 ```text
 TAMA/
-├── README.md
-├── LICENSE
-├── CITATION.cff
-├── CMakeLists.txt
-├── pyproject.toml
-├── environment.yml
-├── build_native_sampler.sh
-├── docs/
-│   ├── conf.py
-│   ├── index.md
-│   ├── installation.md
-│   ├── project-layout.md
-│   ├── design-gradients.md
-│   ├── fabrication.md
-│   ├── targets.md
-│   ├── tda-objective.md
-│   ├── multi-tda-objective.md
-│   ├── mpi.md
-│   ├── running-and-testing.md
-│   └── troubleshooting.md
-├── examples/
-│   ├── tda_3d_projected_gradient.py
-│   ├── tda_3d_gamma_rgb_router.py
-│   └── tda_cylindrical_mode.py
-├── src/
-│   └── tama/
-│       ├── __init__.py
-│       ├── adaptive_chunking.py
-│       ├── chunking.py
-│       ├── coords.py
-│       ├── eigenmode.py
-│       ├── fabrication.py
-│       ├── flux.py
-│       ├── fastmeep_grid.py
-│       ├── native_design.py
-│       ├── native_sampler.cpp
-│       ├── native_sampler.py
-│       ├── native_sampler.pyi
-│       ├── nyquist.py
-│       ├── sampling_grid.py
-│       ├── specs.py
-│       ├── multi_tda_objective.py
-│       ├── objectives.py
-│       ├── py.typed
-│       └── tda_objective.py
-└── tests/
+├── pyproject.toml                 # pure Python tama distribution
+├── native/meep/
+│   ├── pyproject.toml             # tama-meep-native distribution
+│   ├── CMakeLists.txt
+│   ├── native_sampler.cpp         # original C++ calculation code
+│   └── src/tama_meep_native/
+├── src/tama/
+│   ├── __init__.py                # lazy legacy exports and get_backend
+│   ├── nyquist.py                 # shared reconstruction coefficients
+│   ├── backends/meep/             # original Meep implementation
+│   ├── backends/fdtdx/            # embedded FDTDX implementation and adapter
+│   └── ...                       # compatibility aliases for old module paths
+├── tests/common/
+├── tests/meep/
+├── tests/fdtdx/
+├── examples/fdtdx/
+├── examples/                     # existing Meep examples retain their paths
+└── docs/
 ```
 
-GitHub source releases contain the Python sources and native-sampler source
-code. Build the native sampler after cloning the repository or unpacking a
-source release.
+FDTDX and Meep engine implementations are separately installed dependencies.
+TAMA does not vendor or patch their engine sources. There is one implementation
+of each backend and one shared Nyquist helper; legacy modules are aliases, not
+copies of the Meep algorithms. Backend-specific filters keep their native
+NumPy/JAX differentiation semantics.
