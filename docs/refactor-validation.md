@@ -6,6 +6,13 @@ were collected on 2026-09-30. The baseline revision is
 explicit Meep and FDTDX backends, preserves the existing numerical code, and
 separates the Meep native build from the pure Python distribution.
 
+The release installation checks were repeated on 2026-10-01 after updating the
+license metadata and CI failure handling. Meep/common tests passed 864 cases
+with 60 skips; MPI tests passed 68, 11 and 4 cases per rank at two, four and
+eight ranks respectively. The combined-engine installation passed 11
+common/FDTDX CPU tests and 14 selected Meep numerical tests. The numerical
+Python implementations and native C++ sampler were unchanged.
+
 ## Preservation and installation
 
 The 13 relocated Meep Python implementations preserve their numerical AST;
@@ -14,8 +21,8 @@ The native C++ sampler is unchanged. Legacy Python modules alias the relocated
 module objects, preserving class identity and monkeypatch behavior.
 
 FDTDX `specs.py`, `targets.py`, `filters.py` and the engine hash manifest match
-the preceding standalone backend byte for byte. `backend.py` changes only its
-Nyquist import; the other AST nodes are unchanged. The shared Nyquist helper has
+the preceding standalone backend byte for byte. The numerical AST of
+`backend.py` differs only in its Nyquist import. The shared Nyquist helper has
 the same text and AST after normalizing line endings. The public adapter retains
 the preceding integration's behavior, with local package imports.
 
