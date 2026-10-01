@@ -1,7 +1,8 @@
 # Backend validation
 
-This report records validation of TAMA `0.6.0a1`. The numerical results below
-were collected on 2026-09-30. The baseline revision is
+This historical report records validation of TAMA `0.6.0a1` at revision
+`0b66b8a`. Its preservation statements and test counts describe that revision.
+The numerical results below were collected on 2026-09-30. The baseline revision is
 `587c3afd063cf26ca3547607d3939c91cfa78c75`. The change reorganizes TAMA around
 explicit Meep and FDTDX backends, preserves the existing numerical code, and
 separates the Meep native build from the pure Python distribution.
@@ -95,11 +96,13 @@ full-state AD gradient relative error was 1.772e-16; the maximum directional
 finite-difference error was 8.218e-10. This public test was repeated after the
 final selector correction and again passed, without importing Meep.
 
-Sparse histories retained their per-design dense check with `rtol=1e-3` and
-`atol=0`. The public test accepted M=2 at relative gradient error 3.986e-5 and
-rejected M=8 at 0.106314. The internal test accepted M=2 and M=4, and rejected
-M=8 at 0.111648. These are results for those scenes, not generally safe stride
-recommendations. M=1 remains the default.
+At `0b66b8a`, sparse histories retained a per-design dense check with `rtol=1e-3`
+and `atol=0`. The public test accepted M=2 at relative gradient error 3.986e-5
+and rejected M=8 at 0.106314. The internal test accepted M=2 and M=4, and
+rejected M=8 at 0.111648. That automatic comparison and rejection have since
+been removed; current evaluations run only the requested stride. The recorded
+errors remain results for those scenes, not generally safe stride recommendations
+or validation of the removal. M=1 remains the default.
 
 Four CPU checks (specifications, functionals, API and adapter) passed. They
 include rejection of non-finite derivatives and a deliberately incorrect

@@ -10,8 +10,10 @@ This alpha introduces the combined backend package following TAMA 0.5.0a3.
 - Preserve old Meep exports and Python submodules through lazy aliases.
 - Integrate the TAMA FDTDX backend, examples and numerical checks; remove the separate
   tama-fdtdx runtime dependency and duplicate Nyquist implementation.
-- Retain strict engine pins/source checks, M=1 default, per-design sparse
-  verification, and CPU history offload on/off with OFF as the default.
+- Retain strict engine pins/source checks, M=1 default, and CPU history offload
+  on/off with OFF as the default.
+- Run sparse-history gradients only at the requested stride; remove automatic
+  per-design dense comparisons.
 - Separate common, Meep and FDTDX tests and provide installed-artifact CPU,
   MPI and manual CUDA workflow paths.
 - License the integrated TAMA distribution under GPL-3.0-or-later, retain

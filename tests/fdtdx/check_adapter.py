@@ -93,6 +93,28 @@ def main():
     np.testing.assert_allclose(reference_gradient, gradient, rtol=1e-10, atol=1e-14)
     validation = objective.validate(x, directions=1)
     assert validation["passed"] and objective.last_info is None
+
+    # Sparse evaluation must not allocate or execute a dense history run.
+    run = backend.MultiTDAObjective._run
+    calls = []
+
+    def sparse_run(self, rho, inv, stride, cpu_offload):
+        calls.append((stride, cpu_offload))
+        assert stride == 8, "Sparse evaluation started a dense run"
+        return run(self, rho, inv, stride, cpu_offload)
+
+    for targets_arg in ({"target": target}, {"targets": [target]}):
+        constructor = tm.TDAObjective if "target" in targets_arg else tm.MultiTDAObjective
+        sparse = constructor(**common, **targets_arg, sampling_interval=8)
+        calls.clear()
+        with patch.object(backend.MultiTDAObjective, "_run", sparse_run):
+            sparse_value, sparse_gradient = sparse(x)
+        assert calls == [(8, False)]
+        assert np.isfinite(sparse_value) and np.isfinite(sparse_gradient).all()
+        assert np.linalg.norm(sparse_gradient) > 0
+        assert sparse.last_info["stride"] == 8
+        assert sparse.last_info["d2h_bytes"] == sparse.last_info["h2d_bytes"] == 0
+
     scaled = tm.TDAObjective(**common, target=target, fom_fn=callback,
                              scalarization_fn=lambda values: 2 * jnp.sum(values))
     scaled_value, scaled_gradient = scaled(x)

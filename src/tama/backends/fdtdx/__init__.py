@@ -28,7 +28,7 @@ class MultiTDAObjective:
     """Native FDTDX multi-band objective accepting a flat design vector.
 
     ``sampling_interval`` is the native history stride. Values greater than one
-    retain the backend's mandatory dense gradient check at every design.
+    reconstruct electric histories from sparse samples.
     ``reconstruction_half_width`` is the native sinc reconstruction half-width.
     Other settings keep their native meanings; Meep geometry, wavelength bands,
     component constants, callback signatures and normalization are not converted.
@@ -41,14 +41,12 @@ class MultiTDAObjective:
 
     def __init__(self, *, simulation, design, targets, bands=None,
                  scalarization_fn=None, sampling_interval=1, block_steps=64,
-                 reconstruction_half_width=64, cpu_offload=False,
-                 sparse_rtol=1e-3, sparse_atol=0.0):
+                 reconstruction_half_width=64, cpu_offload=False):
         self._native_objective = _NativeMultiTDAObjective(
             simulation, design, targets, bands=bands,
             scalarization_fn=scalarization_fn, stride=sampling_interval,
             block_steps=block_steps, half_width=reconstruction_half_width,
-            cpu_offload=cpu_offload, sparse_rtol=sparse_rtol,
-            sparse_atol=sparse_atol,
+            cpu_offload=cpu_offload,
         )
 
     @property
@@ -85,8 +83,8 @@ class MultiTDAObjective:
 
         Value-only evaluation calls the native forward value path, without an
         adjoint or stored design histories. A valid offload flag has no effect
-        on that path. Native input validation and sparse accuracy errors remain
-        active; no alternate solver is selected when an evaluation fails.
+        on that path. Native input validation remains active; no alternate
+        solver is selected when an evaluation fails.
         """
         self._native_objective.last_info = None
         if type(need_gradient) is not bool:
@@ -129,12 +127,10 @@ class TDAObjective(MultiTDAObjective):
 
     def __init__(self, *, simulation, design, target, kernel=None, fom_fn=None,
                  scalarization_fn=None, sampling_interval=1, block_steps=64,
-                 reconstruction_half_width=64, cpu_offload=False,
-                 sparse_rtol=1e-3, sparse_atol=0.0):
+                 reconstruction_half_width=64, cpu_offload=False):
         self._native_objective = _NativeTDAObjective(
             simulation, design, target, kernel=kernel, fom_fn=fom_fn,
             scalarization_fn=scalarization_fn,
             stride=sampling_interval, block_steps=block_steps,
             half_width=reconstruction_half_width, cpu_offload=cpu_offload,
-            sparse_rtol=sparse_rtol, sparse_atol=sparse_atol,
         )

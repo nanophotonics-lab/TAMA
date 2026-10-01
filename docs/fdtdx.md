@@ -67,11 +67,9 @@ observations grow. This structure is independent of sparse-history acceleration.
 
 `sampling_interval=M` saves the design electric-field history every M FDTD time
 steps. The FDTD step and target sampling are unchanged. M=1 is the default exact
-discrete adjoint path. For M>1, every evaluation runs a dense reference at the
-same design and checks the gradient L2 error (default relative tolerance 1e-3).
-A failed comparison raises `AccuracyError`. CUDA dense verification always
-offloads its history, even when the primary run uses `cpu_offload=False`.
-The default M=1 path does not run this extra dense verification.
+discrete adjoint path. For M>1, each evaluation runs only the requested sparse
+stride, without a dense reference comparison. Its gradient approximation error
+depends on the sampling interval and reconstruction.
 
 **CPU offload defaults to OFF** (`cpu_offload=False`). On CUDA,
 `cpu_offload=True` stores design histories in pinned CPU memory; `False` stores
