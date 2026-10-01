@@ -1,10 +1,12 @@
 """CPU checks of public API guards and actual custom-derivative rejection."""
 
 from dataclasses import replace
+from importlib import import_module
 import json
 from pathlib import Path
 import sys
 import time
+from unittest.mock import patch
 
 
 import jax
@@ -15,7 +17,8 @@ jax.config.update("jax_enable_x64", True)
 
 from _scene import make_scene
 from tama.backends.fdtdx import Band, PointTarget
-from tama.backends.fdtdx.backend import AccuracyError, MultiTDAObjective, TDAObjective
+from tama.backends.fdtdx.backend import (AccuracyError, MultiTDAObjective, TDAObjective,
+                                        verify_fdtdx_compatibility, verify_fdtdx_sources)
 from tama.backends.fdtdx.targets import make_loss
 
 
@@ -28,8 +31,32 @@ def rejected(fn, exception, phrase):
     raise AssertionError(f"expected {exception.__name__} containing {phrase!r}")
 
 
+def check_engine_compatibility():
+    import fdtdx
+
+    check = verify_fdtdx_compatibility
+    assert verify_fdtdx_sources is check
+    check.cache_clear()
+    # Local builds need usable APIs, not identical version metadata or sources.
+    with patch("importlib.metadata.version", return_value="0.6.2+local"), \
+            patch.object(fdtdx, "__file__", None):
+        assert check()
+    for module_name, name in (("fdtdx.fdtd.update", "update_H"),
+                              ("equinox.internal", "while_loop")):
+        with patch.object(import_module(module_name), name, None):
+            check.cache_clear()
+            rejected(lambda: MultiTDAObjective(None, None, []), RuntimeError,
+                     f"{module_name}.{name}")
+    with patch("tama.backends.fdtdx.backend.import_module", side_effect=ImportError("missing module")):
+        check.cache_clear()
+        rejected(check, RuntimeError, "requires module fdtdx.core.physics.curl")
+    check.cache_clear()
+    assert check()
+
+
 def main():
     started = time.perf_counter()
+    check_engine_compatibility()
     scene = make_scene(steps=128, periodic_z=True, backend="cpu")
     spec, design, rho = (scene[k] for k in ("spec", "design", "rho"))
     target = PointTarget(scene["target"])
@@ -87,6 +114,7 @@ def main():
         [Band(0, fom_fn=lambda history, dt: jnp.sqrt(jnp.sum(history * 0)))])
     rejected(lambda: nonfinite.evaluate(rho), FloatingPointError, "Nonfinite objective/gradient")
     result = dict(passed=True, backend=jax.default_backend(),
+                  engine_api_compatibility=True,
                   objective_configuration_immutable=True, exact_target_type_guard=True,
                   input_guards_before_fdtd=True, callback_shape_and_dtype_guards=True,
                   stopped_derivative_rejected_by_actual_fdtd_finite_differences=True,

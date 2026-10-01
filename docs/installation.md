@@ -11,33 +11,8 @@ python -c "import tama; print(tama.__version__)"
 ```
 
 Run these commands from the root of a cloned repository or unpacked source
-distribution. The source includes `native/meep`, so it is sufficient to build
-both distributions. The commands use local source paths and do not depend on
-`0.6.0a1` being available on a public package index.
-
-## FDTDX
-
-Use Python 3.12 or 3.13. The exact dependencies are FDTDX 0.6.2,
-JAX/JAXlib 0.11.0 and Equinox 0.13.8, with NumPy >=2 and SciPy >=1.13.
-JAX's Python requirement prevents selecting this extra on Python 3.11;
-the Meep Python 3.11 support remains available.
-
-```bash
-python -m pip install '.[fdtdx]'
-# Linux/WSL CUDA 12 setup, if not already installed in this environment:
-python -m pip install 'jax[cuda12]==0.11.0'
-JAX_PLATFORMS=cuda python -c "import jax, tama; print(jax.devices()); print(tama.get_backend('fdtdx'))"
-```
-
-The tested GPU lane uses the CUDA 12 plugin/PJRT version 0.11.0 and an NVIDIA
-driver suitable for that runtime. This command does not install the host driver.
-CPU evaluation is available for small tests; CPU offload requires an actual
-CUDA device. CUDA on native Windows is not validated; use Linux or WSL.
-FDTDX selection never falls back to Meep or silently accepts CPU for a GPU test.
-
-Float64/complex128 scenes require `jax.config.update('jax_enable_x64', True)`
-before creating native arrays. Use `False` before constructing float32/complex64
-scenes; mixed-precision field/source caches are rejected.
+distribution. Build Meep's native sampler from the included `native/meep` directory
+as shown below.
 
 ## Meep
 
@@ -65,6 +40,30 @@ The `meep` extra depends on `tama-meep-native==0.6.0a1`; it does not install
 PyMeep from PyPI. Build the native distribution locally before using the extra.
 The pure wheel and native wheel have different distribution names, so wheel
 selection no longer ambiguously chooses an engine build of the same package.
+
+## FDTDX
+
+Use Python 3.12 or 3.13. The exact dependencies are FDTDX 0.6.2,
+JAX/JAXlib 0.11.0 and Equinox 0.13.8, with NumPy >=2 and SciPy >=1.13.
+JAX's Python requirement prevents selecting this extra on Python 3.11;
+the Meep Python 3.11 support remains available.
+
+```bash
+python -m pip install '.[fdtdx]'
+# Linux/WSL CUDA 12 setup, if not already installed in this environment:
+python -m pip install 'jax[cuda12]==0.11.0'
+JAX_PLATFORMS=cuda python -c "import jax, tama; print(jax.devices()); print(tama.get_backend('fdtdx'))"
+```
+
+The tested GPU lane uses the CUDA 12 plugin/PJRT version 0.11.0 and an NVIDIA
+driver suitable for that runtime. This command does not install the host driver.
+CPU evaluation is available for small tests; CPU offload requires an actual
+CUDA device. CUDA on native Windows is not validated; use Linux or WSL.
+FDTDX selection never falls back to Meep or silently accepts CPU for a GPU test.
+
+Float64/complex128 scenes require `jax.config.update('jax_enable_x64', True)`
+before creating native arrays. Use `False` before constructing float32/complex64
+scenes; mixed-precision field/source caches are rejected.
 
 ## Migrating an existing installation
 

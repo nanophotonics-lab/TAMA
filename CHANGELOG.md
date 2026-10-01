@@ -10,8 +10,10 @@ This alpha introduces the combined backend package following TAMA 0.5.0a3.
 - Preserve old Meep exports and Python submodules through lazy aliases.
 - Integrate the TAMA FDTDX backend, examples and numerical checks; remove the separate
   tama-fdtdx runtime dependency and duplicate Nyquist implementation.
-- Retain strict engine pins/source checks, M=1 default, and CPU history offload
+- Retain tested dependency pins, M=1 default, and CPU history offload
   on/off with OFF as the default.
+- Use a cached FDTDX/Equinox API compatibility check in place of strict runtime
+  version and source-hash checks.
 - Run sparse-history gradients only at the requested stride; remove automatic
   per-design dense comparisons.
 - Separate common, Meep and FDTDX tests and provide installed-artifact CPU,

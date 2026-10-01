@@ -1,4 +1,4 @@
-"""TAMA evaluation interface over the unchanged FDTDX engine.
+"""TAMA evaluation interface over the FDTDX engine.
 
 Scene, target, band and callback definitions retain their FDTDX conventions.
 Only the design-vector shape and evaluation result follow the common TAMA API.
@@ -11,14 +11,14 @@ from .targets import (Band, EigenmodeCoefficientTarget, FieldRegionTarget,
                       FluxTarget, PointTarget)
 from .filters import (bandpass_kernel, periodic_conic_filter,
                       power_complementary_kernels, tanh_projection)
-from .backend import (AccuracyError, verify_fdtdx_sources,
+from .backend import (AccuracyError, verify_fdtdx_compatibility, verify_fdtdx_sources,
                       MultiTDAObjective as _NativeMultiTDAObjective,
                       TDAObjective as _NativeTDAObjective)
 
 __all__ = [
     "SimulationSpec", "DesignGrid", "PointTarget", "FieldRegionTarget",
     "FluxTarget", "EigenmodeCoefficientTarget", "Band", "TDAObjective",
-    "MultiTDAObjective", "AccuracyError", "verify_fdtdx_sources",
+    "MultiTDAObjective", "AccuracyError", "verify_fdtdx_compatibility", "verify_fdtdx_sources",
     "bandpass_kernel", "power_complementary_kernels",
     "periodic_conic_filter", "tanh_projection",
 ]

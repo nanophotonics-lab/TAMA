@@ -63,7 +63,7 @@ include = ["tama*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.pyi", "py.typed"]
-"tama.backends.fdtdx" = ["*.json", "LICENSE", "THIRD_PARTY_NOTICES.txt"]
+"tama.backends.fdtdx" = ["LICENSE", "THIRD_PARTY_NOTICES.txt"]
 
 [tool.pytest.ini_options]
 addopts = "--strict-markers -m 'not fdtdx_gpu'"
