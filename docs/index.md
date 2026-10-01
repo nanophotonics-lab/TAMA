@@ -18,7 +18,6 @@ tda-objective
 multi-tda-objective
 mpi
 running-and-testing
-refactor-validation
 troubleshooting
 ```
 

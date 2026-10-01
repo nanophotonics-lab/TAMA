@@ -66,7 +66,6 @@ There is no separate `tama-fdtdx` runtime package to install.
 - [Meep design gradients](docs/design-gradients.md), [single target](docs/tda-objective.md), [multiple targets](docs/multi-tda-objective.md)
 - [Tests and release checks](docs/running-and-testing.md)
 - [Project layout](docs/project-layout.md)
-- [Integration validation](docs/refactor-validation.md)
 
 FDTDX defaults to `sampling_interval=1` and **CPU offload OFF**
 (`cpu_offload=False`; example CLI: `--cpu-offload off`). Each gradient evaluation
