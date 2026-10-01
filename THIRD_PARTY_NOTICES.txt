@@ -31,5 +31,4 @@ This list identifies the engine and automatic-differentiation dependencies;
 it is not an exhaustive license inventory of transitive dependencies or binary
 wheel contents. Refer to each dependency's distributed license and notices.
 FDTDX and Meep remain separately installed dependencies. No FDTDX engine
-implementation is vendored or patched. fdtdx_source_sha256.json records the
-official FDTDX 0.6.2 Python engine artifact accepted by the backend.
+implementation is vendored or patched.

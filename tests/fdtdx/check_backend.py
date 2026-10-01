@@ -10,7 +10,7 @@ import numpy as np
 from tama.backends.fdtdx.backend import MultiTDAObjective, TDAObjective
 from tama.backends.fdtdx import (PointTarget, FieldRegionTarget,
     FluxTarget, EigenmodeCoefficientTarget, Band, bandpass_kernel, DesignGrid,
-    periodic_conic_filter, tanh_projection, verify_fdtdx_sources)
+    periodic_conic_filter, tanh_projection, verify_fdtdx_compatibility)
 from _scene import make_scene
 
 
@@ -154,11 +154,11 @@ def main():
         assert max(r['relative_gradient_error'] for r in rows[:2]) < 1e-3
         assert rows[-1]['relative_gradient_error'] > 1e-3
         row['sparse'] = rows
-    verify_fdtdx_sources.cache_clear()
-    assert verify_fdtdx_sources()
+    verify_fdtdx_compatibility.cache_clear()
+    assert verify_fdtdx_compatibility()
     output = dict(device=jax.devices()[0].device_kind, versions={n: importlib.metadata.version(n)
                   for n in ('fdtdx','jax','jaxlib','equinox','numpy')}, result=row,
-                  fdtdx_sources_unchanged=True)
+                  fdtdx_api_compatible=True)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(output, indent=2) + '\n')
     print(json.dumps(dict(saved=str(args.output), passed=True)), flush=True)

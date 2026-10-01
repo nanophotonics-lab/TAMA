@@ -34,7 +34,7 @@ def main():
     tm = tama.get_backend('fdtdx')
     assert tm.__name__ == 'tama.backends.fdtdx'
     assert 'tama_fdtdx' not in sys.modules
-    assert tm.verify_fdtdx_sources()
+    assert tm.verify_fdtdx_compatibility()
     jax.config.update('jax_enable_x64', True)
     assert jax.default_backend() == 'gpu', jax.devices()
     scene = make_scene(steps=512)
@@ -97,7 +97,7 @@ def main():
         versions={name: importlib.metadata.version(name) for name in ('fdtdx', 'jax', 'jaxlib', 'numpy')},
         direct_backend_parity=parity, offload=offload, single_target_parity=single_parity,
         full_step_ad=reference, validation=validation, sparse=sparse,
-        meep_imported=False, fdtdx_sources_unchanged=tm.verify_fdtdx_sources())
+        meep_imported=False, fdtdx_api_compatible=tm.verify_fdtdx_compatibility())
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2)+'\n', encoding='utf-8')
     print(json.dumps(result), flush=True)

@@ -1,13 +1,10 @@
-"""External discrete adjoint using unchanged, version-pinned FDTDX kernels.
+"""External discrete adjoint using native FDTDX kernels.
 
 Only electric design histories are retained. FDTD, reconstruction and gradient
 contraction remain on the selected device; CPU offload changes history storage.
 """
 from functools import lru_cache
-import hashlib
-import importlib.metadata
-import json
-from pathlib import Path
+from importlib import import_module
 import time
 
 import jax
@@ -22,20 +19,32 @@ class AccuracyError(RuntimeError):
     """An explicit gradient validation failed its reference check."""
 
 
+_REQUIRED_ENGINE_OPERATIONS = (
+    ('fdtdx.core.physics.curl', ('interpolate_fields',)),
+    ('fdtdx.fdtd.forward', ('forward',)),
+    ('fdtdx.fdtd.update', ('pad_fields_for_boundaries', 'update_E', 'update_H')),
+    ('equinox.internal', ('while_loop',)),
+)
+
+
 @lru_cache(maxsize=1)
-def verify_fdtdx_sources():
-    """Refuse unreviewed engine versions or modified Python kernels."""
-    import fdtdx
-    if importlib.metadata.version('fdtdx') != '0.6.2':
-        raise RuntimeError('This backend is validated only for FDTDX 0.6.2')
-    root = Path(fdtdx.__file__).parent
-    expected = json.loads(Path(__file__).with_name('fdtdx_source_sha256.json').read_text())
-    mismatches = [name for name, digest in expected.items()
-                  if not (root / name).is_file()
-                  or hashlib.sha256((root / name).read_bytes()).hexdigest() != digest]
-    if mismatches:
-        raise RuntimeError(f'FDTDX sources differ from the official wheel: {mismatches}')
+def verify_fdtdx_compatibility():
+    """Check required engine APIs without requiring source or version identity."""
+    missing = []
+    for module_name, names in _REQUIRED_ENGINE_OPERATIONS:
+        try:
+            module = import_module(module_name)
+        except ImportError as error:
+            raise RuntimeError(f'FDTDX backend requires module {module_name}') from error
+        missing.extend(f'{module_name}.{name}' for name in names
+                       if not callable(getattr(module, name, None)))
+    if missing:
+        raise RuntimeError('FDTDX backend is missing required callable APIs: ' + ', '.join(missing))
     return True
+
+
+# Retain the public name for callers; this now checks API availability only.
+verify_fdtdx_sources = verify_fdtdx_compatibility
 
 
 def _positive_int(value, name):
@@ -63,7 +72,7 @@ class MultiTDAObjective:
     def __init__(self, simulation_spec, design_grid, targets, bands=None,
                  scalarization_fn=None, *, stride=1, block_steps=64,
                  half_width=64, cpu_offload=False):
-        verify_fdtdx_sources()
+        verify_fdtdx_compatibility()
         from .specs import SimulationSpec, DesignGrid
         from .targets import PointTarget, FieldRegionTarget, FluxTarget, EigenmodeCoefficientTarget
         if type(simulation_spec) is not SimulationSpec or type(design_grid) is not DesignGrid:
@@ -290,7 +299,7 @@ class MultiTDAObjective:
             history_bytes=sum(x.nbytes for x in blocks), reverse_cache_max_bytes=max_cache_bytes,
             d2h_bytes=d2h_bytes, h2d_bytes=h2d_bytes, forward_s=forward_s,
             loss_s=loss_end - started - forward_s, total_s=time.perf_counter() - started,
-            fdtdx_sources_verified=True, target_history_bytes=sum(v.nbytes for v in y))
+            fdtdx_api_compatible=True, target_history_bytes=sum(v.nbytes for v in y))
         return value, gradient, info
 
     def evaluate(self, rho, *, cpu_offload=None, return_info=False):

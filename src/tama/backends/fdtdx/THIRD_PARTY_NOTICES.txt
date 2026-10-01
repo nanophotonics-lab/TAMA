@@ -15,6 +15,5 @@ https://github.com/ymahlau/fdtdx
 JAX 0.11.0, JAXlib 0.11.0 and Equinox 0.13.8 are external Apache-2.0-licensed
 dependencies; their own distributed license files and notices apply.
 No engine implementation files are vendored or patched.
-fdtdx_source_sha256.json records the official Python source files accepted by
-the version compatibility guard. These notices do not claim an exhaustive audit
-of transitive dependencies or binary wheel contents.
+These notices do not claim an exhaustive audit of transitive dependencies or
+binary wheel contents.

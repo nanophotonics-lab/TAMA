@@ -19,7 +19,7 @@ def test_distribution_uses_gpl3_and_preserves_original_component_license():
 def test_wheel_contains_embedded_backend_and_provenance():
     package_dir = Path(tama.__file__).parent
     assert (package_dir / "py.typed").is_file()
-    assert (package_dir / "backends/fdtdx/fdtdx_source_sha256.json").is_file()
+    assert not (package_dir / "backends/fdtdx/fdtdx_source_sha256.json").exists()
     assert (package_dir / "backends/fdtdx/LICENSE").is_file()
     assert (package_dir / "backends/fdtdx/THIRD_PARTY_NOTICES.txt").is_file()
     distribution_files = [str(path) for path in files("tama")]

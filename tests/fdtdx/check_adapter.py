@@ -32,7 +32,8 @@ def main():
     assert "meep" not in sys.modules
     for name in ("SimulationSpec", "DesignGrid", "PointTarget", "FieldRegionTarget",
                  "FluxTarget", "EigenmodeCoefficientTarget", "Band", "AccuracyError",
-                 "verify_fdtdx_sources", "periodic_conic_filter", "tanh_projection",
+                 "verify_fdtdx_compatibility", "verify_fdtdx_sources",
+                 "periodic_conic_filter", "tanh_projection",
                  "bandpass_kernel", "power_complementary_kernels"):
         origin = next(module for module in (specs, targets, filters, backend) if hasattr(module, name))
         assert getattr(tm, name) is getattr(origin, name), name

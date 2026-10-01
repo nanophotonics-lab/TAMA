@@ -48,6 +48,6 @@ workflow definition alone is not evidence that GitHub Actions has run.
 Releases require clean source-distribution builds, installed-artifact import
 checks, legacy module identities, Meep regression including MPI/cylindrical,
 FDTDX CPU/GPU AD and finite differences, sparse sampling and offload parity.
-Changing FDTDX pins or hashes requires rerunning the supported backend matrix.
+Updating FDTDX dependencies requires rerunning the supported backend matrix.
 Benchmark claims require warmed repeated timing and actual memory measurements;
 diagnostic solver timings do not suffice.

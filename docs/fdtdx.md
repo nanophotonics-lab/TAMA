@@ -1,11 +1,11 @@
 # FDTDX backend
 
-The backend uses unmodified FDTDX 0.6.2 kernels. Exact version pins and the SHA-256
-of 100 official Python engine files are checked before constructing objectives.
-It calls engine update functions and Equinox internal checkpointing APIs;
-unmodified source does not imply compatibility with arbitrary future releases.
-New versions require an audit and numerical regression before updating pins and
-the supported artifact manifest.
+The backend calls native FDTDX kernels without patching the engine. Installation
+pins retain FDTDX 0.6.2 as the tested environment. Before constructing objectives, the cached
+`verify_fdtdx_compatibility()` check verifies the required callable FDTDX APIs
+and Equinox internal `while_loop`. API availability alone does not validate
+changed numerical behavior; dependency updates require numerical regression
+validation.
 
 ## Native scene and density
 
