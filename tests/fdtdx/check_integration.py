@@ -84,14 +84,13 @@ def main():
     for stride in (2, 8):
         obj = tm.MultiTDAObjective(simulation=spec, design=design, targets=targets, bands=bands,
             scalarization_fn=scalarize, sampling_interval=stride, cpu_offload=True)
-        try:
-            obj.evaluate(x)
-        except tm.AccuracyError as exc:
-            assert stride == 8, str(exc)
-            sparse.append(dict(stride=stride, status='rejected', reason=str(exc), info=obj.native_objective.last_info))
-        else:
-            assert stride == 2, 'Expected the known inaccurate M=8 configuration to be rejected'
-            sparse.append(dict(stride=stride, status='passed', info=obj.last_info))
+        sparse_value, sparse_gradient = obj.evaluate(x)
+        error = relative(sparse_gradient, gradient)
+        assert relative(sparse_value, value) < 2e-10
+        assert np.isfinite(error)
+        assert error < 1e-3 if stride == 2 else error > 1e-3
+        assert obj.last_info['history_memory_kind'] == 'pinned_host'
+        sparse.append(dict(stride=stride, relative_gradient_error=error, info=obj.last_info))
     assert 'meep' not in sys.modules
     result = dict(passed=True, tama_version=tama.__version__, tama_path=tama.__file__,
         backend_path=native.__file__, device=str(jax.devices()[0]),

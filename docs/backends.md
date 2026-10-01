@@ -24,8 +24,8 @@ value, gradient = objective(x)
 The common input is a flat real floating design vector. Outputs are a Python
 float and flat NumPy gradient, or `None` for a forward-only evaluation.
 The FDTDX adapter also accepts the exact native parameter shape, while returning
-a flat gradient. Input validation, sparse accuracy errors and the actual engine's
-numerical operations remain active. No alternate engine is tried on failure.
+a flat gradient. Input validation and the actual engine's numerical operations
+remain active. No alternate engine is tried on failure.
 
 ## Configuration boundaries
 
@@ -66,8 +66,8 @@ validation = multi.validate(x, directions=3)
 ```
 
 CPU offload defaults to `False`. Set it on the constructor or override it for a
-gradient evaluation as shown above. On CUDA, the dense reference used to verify
-`sampling_interval>1` always offloads its history, independently of that setting.
+gradient evaluation as shown above. Each gradient evaluation runs only the
+requested sampling interval and respects that offload setting.
 
 `sampling_interval` maps to the native history stride and
 `reconstruction_half_width` maps to the sinc half-width. `native_objective`

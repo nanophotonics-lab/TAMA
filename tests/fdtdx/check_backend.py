@@ -10,7 +10,7 @@ import numpy as np
 from tama.backends.fdtdx.backend import MultiTDAObjective, TDAObjective
 from tama.backends.fdtdx import (PointTarget, FieldRegionTarget,
     FluxTarget, EigenmodeCoefficientTarget, Band, bandpass_kernel, DesignGrid,
-    periodic_conic_filter, tanh_projection, AccuracyError, verify_fdtdx_sources)
+    periodic_conic_filter, tanh_projection, verify_fdtdx_sources)
 from _scene import make_scene
 
 
@@ -140,16 +140,19 @@ def main():
                                    evaluations=int(result.nfev), stop_message=str(result.message))
     if args.case == 'sparse':
         rows = []
+        _, dense_gradient = objective.reference_value_and_grad(rho)
         for stride in (2, 4, 8):
             sparse = MultiTDAObjective(objective.spec, objective.design, objective.targets,
                                       objective.bands, scalarize, stride=stride)
-            try:
-                sparse.evaluate(rho)
-                status = 'passed'
-            except AccuracyError:
-                status = 'rejected'
-            rows.append(dict(status=status, **sparse.last_info))
-        assert any(r['status'] == 'rejected' for r in rows), 'Aliased stride should be rejected'
+            value, gradient = sparse.evaluate(rho)
+            error = relative(gradient, dense_gradient)
+            assert relative(value, row['value']) < 2e-10
+            assert np.isfinite(error)
+            assert sparse.last_info['history_memory_kind'] == 'device'
+            assert sparse.last_info['d2h_bytes'] == sparse.last_info['h2d_bytes'] == 0
+            rows.append(dict(relative_gradient_error=error, **sparse.last_info))
+        assert max(r['relative_gradient_error'] for r in rows[:2]) < 1e-3
+        assert rows[-1]['relative_gradient_error'] > 1e-3
         row['sparse'] = rows
     verify_fdtdx_sources.cache_clear()
     assert verify_fdtdx_sources()

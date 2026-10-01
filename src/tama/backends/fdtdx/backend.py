@@ -19,7 +19,7 @@ from tama.nyquist import _windowed_sinc_stencils
 
 
 class AccuracyError(RuntimeError):
-    """A requested sparse gradient failed its dense reference check."""
+    """An explicit gradient validation failed its reference check."""
 
 
 @lru_cache(maxsize=1)
@@ -51,9 +51,8 @@ class MultiTDAObjective:
     Targets use native integer grid indices, not Meep coordinates. A call returns
     (value, gradient), or (value, gradient, info) with return_info=True.
 
-    stride=1 is the exact discrete adjoint. Every stride>1 evaluation is checked
-    against a dense run at that same density, including after optimizer updates.
-    This deliberately adds validation work; no unchecked sparse mode is exposed.
+    stride=1 is the exact discrete adjoint. Larger strides reconstruct the
+    electric history from sparse samples without an additional dense run.
     """
 
     def __setattr__(self, name, value):
@@ -63,8 +62,7 @@ class MultiTDAObjective:
 
     def __init__(self, simulation_spec, design_grid, targets, bands=None,
                  scalarization_fn=None, *, stride=1, block_steps=64,
-                 half_width=64, cpu_offload=False, sparse_rtol=1e-3,
-                 sparse_atol=0.0):
+                 half_width=64, cpu_offload=False):
         verify_fdtdx_sources()
         from .specs import SimulationSpec, DesignGrid
         from .targets import PointTarget, FieldRegionTarget, FluxTarget, EigenmodeCoefficientTarget
@@ -88,11 +86,6 @@ class MultiTDAObjective:
         if type(cpu_offload) is not bool:
             raise TypeError('cpu_offload must be a Python bool')
         self.cpu_offload = cpu_offload
-        if not np.isfinite(sparse_rtol) or not 0 <= sparse_rtol <= 1e-2:
-            raise ValueError('sparse_rtol must be between 0 and 0.01')
-        if not np.isfinite(sparse_atol) or sparse_atol < 0:
-            raise ValueError('sparse_atol must be finite and nonnegative')
-        self.sparse_rtol, self.sparse_atol = float(sparse_rtol), float(sparse_atol)
         self._loss = make_loss(self.targets, self.bands, self.spec.dt, scalarization_fn)
         self._loss_grad = jax.jit(jax.value_and_grad(self._loss))
         self._kernels = {}
@@ -307,23 +300,6 @@ class MultiTDAObjective:
             raise TypeError('cpu_offload must be a Python bool')
         rho, inv = self._density(rho)
         value, gradient, info = self._run(rho, inv, self.stride, offload)
-        if self.stride > 1:
-            # Strict per-design dense validation costs an extra solve;
-            # an independently proven error estimator is needed to remove it.
-            dense_host = next(iter(inv.devices())).platform == 'gpu'
-            _, dense_gradient, dense_info = self._run(rho, inv, 1, dense_host)
-            difference = float(np.linalg.norm(np.asarray(gradient, dtype=np.float64) - np.asarray(dense_gradient, dtype=np.float64)))
-            norm = float(np.linalg.norm(np.asarray(dense_gradient, dtype=np.float64)))
-            limit = self.sparse_atol + self.sparse_rtol * norm
-            error = difference / norm if norm else (0.0 if difference == 0 else float('inf'))
-            info.update(sparse_relative_gradient_error=error, sparse_absolute_gradient_error=difference,
-                sparse_check_passed=bool(np.isfinite(difference) and np.isfinite(norm) and difference <= limit), validation=dense_info,
-                total_s_including_validation=info['total_s'] + dense_info['total_s'])
-            self.last_info = info
-            if not np.isfinite(difference) or not np.isfinite(norm) or difference > limit:
-                raise AccuracyError(f'Sparse gradient failed: relative L2 error {error:.6g}, '
-                    f'allowed rtol={self.sparse_rtol:g}, atol={self.sparse_atol:g}. '
-                    'Use stride=1, a smaller stride, longer simulation or a wider sinc window.')
         self.last_info = info
         return (value, gradient, info) if return_info else (value, gradient)
 

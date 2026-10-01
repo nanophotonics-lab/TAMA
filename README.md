@@ -69,11 +69,10 @@ There is no separate `tama-fdtdx` runtime package to install.
 - [Integration validation](docs/refactor-validation.md)
 
 FDTDX defaults to `sampling_interval=1` and **CPU offload OFF**
-(`cpu_offload=False`; example CLI: `--cpu-offload off`). Sparse histories with
-`sampling_interval>1` are checked against a dense gradient at every current
-design; a failed accuracy check raises an error. On CUDA, that dense reference
-always offloads its history even when the primary run has offload disabled.
-CPU offload changes history placement, not the FDTD engine.
+(`cpu_offload=False`; example CLI: `--cpu-offload off`). Each gradient evaluation
+runs only the requested sampling interval. Sparse histories with
+`sampling_interval>1` give approximate gradients whose error depends on sampling
+and reconstruction. CPU offload changes history placement, not the FDTD engine.
 
 ## License and provenance
 
