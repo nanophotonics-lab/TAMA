@@ -50,6 +50,4 @@ checks, legacy module identities, Meep regression including MPI/cylindrical,
 FDTDX CPU/GPU AD and finite differences, sparse sampling and offload parity.
 Changing FDTDX pins or hashes requires rerunning the supported backend matrix.
 Benchmark claims require warmed repeated timing and actual memory measurements;
-diagnostic solver timings do not suffice. See
-[integration validation](refactor-validation.md) for executed checks and
-limitations of the `0.6.0a1` alpha.
+diagnostic solver timings do not suffice.

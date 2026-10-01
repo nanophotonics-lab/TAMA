@@ -44,9 +44,7 @@ scenes; mixed-precision field/source caches are rejected.
 The existing conda environment definition retains PyMeep 1.34.0 MPICH,
 MPICH 4.3.2, mpi4py 4.1.2, the compiler and native build dependencies.
 Python 3.11, 3.12 and 3.13 are covered by the CI matrix, including the original
-NumPy 1.26 compatibility lane. See
-[integration validation](refactor-validation.md) for locally executed versions
-and tests; a configured CI matrix is not itself a completed run.
+NumPy 1.26 compatibility lane.
 
 ```bash
 conda env create -f environment.yml
