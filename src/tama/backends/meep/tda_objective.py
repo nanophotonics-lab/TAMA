@@ -12,6 +12,10 @@ from .sampling_grid import (
     FastPointMonitor,
     _require_no_meep_symmetries,
     history_storage_dtype,
+    _uses_material_jacobian,
+    _prepare_native_material,
+    _native_design_components,
+    _native_design_gradient_scale,
 )
 from .native_design import (
     _NativeDesignAccumulator,
@@ -509,6 +513,12 @@ class TDAObjective:
                 cylindrical=self._is_cylindrical,
                 m=getattr(simulation, "m", 0),
             )
+        if (
+            design is not None
+            and simulation is not None
+            and _uses_material_jacobian(simulation, design)
+        ):
+            self.gradient_components = (mp.Ex, mp.Ey, mp.Ez)
         self._native_adjoint_midpoint = (
             False if mixed_surface_target else _is_magnetic_component(component)
         )
@@ -558,8 +568,15 @@ class TDAObjective:
 
     def _make_forward_simulation(self, forward_sources=()):
         if self.chunk_balancer is not None and self._uses_concrete_simulation_spec:
-            return self._simulation_spec.make(forward_sources)
-        return self.sim_factory()
+            sim = self._simulation_spec.make(forward_sources)
+        else:
+            sim = self.sim_factory()
+        try:
+            _prepare_native_material(sim, self.design)
+        except BaseException:
+            sim.reset_meep()
+            raise
+        return sim
 
     def __call__(
         self,
@@ -799,9 +816,13 @@ class TDAObjective:
                 self.history_dtype,
             )
             if need_gradient:
+                gradient_components = _native_design_components(
+                    sim_fwd, self.design, self.gradient_components
+                )
+                gradient_scale = _native_design_gradient_scale(sim_fwd, self.design)
                 native_history = _NativeDesignHistorySet(
                     self.design,
-                    self.gradient_components,
+                    gradient_components,
                     run_history_dtype,
                     lambda shape: self._make_history_memmap(
                         shape,
@@ -1173,9 +1194,10 @@ class TDAObjective:
             else:
                 sim_adj = self._simulation_spec.make(adjoint_sources)
             _require_no_meep_symmetries(sim_adj)
+            _prepare_native_material(sim_adj, self.design)
             native_accumulator = _NativeDesignAccumulator(
                 self.design,
-                self.gradient_components,
+                gradient_components,
                 native_history.signatures,
                 False,
             )
@@ -1222,7 +1244,7 @@ class TDAObjective:
             gradient = (
                 gradient_grid.real.flatten()
                 * dt
-                * self.design.material_factor
+                * gradient_scale
             )
             return objective_value, gradient
         finally:
@@ -1441,9 +1463,13 @@ class TDAObjective:
                 self.history_dtype,
             )
             if need_gradient:
+                gradient_components = _native_design_components(
+                    sim_fwd, self.design, self.gradient_components
+                )
+                gradient_scale = _native_design_gradient_scale(sim_fwd, self.design)
                 native_history = _NativeDesignHistorySet(
                     self.design,
-                    self.gradient_components,
+                    gradient_components,
                     run_history_dtype,
                     lambda shape: self._make_history_memmap(
                         shape,
@@ -1726,13 +1752,14 @@ class TDAObjective:
                     else:
                         sim_adj = self.sim_factory(adjoint_sources)
                 _require_no_meep_symmetries(sim_adj)
+                _prepare_native_material(sim_adj, self.design)
                 _validate_adjoint_source_amplitudes(
                     sim_adj,
                     effective_adjoint_source_amplitudes,
                 )
                 native_accumulator = _NativeDesignAccumulator(
                     self.design,
-                    self.gradient_components,
+                    gradient_components,
                     native_history.signatures,
                     self._native_adjoint_midpoint,
                 )
@@ -1772,7 +1799,7 @@ class TDAObjective:
                 gradient = (
                     grad_grid.real.flatten()
                     * dt
-                    * self.design.material_factor
+                    * gradient_scale
                 )
                 del grad_grid
                 gc.collect()

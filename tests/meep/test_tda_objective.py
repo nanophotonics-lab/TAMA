@@ -13,12 +13,14 @@ from _objective_test_helpers import (
 
 
 class _FakeSimulation:
+    eps_averaging = False
     def __init__(self, dt):
         self.fields = _FakeFields(dt)
         self.resolution = 10
 
 
 class _OneSampleSimulation:
+    eps_averaging = False
     def __init__(self):
         self.fields = _FakeFields(0.1)
         self.resolution = 10
@@ -47,6 +49,10 @@ class _FakeDesign:
         self.dimensions = len(shape)
         self.material_factor = material_factor
         self.is_cylindrical = is_cylindrical
+        self.material_grid = mp.MaterialGrid(
+            mp.Vector3(1, 1), mp.Medium(epsilon=1),
+            mp.Medium(epsilon=1 + material_factor),
+        )
         self.updates = []
 
     def update_weights(self, values):
@@ -54,6 +60,7 @@ class _FakeDesign:
 
 
 class _MultiSampleSimulation:
+    eps_averaging = False
     def __init__(self, dt, steps):
         self.fields = _FakeFields(dt)
         self.resolution = 10
@@ -141,6 +148,7 @@ class _TerminalSampleSimulation(_MultiSampleSimulation):
 
 
 class _FakeSimulationSpec:
+    eps_averaging = False
     def __init__(self, factory, *, dimensions=2, m=0):
         self.factory = factory
         self.resolution = 10

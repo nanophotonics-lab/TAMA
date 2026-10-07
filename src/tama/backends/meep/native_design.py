@@ -11,6 +11,7 @@ from .sampling_grid import (
     FastFieldGrid,
     NativeDesignField,
     _native_design_call,
+    _prepare_native_material,
 )
 from ...nyquist import (
     _limited_reconstruction_blas_threads,
@@ -463,6 +464,7 @@ def _run_native_adjoint_loop(
     reconstruction_window_params,
 ) -> float:
     """Run the adjoint loop with reconstruction and VJP work in C++."""
+    _prepare_native_material(sim, accumulator.design)
     if sampling_interval > 1:
         (
             reconstruction_window,

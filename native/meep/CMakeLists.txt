@@ -65,6 +65,12 @@ find_library(
     PATHS "${TAMA_DEPENDENCY_PREFIX}/lib"
     NO_DEFAULT_PATH
 )
+find_library(
+    CTLGEOM_LIBRARY
+    NAMES ctlgeom
+    PATHS "${TAMA_DEPENDENCY_PREFIX}/lib"
+    NO_DEFAULT_PATH
+)
 find_path(
     GSL_CBLAS_INCLUDE_DIR
     NAMES gsl/gsl_cblas.h
@@ -76,11 +82,12 @@ if(
     NOT MEEP_INCLUDE_DIR
     OR NOT MEEP_LIBRARY
     OR NOT CBLAS_LIBRARY
+    OR NOT CTLGEOM_LIBRARY
     OR NOT GSL_CBLAS_INCLUDE_DIR
 )
     message(
         FATAL_ERROR
-        "Meep headers, Meep library, CBLAS library, or GSL CBLAS headers "
+        "Meep headers, Meep library, libctlgeom, CBLAS library, or GSL CBLAS headers "
         "were not found. "
         "Activate the conda environment containing pymeep or set "
         "MEEP_CONDA_PREFIX."
@@ -103,6 +110,7 @@ target_link_libraries(
     MPI::MPI_CXX
     "${MEEP_LIBRARY}"
     "${CBLAS_LIBRARY}"
+    "${CTLGEOM_LIBRARY}"
 )
 set_target_properties(
     native_sampler PROPERTIES INSTALL_REMOVE_ENVIRONMENT_RPATH TRUE

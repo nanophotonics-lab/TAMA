@@ -34,6 +34,10 @@ from .sampling_grid import (
     FastPointMonitor,
     _require_no_meep_symmetries,
     history_storage_dtype,
+    _uses_material_jacobian,
+    _prepare_native_material,
+    _native_design_components,
+    _native_design_gradient_scale,
 )
 from .native_design import (
     _NativeDesignAccumulator,
@@ -1645,6 +1649,13 @@ class MultiTDAObjective:
             self.gradient_components = tuple(gradient_components)
         else:
             self.gradient_components = ()
+
+        if (
+            self.design is not None
+            and self._simulation_spec is not None
+            and _uses_material_jacobian(self._simulation_spec, self.design)
+        ):
+            self.gradient_components = (mp.Ex, mp.Ey, mp.Ez)
 
         monitor_groups = {}
         for monitor_index, target_component in enumerate(
@@ -3507,8 +3518,15 @@ class MultiTDAObjective:
 
     def _make_forward_simulation(self, forward_sources=()):
         if self.chunk_balancer is None or not self._uses_concrete_simulation_spec:
-            return self.sim_factory()
-        return self._simulation_spec.make(forward_sources)
+            sim = self.sim_factory()
+        else:
+            sim = self._simulation_spec.make(forward_sources)
+        try:
+            _prepare_native_material(sim, self.design)
+        except BaseException:
+            sim.reset_meep()
+            raise
+        return sim
 
     def evaluate(
         self,
@@ -3749,9 +3767,13 @@ class MultiTDAObjective:
                 self.history_dtype,
             )
             if need_gradient:
+                gradient_components = _native_design_components(
+                    sim_fwd, self.design, self.gradient_components
+                )
+                gradient_scale = _native_design_gradient_scale(sim_fwd, self.design)
                 native_history = _NativeDesignHistorySet(
                     self.design,
-                    self.gradient_components,
+                    gradient_components,
                     run_history_dtype,
                     lambda shape: self._make_history_memmap(
                         shape,
@@ -4412,13 +4434,14 @@ class MultiTDAObjective:
             else:
                 sim_adj = self.sim_factory(adjoint_sources)
             _require_no_meep_symmetries(sim_adj)
+            _prepare_native_material(sim_adj, self.design)
             _validate_adjoint_source_amplitudes(
                 sim_adj,
                 effective_adjoint_source_amplitudes,
             )
             native_accumulator = _NativeDesignAccumulator(
                 self.design,
-                self.gradient_components,
+                gradient_components,
                 native_history.signatures,
                 adjoint_midpoint,
             )
@@ -4455,7 +4478,7 @@ class MultiTDAObjective:
             gc.collect()
 
             gradient = (
-                grad_grid * dt * float(self.design.material_factor)
+                grad_grid * dt * gradient_scale
             ).real.flatten()
             del grad_grid
             gc.collect()
