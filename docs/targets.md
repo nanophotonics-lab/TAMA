@@ -327,6 +327,37 @@ default partitioning. All ranks retain the same forward/adjoint ownership.
 per-target spectral objectives through its usual `scalarization_fn`, using one
 forward and one combined adjoint simulation. Each target may have its own
 surfaces, frequencies, points, and FoM. `last_far_fields` is then a tuple of
-target arrays. This mode requires all targets to be `Near2FarTarget` and does
-not accept wavelength bands or temporal FIR filtering; temporal and spectral
-targets cannot be mixed in one objective.
+target arrays. An all-`Near2FarTarget` list does not accept wavelength bands or
+temporal FIR settings.
+
+Near-to-far and temporal targets may also share one objective:
+
+```python
+mixed = tm.MultiTDAObjective(
+    design=design, simulation=simulation, t_final=t_final,
+    targets=[far_target, tm.PointTarget(position=port_point, component=mp.Ez)],
+    wavelength_bands=[None, (1.1, 1.8)],
+    weights=[1.0, 1.0],
+    kernel_length=301,
+    scalarization_fn=lambda values: 0.25 * values[0] + 0.75 * values[1],
+)
+value, gradient = mixed.fom_and_grad(x)
+far_fields = mixed.last_far_fields[0]
+```
+
+In a mixed list, `wavelength_bands` and `weights` have one entry per target.
+Each near-to-far entry requires a `None` band and unit weight. Independent
+temporal filters retain their existing amplitude-weight semantics; a
+power-complementary bank requires all weights to be one. FIR settings apply
+only to temporal entries. Choose objective priorities and any required
+normalization in `scalarization_fn`; the spectral intensity and temporal band
+energy are different quantities and are not normalized against each other.
+
+Callback sequences, scalarization inputs, and `last_band_*` arrays retain the
+complete target order. Near-to-far callbacks receive the spectral array above;
+temporal callbacks receive their usual filtered histories. `last_far_fields`
+contains only the near-to-far arrays, in their relative target order. Mixed
+evaluation still uses one forward run and one combined adjoint run, with the
+same aligned recording endpoint for value-only and gradient calls. The direct
+`SimulationSpec`, mandatory restart, fixed-layout, and physical near-to-far
+constraints above also apply to mixed objectives.

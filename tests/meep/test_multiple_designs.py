@@ -207,17 +207,14 @@ def test_multi_farfield_targets_and_designs_share_one_adjoint(monkeypatch):
     np.testing.assert_allclose(gradient @ direction, differences[-1], rtol=0.005, atol=1e-9)
 
 
-@pytest.mark.parametrize("invalid", ["mixed", "bands", "kernel", "window", "history"])
-def test_multi_farfield_rejects_temporal_and_fir_settings(invalid):
+@pytest.mark.parametrize("invalid", ["bands", "kernel", "window", "history"])
+def test_multi_farfield_rejects_fir_settings(invalid):
     target = tm.Near2FarTarget(
         (mp.Near2FarRegion(center=mp.Vector3(0.72, 0), size=mp.Vector3(0, 1.4)),),
         (0.7,), (mp.Vector3(3, 0.4),),
     )
     options = dict(targets=[target])
-    if invalid == "mixed":
-        options["targets"].append(tm.PointTarget(mp.Vector3(0.82, 0.23), component=mp.Ez))
-        message = "cannot be mixed"
-    elif invalid == "bands":
+    if invalid == "bands":
         options["wavelength_bands"] = [(1.1, 2)]
         message = "PC-FIR"
     else:
