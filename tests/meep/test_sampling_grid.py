@@ -272,7 +272,7 @@ def _exact_design_validation_case(*, center=None, material_factor=None, k_point=
 
 def test_native_sampler_is_required_and_current():
     assert sampling_grid.native_sampler_available()
-    assert sampling_grid.native_sampler.API_VERSION == 12
+    assert sampling_grid.native_sampler.API_VERSION == 13
     assert all(
         callable(getattr(sampling_grid.native_sampler, name, None))
         for name in sampling_grid._REQUIRED_NATIVE_OPERATIONS

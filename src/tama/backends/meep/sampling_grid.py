@@ -10,7 +10,7 @@ from typing import Any, Mapping, Optional, Sequence
 
 from . import native_sampler
 
-_NATIVE_API_VERSION = 12
+_NATIVE_API_VERSION = 13
 _REQUIRED_NATIVE_OPERATIONS = (
     "create_component_grid_plan",
     "sample_component_grid_plan_allreduced",
@@ -45,6 +45,7 @@ _REQUIRED_NATIVE_OPERATIONS = (
     "create_tabulated_real_bspline_bank",
     "shift_tabulated_bspline",
     "create_native_design_plan",
+    "configure_native_material_operator",
     "native_design_plan_local_size",
     "native_design_plan_signature",
     "sample_native_design_plan_into",
@@ -1098,8 +1099,169 @@ def _native_design_call(operation: str, function, *args):
         raise
 
 
+def _is_isotropic_design_medium(medium) -> bool:
+    diagonal = medium.epsilon_diag
+    offdiagonal = medium.epsilon_offdiag
+    return (
+        diagonal.x == diagonal.y == diagonal.z
+        and offdiagonal.x == offdiagonal.y == offdiagonal.z == 0
+    )
+
+
+def _uses_material_jacobian(sim, design) -> bool:
+    """Select the constitutive-operator derivative instead of scalar contrast."""
+    grid = design.material_grid
+    averaging = getattr(sim, "eps_averaging", True)
+    if (
+        (True if averaging is None else averaging)
+        or grid.do_averaging
+        or grid.beta != 0
+        or not _is_isotropic_design_medium(grid.medium1)
+        or not _is_isotropic_design_medium(grid.medium2)
+    ):
+        return True
+    materials = [obj.material for obj in getattr(sim, "geometry", ())]
+    materials += [getattr(sim, "default_material", None)]
+    materials += list(getattr(sim, "extra_materials", ()))
+    for material in materials:
+        if isinstance(material, mp.Medium) and (
+            not _is_isotropic_design_medium(material)
+            or material.mu_offdiag != mp.Vector3()
+        ):
+            return True
+        if callable(material):
+            # A material function may return tensors at individual points.
+            return True
+    return False
+
+
+def _validate_native_material_grid(grid) -> None:
+    """Reject unsupported tensors before Meep can abort or discard components."""
+    # MaterialGrid encodes U_DEFAULT as 3; Meep does not export a Python enum.
+    if grid.grid_type != 3 or grid.damping != 0:
+        raise ValueError("native material gradients require U_DEFAULT and damping=0")
+    if (
+        np.isnan(grid.beta)
+        or grid.beta < 0
+        or not np.isfinite(grid.eta)
+        or not 0 <= grid.eta <= 1
+        or (np.isinf(grid.beta) and grid.eta in (0, 1))
+    ):
+        raise ValueError(
+            "native material gradients require beta>=0 and eta in [0,1] "
+            "(strictly interior for beta=inf)"
+        )
+    permeabilities = []
+    for medium in (grid.medium1, grid.medium2):
+        diagonal = tuple(medium.epsilon_diag)
+        xy, xz, yz = tuple(medium.epsilon_offdiag)
+        epsilon = np.asarray(
+            ((diagonal[0], xy, xz), (xy, diagonal[1], yz), (xz, yz, diagonal[2])),
+            dtype=np.complex128,
+        )
+        if not np.all(np.isfinite(epsilon)) or np.any(epsilon.imag != 0):
+            raise ValueError("native material gradients require finite real permittivity tensors")
+        try:
+            np.linalg.cholesky(epsilon.real)
+        except np.linalg.LinAlgError as exc:
+            raise ValueError("native material gradients require positive-definite permittivity") from exc
+        if medium.E_susceptibilities or medium.H_susceptibilities:
+            raise ValueError("native material gradients require nondispersive endpoints")
+        if any(
+            np.any(np.asarray(tuple(getattr(medium, attribute))) != 0)
+            for attribute in (
+                "E_chi2_diag", "E_chi3_diag", "H_chi2_diag", "H_chi3_diag",
+                "D_conductivity_diag", "B_conductivity_diag",
+            )
+        ):
+            raise ValueError("native material gradients require linear lossless endpoints")
+        mu = np.asarray(tuple(medium.mu_diag), dtype=np.complex128)
+        offdiagonal_mu = np.asarray(tuple(medium.mu_offdiag), dtype=np.complex128)
+        if (
+            not np.all(np.isfinite(mu))
+            or np.any(mu.imag != 0)
+            or mu[0].real <= 0
+            or np.any(mu != mu[0])
+            or np.any(offdiagonal_mu != 0)
+        ):
+            raise ValueError(
+                "native material gradients require finite positive fixed isotropic permeability"
+            )
+        permeabilities.append(mu[0])
+    if permeabilities[0] != permeabilities[1]:
+        raise ValueError("native material gradients require fixed permeability")
+
+
+def _prepare_native_material(sim, design) -> None:
+    """Install tensor MaterialGrid averaging before Meep constructs fields."""
+    _require_no_meep_symmetries(sim)
+    if design is None or not _uses_material_jacobian(sim, design):
+        return
+    _validate_native_material_grid(design.material_grid)
+    if getattr(design, "is_cylindrical", False):
+        raise ValueError(
+            "tensor material gradients and averaging currently require Cartesian 2D/3D"
+        )
+    sim.force_all_components = True
+    grid = design.material_grid
+    if sim.eps_averaging and grid.do_averaging and sim.subpixel_tol > 1.0e-8:
+        if sim.structure is not None or sim.fields is not None:
+            raise ValueError(
+                "MaterialGrid averaging requires an uninitialized Simulation "
+                "or initialization with subpixel_tol<=1e-8"
+            )
+        # The material FD step is 1e-5; loose quadrature can dominate its signal.
+        sim.subpixel_tol = 1.0e-8
+    tensor_averaging = (
+        bool(sim.eps_averaging)
+        and grid.do_averaging
+        and (
+            not _is_isotropic_design_medium(grid.medium1)
+            or not _is_isotropic_design_medium(grid.medium2)
+        )
+    )
+    if not tensor_averaging:
+        if sim.fields is not None:
+            sim.fields.require_component(mp.Ez)
+            sim.fields.require_component(mp.Hz)
+        return
+    if (
+        sim.structure is not None
+        and getattr(sim, "_tama_tensor_structure", None) is sim.structure
+    ):
+        return
+    if sim.fields is not None:
+        raise ValueError(
+            "anisotropic MaterialGrid averaging requires an uninitialized Simulation; "
+            "let TAMA initialize the simulation returned by the factory"
+        )
+    _require_native_sampler()
+    if sim.structure is None:
+        sim._init_structure(sim.k_point)
+    _native_design_call(
+        "tensor material initialization",
+        native_sampler.configure_native_material_operator,
+        int(sim.structure.this),
+        int(sim.geps.this),
+        bool(sim.eps_averaging),
+        float(sim.subpixel_tol),
+        int(sim.subpixel_maxeval),
+    )
+    sim._tama_tensor_structure = sim.structure
+
+
+def _native_design_components(sim, design, components):
+    if _uses_material_jacobian(sim, design):
+        return (mp.Ex, mp.Ey, mp.Ez)
+    return components
+
+
+def _native_design_gradient_scale(sim, design) -> float:
+    return 1.0 if _uses_material_jacobian(sim, design) else float(design.material_factor)
+
+
 class NativeDesignField(_NativePlanFieldsGuard):
-    """Exact rank-local Yee samples with a MaterialGrid-transpose plan.
+    """Rank-local Yee samples with a MaterialGrid material-Jacobian plan.
 
     Args:
         sim: Initialized Meep simulation containing the design geometry.
@@ -1133,6 +1295,7 @@ class NativeDesignField(_NativePlanFieldsGuard):
                 "cylindrical native design plans require Er, Ep, or Ez"
             )
         _require_no_meep_symmetries(sim)
+        _prepare_native_material(sim, design)
         k_point = getattr(sim, "k_point", None)
         if k_point is not None and k_point is not False and not np.allclose(
             (k_point.x, k_point.y, k_point.z),
@@ -1141,8 +1304,7 @@ class NativeDesignField(_NativePlanFieldsGuard):
             atol=1e-12,
         ):
             raise ValueError("exact native design sampling requires k_point=0")
-        if getattr(sim, "eps_averaging", True):
-            raise ValueError("exact native design sampling requires eps_averaging=False")
+        material_jacobian = _uses_material_jacobian(sim, design)
         if (
             getattr(sim, "fields", None) is not None
             and int(getattr(sim, "dimensions", design.dimensions)) != design.dimensions
@@ -1211,6 +1373,7 @@ class NativeDesignField(_NativePlanFieldsGuard):
                     domain_high = domain_center + 0.5 * domain_size
                 block_low = block_center - 0.5 * block_size
                 block_high = block_center + 0.5 * block_size
+                clearance = 0.5 / sim.resolution if material_jacobian else 0.0
                 overlaps_low = (
                     side in (mp.ALL, mp.Low)
                     and (
@@ -1218,23 +1381,24 @@ class NativeDesignField(_NativePlanFieldsGuard):
                         or axis != "x"
                         or domain_low > 1e-12
                     )
-                    and block_low < domain_low + thickness - 1e-12
+                    and block_low < domain_low + thickness + clearance - 1e-12
                 )
                 overlaps_high = (
                     side in (mp.ALL, mp.High)
-                    and block_high > domain_high - thickness + 1e-12
+                    and block_high > domain_high - thickness - clearance + 1e-12
                 )
                 if overlaps_low or overlaps_high:
                     raise ValueError(
                         "exact native design sampling does not support a design "
-                        "Block overlapping PML or absorber layers"
+                        "Block overlapping PML or absorber layers; tensor/averaging "
+                        "plans also require half a grid cell of clearance"
                     )
         medium_1 = design.material_grid.medium1
         medium_2 = design.material_grid.medium2
         expected_material_factor = (
             float(medium_2.epsilon_diag.x) - float(medium_1.epsilon_diag.x)
         )
-        if not np.isclose(
+        if not material_jacobian and not np.isclose(
             float(design.material_factor),
             expected_material_factor,
             rtol=1e-12,
@@ -1268,6 +1432,11 @@ class NativeDesignField(_NativePlanFieldsGuard):
                 int(self.shape[1]),
                 int(self.shape[2]) if design.dimensions == 3 else 1,
                 int(component),
+                material_jacobian,
+                bool(sim.eps_averaging),
+                float(sim.subpixel_tol),
+                int(sim.subpixel_maxeval),
+                1.0e-5,
             )
             self.local_size = int(
                 _native_design_call(

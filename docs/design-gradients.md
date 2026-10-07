@@ -24,7 +24,7 @@ for every electric component required by the design gradient. The user supplies
 the physical center and size of the design region without component-specific
 shifts or pixel grouping. During the adjoint run, each Yee-site contribution is
 scattered into the raw MaterialGrid weights through the discrete transpose of
-Meep's MaterialGrid coordinate map.
+Meep's MaterialGrid coordinate map or constitutive-operator Jacobian.
 
 The native path currently requires:
 
@@ -32,17 +32,26 @@ The native path currently requires:
 - exactly one MaterialGrid geometry object, used by one matching,
   axis-aligned `mp.Block`;
 - matching `DesignGrid` and Block center, size, shape, and dimensionality;
-- `eps_averaging=False`, no Meep symmetries, and either Meep's default
+- no Meep symmetries, and either Meep's default
   `k_point=False` metallic boundaries or normal-incidence Gamma-point periodic
   boundaries selected explicitly with `k_point=mp.Vector3()`;
-- a design Block that does not overlap PML or absorber layers;
-- MaterialGrid `do_averaging=False`, `beta=0`, `damping=0`, and no overlapping
+- a design Block that does not overlap PML or absorber layers, with an
+  additional half-grid-cell clearance for tensor/averaging stencils;
+- MaterialGrid `damping=0` and no overlapping
   grid combination;
-- two linear, scalar-isotropic, nondispersive endpoint media without electric
+- two linear, real symmetric positive-definite, nondispersive dielectric
+  endpoint tensors without electric
   or magnetic susceptibilities, nonlinearities, or conductivity;
-- equal, fixed permeability in the two endpoint media;
-- `material_factor` equal to the endpoint permittivity contrast; and
+- equal, fixed isotropic permeability in the two endpoint media; and
 - identical rank-local Yee layouts in the forward and adjoint simulations.
+
+Cartesian 2D/3D supports `Simulation.eps_averaging`,
+`MaterialGrid.do_averaging`, and internal `beta`/`eta` projection. The scalar
+path with `eps_averaging=False`, `do_averaging=False`, and `beta=0` retains its
+direct interpolation transpose and requires `material_factor` to equal the
+endpoint permittivity contrast. Other Cartesian cases derive the material
+Jacobian from the MaterialGrid endpoints and do not multiply by
+`material_factor`. Cylindrical gradients retain the scalar restrictions below.
 
 ## Supported Components
 
@@ -51,6 +60,7 @@ simulation dimensionality and monitored polarization:
 
 | Simulation / monitor polarization | Electric components used for the design gradient |
 | --- | --- |
+| Cartesian tensor, projection, or averaging path | All three constitutive rows, using `Dx`, `Dy`, and `Dz` histories |
 | 2D TMz (`Ez`, `Hx`, or `Hy`) | `Ez` |
 | 2D TEz (`Hz`, `Ex`, or `Ey`) | `Ex` and `Ey` |
 | 2D Cartesian `FluxTarget` or `EigenmodeCoefficientTarget` | `Ex`, `Ey`, and `Ez` because both tangential E/H pairs are sampled |
@@ -87,9 +97,10 @@ normalization. Run separate forward objectives and apply the required physical
 normalization and combination externally when a real three-dimensional result
 needs contributions from multiple values of `m`.
 
-Cylindrical gradients use the same linear, scalar-isotropic, nondispersive
-permittivity restrictions listed above, including fixed and equal endpoint
-permeability. The design region may touch `r=0` but must not extend below it.
+Cylindrical gradients require linear, scalar-isotropic, nondispersive
+permittivity, fixed and equal endpoint permeability, `eps_averaging=False`,
+`MaterialGrid(do_averaging=False, beta=0)`, and `material_factor` equal to the
+endpoint permittivity contrast. The design region may touch `r=0` but must not extend below it.
 Point and regional targets use zero-size indexed adjoint sources. Their samples
 may lie on or near `r=0`; the native transpose folds each Yee interpolation
 entry through Meep's cylindrical modal parity. Exactly on the axis, regularity
@@ -121,16 +132,56 @@ python examples/tda_cylindrical_mode.py --target point
 mpirun -np 2 python examples/tda_cylindrical_mode.py --target eigenmode
 ```
 
-## Cartesian 3D Gradients
+## Cartesian Tensor Gradients and Averaging
 
-In 3D, each electric component is sampled at its own staggered Yee sites and
-scattered through the trilinear MaterialGrid transpose into one shared scalar
-permittivity gradient. This is a full-vector field contraction, not support for
-anisotropic or tensor MaterialGrid weights. The spatial scatter, including
-Meep's component-specific Yee-cell integration weights, is the discrete
-transpose of Meep's coordinate map. The complete gradient still includes the
-time-discretization and adjoint-source approximations of the time-domain
-method.
+Each design variable remains a scalar density mixing two fixed dielectric
+tensors. The endpoint tensors may have unequal diagonal and nonzero real
+off-diagonal entries. Optimizing their independent tensor entries is not part
+of this interface.
+
+The general path records displacement fields and contracts
+`-D_adjoint * (d M / d rho) * d D_forward / dt`, where `M` is Meep's discrete
+inverse-permittivity operator. It uses the staggered mixed-component stencil,
+including neighboring displacement samples. The material Jacobian uses local
+finite differences of the same material evaluator, including interpolation,
+projection, and the density-dependent interface normal. This adds material
+setup cost, but does not run additional FDTD solves for each design variable.
+The complete gradient still includes the existing time-discretization and
+adjoint-source approximations of the time-domain method.
+
+`eps_averaging` controls Meep's global subpixel averaging; `do_averaging`
+requests MaterialGrid interface averaging when global averaging is enabled.
+Internal `beta` projection also applies when averaging is disabled. For
+anisotropic MaterialGrid endpoints, TAMA supplies interface-normal tensor
+averaging in Meep's fallback material branch, which otherwise ignores interior
+MaterialGrid smoothing in the tested Meep version. It reduces to harmonic
+normal and arithmetic tangential averaging for isotropic endpoints. Forward,
+adjoint, and FoM-only evaluations use the same material operator.
+The tensor mixing rule follows
+[Kottke, Farjadpour, and Johnson](https://arxiv.org/abs/0708.1031);
+[Meep's subpixel smoothing guide](https://meep.readthedocs.io/en/latest/Subpixel_Smoothing/)
+describes the isotropic reduction and averaging controls.
+
+TAMA initializes this tensor operator before creating Meep fields. A custom
+`sim_factory` must return an uninitialized simulation when anisotropic
+MaterialGrid averaging is enabled. Rebuild the Meep native extension together
+with the Python package; this path requires native API 13.
+
+For active MaterialGrid averaging, TAMA limits `subpixel_tol` to `1e-8`,
+preserving stricter factory settings. Forward initialization and the local
+material Jacobian use that same tolerance. Meep's default `1e-4` produced
+quadrature noise in high-beta derivative checks; the tighter integration adds
+setup cost. A factory must return an uninitialized simulation if this tolerance
+change is needed. This is an empirically tested accuracy setting, not a bound
+on every possible design's gradient error.
+
+Gradient evaluation rejects material-derivative stencils that cross Meep's
+zero-normal averaging branch at mixed densities. Forward evaluation remains
+available, as do clamped points whose normal remains identically zero under
+the perturbation. Unsmooth infinite-beta projection at its threshold is also rejected
+for gradients. Use finite beta and a spatially varying design for averaged
+optimization. Tensor cylindrical, complex/Hermitian, dispersive, conductive,
+and nonlinear design media are outside this implementation's scope.
 
 ## Gradient Output, Storage, and Inputs
 
@@ -140,8 +191,8 @@ flattened in NumPy C order, matching `x.reshape(design.shape)`. For a 2D
 design, z is fastest; for a cylindrical `(nr, nz)` design, z is fastest. If
 `update_design` applies an external filter, projection, or other nonlinear
 mapping, apply that mapping's transpose or vector-Jacobian product outside the
-objective. MaterialGrid's internal projection and averaging options remain
-unsupported by this native path. The [periodic fabrication filter](fabrication.md)
+objective. MaterialGrid's internal projection and averaging derivatives are
+already included, so do not apply their VJP a second time. The [periodic fabrication filter](fabrication.md)
 documents TAMA's external conic filter, tanh projection, and their VJPs for
 full-cell periodic designs.
 
@@ -158,7 +209,9 @@ single-precision histories nor arrays exceeding one MPI call's count limit
 require a full double-precision staging array. The per-rank design-history
 storage is approximately
 `resolved_dtype.itemsize * stored_rows *
-sum(local_Yee_sites_per_component)`. A 3D gradient records `Ex`, `Ey`, and `Ez`
+sum(local_history_entries_per_component)`. Tensor plans have additional
+entries for the mixed-component displacement stencils; their storage can
+exceed three scalar component histories. A scalar 3D gradient records `Ex`, `Ey`, and `Ez`
 histories and can therefore use substantially more temporary disk than a 2D
 TMz gradient. Set `TMPDIR` before launching Python or `mpirun` to select a
 scratch location. Temporary history files are removed during normal cleanup;

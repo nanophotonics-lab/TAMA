@@ -1,6 +1,6 @@
 # TAMA Meep native sampler
 
-This subproject builds the unchanged Meep/MPI C++ sampler separately from the
+This subproject builds the Meep/MPI C++ sampler separately from the
 pure Python `tama` distribution. Build it in the same conda environment that
 provides `pymeep`, MPI, NumPy, the C++ compiler, CMake, Ninja and GSL.
 
@@ -22,3 +22,8 @@ The extension installs as `tama_meep_native.native_sampler`. Legacy
 resolve to this same module, including the original native API capability check.
 Builds are tied to the selected Python, Meep, MPI and NumPy ABI; do not distribute
 a locally built wheel as a universal binary.
+
+Native API 13 adds Cartesian real symmetric dielectric MaterialGrid gradients,
+internal projection, and subpixel averaging. Tensor interface averaging uses
+libctlgeom's existing adaptive quadrature. Reinstall both the Python core and
+this extension after updating; an older native API is rejected.

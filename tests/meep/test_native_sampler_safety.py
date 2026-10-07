@@ -1,6 +1,7 @@
 import gc
 import sys
 import weakref
+from types import SimpleNamespace
 
 import meep as mp
 import numpy as np
@@ -8,6 +9,99 @@ import pytest
 import scipy.interpolate as spi
 
 from tama import native_sampler
+from tama.backends.meep.sampling_grid import (
+    _prepare_native_material,
+    _validate_native_material_grid,
+)
+
+
+@pytest.mark.parametrize("endpoint", ["medium1", "medium2"])
+@pytest.mark.parametrize(
+    "attribute,value,message",
+    [
+        ("epsilon_diag", mp.Vector3(2, np.nan, 4), "finite real permittivity"),
+        ("epsilon_diag", mp.Vector3(2, 3 + 1j, 4), "finite real permittivity"),
+        ("epsilon_offdiag", mp.Vector3(0.1j, 0, 0), "finite real permittivity"),
+        ("epsilon_offdiag", mp.Vector3(10, 0, 0), "positive-definite"),
+        ("E_susceptibilities", [mp.LorentzianSusceptibility()], "nondispersive"),
+        ("H_susceptibilities", [mp.LorentzianSusceptibility()], "nondispersive"),
+        ("E_chi2_diag", mp.Vector3(1, 0, 0), "linear lossless"),
+        ("H_chi3_diag", mp.Vector3(0, 0, 1), "linear lossless"),
+        ("D_conductivity_diag", mp.Vector3(0, 1, 0), "linear lossless"),
+        ("B_conductivity_diag", mp.Vector3(0, 0, 1), "linear lossless"),
+        ("mu_diag", mp.Vector3(1, 2, 1), "isotropic permeability"),
+        ("mu_diag", mp.Vector3(-1, -1, -1), "positive.*permeability"),
+        ("mu_diag", mp.Vector3(0, 0, 0), "positive.*permeability"),
+        ("mu_diag", mp.Vector3(np.nan, np.nan, np.nan), "permeability"),
+        ("mu_diag", mp.Vector3(1j, 1j, 1j), "permeability"),
+        ("mu_offdiag", mp.Vector3(0.1, 0, 0), "isotropic permeability"),
+        ("mu_diag", mp.Vector3(2, 2, 2), "fixed permeability"),
+    ],
+)
+def test_material_endpoints_rejected_before_meep_initialization(
+    monkeypatch, endpoint, attribute, value, message,
+):
+    grid = mp.MaterialGrid(
+        mp.Vector3(2, 2),
+        mp.Medium(epsilon_diag=mp.Vector3(2, 3, 4)),
+        mp.Medium(epsilon_diag=mp.Vector3(5, 6, 7)),
+        weights=np.array([0.2, 0.4, 0.6, 0.8]),
+        do_averaging=True,
+    )
+    setattr(getattr(grid, endpoint), attribute, value)
+    simulation = mp.Simulation(
+        cell_size=mp.Vector3(2, 2),
+        resolution=4,
+        geometry=[mp.Block(size=mp.Vector3(1, 1, mp.inf), material=grid)],
+        eps_averaging=True,
+    )
+
+    def unexpected_initialization(*args):
+        pytest.fail("unsupported material reached Meep initialization")
+
+    monkeypatch.setattr(simulation, "_init_structure", unexpected_initialization)
+    with pytest.raises(ValueError, match=message):
+        _prepare_native_material(simulation, SimpleNamespace(material_grid=grid))
+    assert simulation.structure is None
+    assert simulation.fields is None
+
+
+@pytest.mark.parametrize(
+    "changes,message",
+    [
+        ({"grid_type": 1}, "U_DEFAULT"),
+        ({"damping": 0.1}, "damping=0"),
+        ({"beta": -1}, "beta>=0"),
+        ({"beta": np.nan}, "beta>=0"),
+        ({"eta": -0.1}, "eta in"),
+        ({"eta": 1.1}, "eta in"),
+        ({"eta": np.nan}, "eta in"),
+        ({"beta": np.inf, "eta": 0}, "strictly interior"),
+        ({"beta": np.inf, "eta": 1}, "strictly interior"),
+    ],
+)
+def test_native_material_controls_are_validated(changes, message):
+    grid = mp.MaterialGrid(mp.Vector3(2, 2), mp.Medium(), mp.Medium(epsilon=4))
+    for attribute, value in changes.items():
+        setattr(grid, attribute, value)
+    with pytest.raises(ValueError, match=message):
+        _validate_native_material_grid(grid)
+
+
+def test_native_material_validation_accepts_spd_and_fixed_positive_mu():
+    grid = mp.MaterialGrid(
+        mp.Vector3(2, 2),
+        mp.Medium(epsilon_diag=mp.Vector3(2, 3, 4), mu=2),
+        mp.Medium(
+            epsilon_diag=mp.Vector3(5, 6, 7),
+            epsilon_offdiag=mp.Vector3(0.2, 0.1, 0.3),
+            mu=2,
+        ),
+        do_averaging=True,
+        beta=np.inf,
+        eta=0.3,
+    )
+    _validate_native_material_grid(grid)
 
 
 def test_native_method_boundary_translates_cpp_allocation_failure():

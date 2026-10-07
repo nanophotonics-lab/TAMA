@@ -11,6 +11,8 @@
 #include <mpi.h>
 #include <gsl/gsl_cblas.h>
 
+#include "material_tensor.hpp"
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -511,11 +513,18 @@ struct NativeDesignEntry {
     double integration_weight;
 };
 
+struct NativeDesignForwardSample {
+    meep::component component;
+    std::ptrdiff_t first_index;
+    std::ptrdiff_t second_index;
+    bool sum_pair;
+};
+
 struct NativeDesignBuildRecord {
     NativeDesignEntry entry;
     std::array<size_t, 8> design_indices{};
     std::array<double, 8> design_weights{};
-    std::array<std::int32_t, 3> signature{};
+    std::array<std::int32_t, 5> signature{};
 };
 
 static_assert(
@@ -530,8 +539,11 @@ struct NativeDesignPlan {
     size_t ny;
     size_t nz;
     int dimensions;
+    int signature_width;
+    bool material_jacobian = false;
     size_t stencil_capacity;
     std::vector<NativeDesignEntry> entries;
+    std::vector<NativeDesignForwardSample> forward_samples;
     std::vector<size_t> design_indices;
     std::vector<double> design_weights;
     std::vector<std::int32_t> signatures;
@@ -988,7 +1000,7 @@ static void add_native_design_stencil_entry(
     record.entry.stencil_size += 1;
 }
 
-static std::array<std::int32_t, 3> native_design_signature(
+static std::array<std::int32_t, 5> native_design_signature(
     const meep::ivec &loc,
     bool cylindrical
 ) {
@@ -1004,7 +1016,10 @@ static inline double native_design_real_field_value(
     const NativeDesignEntry &entry
 ) {
     meep::fields_chunk *chunk = plan->fields->chunks[entry.chunk_idx];
-    return chunk->f[plan->component][0][entry.field_index];
+    const meep::component component = plan->material_jacobian
+        ? meep::direction_component(meep::Dx, meep::component_direction(plan->component))
+        : plan->component;
+    return chunk->f[component][0][entry.field_index];
 }
 
 static inline std::complex<double> native_design_field_value(
@@ -1012,11 +1027,41 @@ static inline std::complex<double> native_design_field_value(
     const NativeDesignEntry &entry
 ) {
     meep::fields_chunk *chunk = plan->fields->chunks[entry.chunk_idx];
-    const double real_value = chunk->f[plan->component][0][entry.field_index];
-    const double imag_value = chunk->f[plan->component][1]
-                                  ? chunk->f[plan->component][1][entry.field_index]
+    const meep::component component = plan->material_jacobian
+        ? meep::direction_component(meep::Dx, meep::component_direction(plan->component))
+        : plan->component;
+    const double real_value = chunk->f[component][0][entry.field_index];
+    const double imag_value = chunk->f[component][1]
+                                  ? chunk->f[component][1][entry.field_index]
                                   : 0.0;
     return {real_value, imag_value};
+}
+
+static inline double native_design_forward_real_field_value(
+    const NativeDesignPlan *plan, size_t entry_index
+) {
+    const NativeDesignEntry &entry = plan->entries[entry_index];
+    if (!plan->material_jacobian) {
+        return native_design_real_field_value(plan, entry);
+    }
+    const NativeDesignForwardSample &sample = plan->forward_samples[entry_index];
+    const meep::realnum *field = plan->fields->chunks[entry.chunk_idx]->f[sample.component][0];
+    return field[sample.first_index] + (sample.sum_pair ? field[sample.second_index] : 0.0);
+}
+
+static inline std::complex<double> native_design_forward_field_value(
+    const NativeDesignPlan *plan, size_t entry_index
+) {
+    const NativeDesignEntry &entry = plan->entries[entry_index];
+    if (!plan->material_jacobian) {
+        return native_design_field_value(plan, entry);
+    }
+    const NativeDesignForwardSample &sample = plan->forward_samples[entry_index];
+    const meep::realnum *imag = plan->fields->chunks[entry.chunk_idx]->f[sample.component][1];
+    return {
+        native_design_forward_real_field_value(plan, entry_index),
+        imag ? imag[sample.first_index] + (sample.sum_pair ? imag[sample.second_index] : 0.0) : 0.0,
+    };
 }
 
 static bool zero_vector3(const vector3 &value) {
@@ -1046,6 +1091,281 @@ static bool isotropic_nondispersive_electric_medium(
            zero_vector3(medium.H_chi3_diag) &&
            zero_vector3(medium.D_conductivity_diag) &&
            zero_vector3(medium.B_conductivity_diag);
+}
+
+static bool real_spd_nondispersive_electric_medium(
+    const meep_geom::medium_struct &medium
+) {
+    const double a = medium.epsilon_diag.x;
+    const double b = medium.epsilon_diag.y;
+    const double c = medium.epsilon_diag.z;
+    const double xy = medium.epsilon_offdiag.x.re;
+    const double xz = medium.epsilon_offdiag.y.re;
+    const double yz = medium.epsilon_offdiag.z.re;
+    const double determinant = a * b * c + 2.0 * xy * xz * yz -
+                               a * yz * yz - b * xz * xz - c * xy * xy;
+    return std::isfinite(a) && std::isfinite(b) && std::isfinite(c) &&
+           std::isfinite(xy) && std::isfinite(xz) && std::isfinite(yz) &&
+           medium.epsilon_offdiag.x.im == 0.0 &&
+           medium.epsilon_offdiag.y.im == 0.0 &&
+           medium.epsilon_offdiag.z.im == 0.0 &&
+           a > 0.0 && a * b - xy * xy > 0.0 && determinant > 0.0 &&
+           std::isfinite(medium.mu_diag.x) && medium.mu_diag.x > 0.0 &&
+           medium.mu_diag.x == medium.mu_diag.y &&
+           medium.mu_diag.x == medium.mu_diag.z &&
+           zero_cvector3(medium.mu_offdiag) &&
+           medium.E_susceptibilities.empty() &&
+           medium.H_susceptibilities.empty() &&
+           zero_vector3(medium.E_chi2_diag) &&
+           zero_vector3(medium.E_chi3_diag) &&
+           zero_vector3(medium.H_chi2_diag) &&
+           zero_vector3(medium.H_chi3_diag) &&
+           zero_vector3(medium.D_conductivity_diag) &&
+           zero_vector3(medium.B_conductivity_diag);
+}
+
+static void append_native_design_record(
+    NativeDesignPlan *plan,
+    const NativeDesignBuildRecord &record,
+    const NativeDesignForwardSample &sample
+) {
+    plan->entries.push_back(record.entry);
+    plan->forward_samples.push_back(sample);
+    for (size_t j = 0; j < plan->stencil_capacity; ++j) {
+        plan->design_indices.push_back(record.design_indices[j]);
+        plan->design_weights.push_back(record.design_weights[j]);
+    }
+    for (int j = 0; j < plan->signature_width; ++j) {
+        plan->signatures.push_back(record.signature[j]);
+    }
+}
+
+// The normal of an averaged MaterialGrid depends on every interpolation node,
+// including nodes whose value-interpolation weight vanishes at the voxel center.
+static size_t native_material_support(
+    meep_geom::geom_epsilon *geps,
+    meep_geom::material_type material,
+    const meep::vec &location,
+    const std::array<double, 3> &center,
+    const std::array<double, 3> &size,
+    const std::array<int, 3> &shape,
+    std::array<size_t, 8> &indices
+) {
+    meep_geom::material_type selected = nullptr;
+    geps->get_material_pt(selected, location);
+    if (selected != material) {
+        return 0;
+    }
+    const vector3 point = meep_geom::vec_to_vector3(location);
+    int object_index = 0;
+    geom_box_tree tree = geom_tree_search(point, geps->restricted_tree, &object_index);
+    if (!tree || tree->objects[object_index].o->material != material) {
+        throw std::runtime_error("native material Jacobian could not resolve its MaterialGrid object");
+    }
+    const vector3 local = vector3_minus(point, tree->objects[object_index].shiftby);
+    const double xyz[3] = {local.x, local.y, local.z};
+    int nodes[3][2];
+    for (int d = 0; d < 3; ++d) {
+        const double coordinate = size[d] > 0.0 ? 0.5 + (xyz[d] - center[d]) / size[d] : 0.5;
+        if (coordinate < -1e-10 || coordinate > 1.0 + 1e-10) {
+            throw std::runtime_error("DesignGrid center/size does not match its MaterialGrid block");
+        }
+        double unused_weight = 0.0;
+        material_axis_stencil(
+            std::max(0.0, std::min(1.0, coordinate)), shape[d],
+            nodes[d][0], nodes[d][1], unused_weight
+        );
+    }
+    size_t count = 0;
+    for (int x : nodes[0]) {
+        for (int y : nodes[1]) {
+            for (int z : nodes[2]) {
+                const size_t index = (static_cast<size_t>(x) * shape[1] + y) * shape[2] + z;
+                if (std::find(indices.begin(), indices.begin() + count, index) == indices.begin() + count) {
+                    indices[count++] = index;
+                }
+            }
+        }
+    }
+    return count;
+}
+
+struct NativeMaterialWeightRestore {
+    double &weight;
+    double original;
+    explicit NativeMaterialWeightRestore(double &value) : weight(value), original(value) {}
+    ~NativeMaterialWeightRestore() { weight = original; }
+};
+
+struct NativeMaterialVolumeRestore {
+    meep_geom::geom_epsilon *geps;
+    ~NativeMaterialVolumeRestore() { geps->unset_volume(); }
+};
+
+static void native_material_row_derivatives(
+    meep_geom::geom_epsilon *geps,
+    meep_geom::material_type material,
+    meep::component component,
+    const meep::volume &voxel,
+    const std::array<size_t, 8> &indices,
+    size_t count,
+    double tol,
+    int maxeval,
+    double step,
+    std::array<std::array<double, 3>, 8> &derivatives
+) {
+    const vector3 point = meep_geom::vec_to_vector3(voxel.center());
+    int object_index = 0;
+    geom_box_tree tree = geom_tree_search(point, geps->restricted_tree, &object_index);
+    const double density = meep_geom::matgrid_val(point, tree, object_index, material) + geps->u_p;
+    const bool contrasting = tama_material_tensor::epsilon(material->medium_1) !=
+                             tama_material_tensor::epsilon(material->medium_2);
+    bool averaged_branch = false;
+    double normal_magnitude = 0.0;
+    const double projected_density = tama_material_tensor::projected(density, material->beta, material->eta);
+    if (maxeval > 0 && material->do_averaging && contrasting) {
+        meep_geom::symm_matrix unused;
+        geps->eff_chi1inv_matrix(component, &unused, voxel, tol, maxeval, averaged_branch);
+        normal_magnitude = meep::abs(meep_geom::matgrid_grad(point, tree, object_index, material));
+    }
+    const auto check_normal_branch = [&]() {
+        if (averaged_branch && projected_density > 0.0 && projected_density < 1.0 &&
+            ((normal_magnitude < 1e-8) !=
+             (meep::abs(meep_geom::matgrid_grad(point, tree, object_index, material)) < 1e-8))) {
+            throw std::runtime_error(
+                "averaged MaterialGrid derivative stencil crosses a zero-normal branch with an undefined interface normal "
+                "at mixed density; no reliable linear gradient exists for this stencil"
+            );
+        }
+    };
+    const bool custom_tensor_average = averaged_branch &&
+        (tama_material_tensor::anisotropic(material->medium_1) ||
+         tama_material_tensor::anisotropic(material->medium_2));
+    if (contrasting && std::isfinite(material->beta) && material->beta > 0.0 &&
+        material->eta != 0.5 && density == material->eta && !custom_tensor_average) {
+        throw std::runtime_error(
+            "MaterialGrid gradient is undefined at Meep's asymmetric projection threshold"
+        );
+    }
+    if (contrasting && std::isinf(material->beta) &&
+        !(averaged_branch && normal_magnitude > 1e-8)) {
+        if (density == material->eta) {
+            throw std::runtime_error(
+                "MaterialGrid gradient is undefined at the beta=inf projection threshold"
+            );
+        }
+        // An unaveraged hard projection is locally constant away from its jump.
+        return;
+    }
+    double base[3];
+    tama_material_tensor::generalized_material_row(geps, component, base, voxel, tol, maxeval);
+    for (size_t j = 0; j < count; ++j) {
+        NativeMaterialWeightRestore restore(material->weights[indices[j]]);
+        double first[3], second[3];
+        const bool forward = restore.original < step;
+        const bool backward = restore.original > 1.0 - step;
+        const double h = backward ? -step : step;
+        restore.weight = restore.original + h;
+        check_normal_branch();
+        tama_material_tensor::generalized_material_row(geps, component, first, voxel, tol, maxeval);
+        restore.weight = restore.original + ((forward || backward) ? 2.0 * h : -h);
+        check_normal_branch();
+        tama_material_tensor::generalized_material_row(geps, component, second, voxel, tol, maxeval);
+        for (int d = 0; d < 3; ++d) {
+            derivatives[j][d] = (forward || backward)
+                ? (-3.0 * base[d] + 4.0 * first[d] - second[d]) / (2.0 * h)
+                : (first[d] - second[d]) / (2.0 * h);
+            if (!std::isfinite(derivatives[j][d])) {
+                throw std::runtime_error("native material Jacobian contains a non-finite coefficient");
+            }
+        }
+    }
+}
+
+static void build_native_material_jacobian_plan(
+    NativeDesignPlan *plan,
+    meep_geom::geom_epsilon *geps,
+    meep_geom::material_type material,
+    const std::array<double, 3> &center,
+    const std::array<double, 3> &size,
+    double tol,
+    int maxeval,
+    double step
+) {
+    NativeMaterialVolumeRestore restore_volume{geps};
+    const std::array<int, 3> shape = {
+        static_cast<int>(plan->nx), static_cast<int>(plan->ny), static_cast<int>(plan->nz),
+    };
+    const meep::direction a = meep::component_direction(plan->component);
+    const meep::component adjoint_component = meep::direction_component(meep::Dx, a);
+    for (int chunk_idx = 0; chunk_idx < plan->fields->num_chunks; ++chunk_idx) {
+        meep::fields_chunk *chunk = plan->fields->chunks[chunk_idx];
+        if (!chunk || !chunk->is_mine() || !chunk->have_component(plan->component)) {
+            continue;
+        }
+        if (!chunk->f[adjoint_component][0]) {
+            throw std::runtime_error("native material Jacobian requires allocated displacement fields");
+        }
+        geps->set_volume(chunk->gv.pad().surroundings());
+        const meep::ivec shift = meep::unit_ivec(chunk->gv.dim, a);
+        const std::ptrdiff_t stride_a = chunk->gv.stride(a);
+        LOOP_OVER_VOL_OWNED(chunk->gv, plan->component, idx) {
+            IVEC_LOOP_ILOC(chunk->gv, iloc);
+            // Diagonal coefficients live at the Yee point; off-diagonals live
+            // at the two shared vertices in Meep's electric OFFDIAG stencil.
+            for (int node = -1; node < 2; ++node) {
+                const meep::ivec coefficient_location = node == -1 ? iloc :
+                    (node == 0 ? iloc - shift : iloc + shift);
+                const meep::volume voxel = chunk->gv.dV(coefficient_location, 1.0);
+                std::array<size_t, 8> indices{};
+                const size_t count = native_material_support(
+                    geps, material, voxel.center(), center, size, shape, indices
+                );
+                if (!count) {
+                    continue;
+                }
+                std::array<std::array<double, 3>, 8> derivatives{};
+                native_material_row_derivatives(
+                    geps, material, plan->component, voxel, indices, count,
+                    tol, maxeval, step, derivatives
+                );
+                for (int b = 0; b < 3; ++b) {
+                    if ((node == -1) != (b == static_cast<int>(a))) {
+                        continue;
+                    }
+                    NativeDesignBuildRecord record;
+                    record.entry.chunk_idx = chunk_idx;
+                    record.entry.field_index = idx;
+                    record.entry.integration_weight = chunk->gv.dV(plan->component, idx).full_volume();
+                    record.signature = native_design_signature(iloc, false);
+                    record.signature[plan->dimensions] = b;
+                    record.signature[plan->dimensions + 1] = node;
+                    for (size_t j = 0; j < count; ++j) {
+                        add_native_design_stencil_entry(
+                            record, plan->stencil_capacity, indices[j],
+                            -(node == -1 ? 1.0 : 0.25) * derivatives[j][b]
+                        );
+                    }
+                    if (!record.entry.stencil_size) {
+                        continue;
+                    }
+                    NativeDesignForwardSample sample;
+                    sample.component = meep::direction_component(meep::Dx, static_cast<meep::direction>(b));
+                    sample.first_index = idx + (node == 1 ? stride_a : 0);
+                    sample.second_index = sample.first_index - chunk->gv.stride(static_cast<meep::direction>(b));
+                    sample.sum_pair = node != -1;
+                    if (!chunk->f[sample.component][0]) {
+                        throw std::runtime_error("native tensor material plans require force_all_components=True");
+                    }
+                    if (sample.first_index < 0 || static_cast<size_t>(sample.first_index) >= chunk->gv.ntot() ||
+                        (sample.sum_pair && (sample.second_index < 0 || static_cast<size_t>(sample.second_index) >= chunk->gv.ntot()))) {
+                        throw std::runtime_error("native tensor material stencil exceeds its displacement-field halo");
+                    }
+                    append_native_design_record(plan, record, sample);
+                }
+            }
+        }
+    }
 }
 
 static const size_t *component_grid_plan_support_mask(
@@ -1691,6 +2011,50 @@ static PyObject *create_component_point_plan(PyObject *, PyObject *args) {
     return capsule;
 }
 
+static PyObject *configure_native_material_operator(PyObject *, PyObject *args) {
+    unsigned long long structure_addr = 0;
+    unsigned long long geps_addr = 0;
+    int eps_averaging = 0;
+    double tol = 1e-4;
+    int maxeval = 100000;
+    if (!PyArg_ParseTuple(args, "KKpdi", &structure_addr, &geps_addr, &eps_averaging, &tol, &maxeval)) {
+        return nullptr;
+    }
+    if (!structure_addr || !geps_addr || !std::isfinite(tol) || tol <= 0.0 || maxeval <= 0) {
+        PyErr_SetString(PyExc_ValueError, "material operator pointers and subpixel controls must be valid");
+        return nullptr;
+    }
+    auto *structure = reinterpret_cast<meep::structure *>(static_cast<uintptr_t>(structure_addr));
+    auto *geps = reinterpret_cast<meep_geom::geom_epsilon *>(static_cast<uintptr_t>(geps_addr));
+    if (eps_averaging) {
+        for (int i = 0; i < geps->geometry.num_items; ++i) {
+            auto *grid = static_cast<meep_geom::material_type>(geps->geometry.items[i].material);
+            if (!grid || grid->which_subclass != meep_geom::material_data::MATERIAL_GRID ||
+                !grid->do_averaging ||
+                !(tama_material_tensor::anisotropic(grid->medium_1) ||
+                  tama_material_tensor::anisotropic(grid->medium_2) ||
+                  !zero_cvector3(grid->medium_1.epsilon_offdiag) ||
+                  !zero_cvector3(grid->medium_2.epsilon_offdiag))) {
+                continue;
+            }
+            if (!real_spd_nondispersive_electric_medium(grid->medium_1) ||
+                !real_spd_nondispersive_electric_medium(grid->medium_2) ||
+                grid->medium_1.mu_diag.x != grid->medium_2.mu_diag.x ||
+                grid->medium_1.mu_diag.y != grid->medium_2.mu_diag.y ||
+                grid->medium_1.mu_diag.z != grid->medium_2.mu_diag.z ||
+                grid->damping != 0.0 || grid->material_grid_kinds != meep_geom::material_data::U_DEFAULT) {
+                PyErr_SetString(PyExc_ValueError,
+                    "averaged tensor MaterialGrid requires real SPD nondispersive lossless endpoints, "
+                    "fixed positive permeability, damping=0, and a non-overlapping grid");
+                return nullptr;
+            }
+        }
+    }
+    tama_material_tensor::TensorMaterial material(geps);
+    structure->set_epsilon(material, eps_averaging != 0, tol, maxeval);
+    Py_RETURN_NONE;
+}
+
 static PyObject *create_native_design_plan(PyObject *, PyObject *args) {
     unsigned long long fields_addr = 0;
     unsigned long long geps_addr = 0;
@@ -1704,9 +2068,14 @@ static PyObject *create_native_design_plan(PyObject *, PyObject *args) {
     int ny = 0;
     int nz = 0;
     int component_int = static_cast<int>(meep::Ez);
+    int material_jacobian = 0;
+    int eps_averaging = 0;
+    double subpixel_tol = 1e-4;
+    int subpixel_maxeval = 100000;
+    double material_derivative_step = 1e-5;
     if (!PyArg_ParseTuple(
             args,
-            "KKddddddiiii",
+            "KKddddddiiii|ppdid",
             &fields_addr,
             &geps_addr,
             &center_x,
@@ -1718,7 +2087,12 @@ static PyObject *create_native_design_plan(PyObject *, PyObject *args) {
             &nx,
             &ny,
             &nz,
-            &component_int
+            &component_int,
+            &material_jacobian,
+            &eps_averaging,
+            &subpixel_tol,
+            &subpixel_maxeval,
+            &material_derivative_step
         )) {
         return nullptr;
     }
@@ -1735,6 +2109,13 @@ static PyObject *create_native_design_plan(PyObject *, PyObject *args) {
     const bool is_2d = fields->gv.dim == meep::D2;
     const bool is_3d = fields->gv.dim == meep::D3;
     const bool is_cylindrical = fields->gv.dim == meep::Dcyl;
+    if (material_jacobian &&
+        (is_cylindrical || !std::isfinite(subpixel_tol) || subpixel_tol <= 0.0 ||
+         subpixel_maxeval <= 0 || !std::isfinite(material_derivative_step) ||
+         material_derivative_step <= 0.0 || material_derivative_step > 0.25)) {
+        PyErr_SetString(PyExc_ValueError, "material Jacobian plans require Cartesian geometry and valid subpixel/derivative controls");
+        return nullptr;
+    }
     if (!is_2d && !is_3d && !is_cylindrical) {
         PyErr_SetString(
             PyExc_ValueError,
@@ -1818,20 +2199,35 @@ static PyObject *create_native_design_plan(PyObject *, PyObject *args) {
         PyErr_SetString(PyExc_ValueError, "DesignGrid shape must match the MaterialGrid grid_size");
         return nullptr;
     }
-    if (target_material->do_averaging || target_material->beta != 0.0 ||
+    if ((!material_jacobian && (target_material->do_averaging || target_material->beta != 0.0)) ||
         target_material->damping != 0.0 ||
         target_material->material_grid_kinds != meep_geom::material_data::U_DEFAULT) {
         PyErr_SetString(
             PyExc_ValueError,
-            "native design plans require a non-overlapping grid with do_averaging=False, beta=0, and damping=0"
+            material_jacobian
+                ? "native material Jacobian plans require a non-overlapping grid with damping=0"
+                : "native design plans require a non-overlapping grid with do_averaging=False, beta=0, and damping=0"
         );
         return nullptr;
     }
-    if (!isotropic_nondispersive_electric_medium(target_material->medium_1) ||
-        !isotropic_nondispersive_electric_medium(target_material->medium_2)) {
+    if (material_jacobian &&
+        (std::isnan(target_material->beta) || target_material->beta < 0.0 ||
+         !std::isfinite(target_material->eta) || target_material->eta < 0.0 || target_material->eta > 1.0 ||
+         (std::isinf(target_material->beta) && (target_material->eta == 0.0 || target_material->eta == 1.0)))) {
+        PyErr_SetString(PyExc_ValueError, "native material Jacobian plans require beta>=0 and eta in [0,1] (strictly interior for beta=inf)");
+        return nullptr;
+    }
+    const bool valid_media = material_jacobian
+        ? real_spd_nondispersive_electric_medium(target_material->medium_1) &&
+              real_spd_nondispersive_electric_medium(target_material->medium_2)
+        : isotropic_nondispersive_electric_medium(target_material->medium_1) &&
+              isotropic_nondispersive_electric_medium(target_material->medium_2);
+    if (!valid_media) {
         PyErr_SetString(
             PyExc_ValueError,
-            "native design plans require isotropic nondispersive electric media"
+            material_jacobian
+                ? "native material Jacobian plans require real symmetric positive-definite nondispersive electric media with positive isotropic permeability"
+                : "native design plans require isotropic nondispersive electric media"
         );
         return nullptr;
     }
@@ -1853,7 +2249,18 @@ static PyObject *create_native_design_plan(PyObject *, PyObject *args) {
         plan->ny = static_cast<size_t>(ny);
         plan->nz = static_cast<size_t>(nz);
         plan->dimensions = is_3d ? 3 : 2;
+        plan->material_jacobian = material_jacobian != 0;
+        plan->signature_width = plan->dimensions + (material_jacobian ? 2 : 0);
         plan->stencil_capacity = is_3d ? 8 : 4;
+        if (material_jacobian) {
+            build_native_material_jacobian_plan(
+                plan, geps, target_material,
+                {center_x, center_y, center_z}, {size_x, size_y, size_z},
+                subpixel_tol, eps_averaging ? subpixel_maxeval : 0,
+                material_derivative_step
+            );
+        }
+        else {
         const double coordinate_tolerance = 1e-10;
         for (int chunk_idx = 0; chunk_idx < fields->num_chunks; ++chunk_idx) {
             meep::fields_chunk *chunk = fields->chunks[chunk_idx];
@@ -1996,6 +2403,7 @@ static PyObject *create_native_design_plan(PyObject *, PyObject *args) {
                 }
             }
         }
+        }
         std::vector<size_t> order(plan->entries.size());
         for (size_t i = 0; i < order.size(); ++i) {
             order[i] = i;
@@ -2004,11 +2412,11 @@ static PyObject *create_native_design_plan(PyObject *, PyObject *args) {
             order.begin(),
             order.end(),
             [plan](size_t left, size_t right) {
-                for (int axis = 0; axis < plan->dimensions; ++axis) {
+                for (int axis = 0; axis < plan->signature_width; ++axis) {
                     const size_t left_offset =
-                        left * plan->dimensions + axis;
+                        left * plan->signature_width + axis;
                     const size_t right_offset =
-                        right * plan->dimensions + axis;
+                        right * plan->signature_width + axis;
                     if (plan->signatures[left_offset] !=
                         plan->signatures[right_offset]) {
                         return plan->signatures[left_offset] <
@@ -2021,13 +2429,13 @@ static PyObject *create_native_design_plan(PyObject *, PyObject *args) {
         );
         for (size_t i = 1; i < order.size(); ++i) {
             bool duplicate = true;
-            for (int axis = 0; axis < plan->dimensions; ++axis) {
+            for (int axis = 0; axis < plan->signature_width; ++axis) {
                 duplicate = duplicate &&
                             plan->signatures[
-                                order[i - 1] * plan->dimensions + axis
+                                order[i - 1] * plan->signature_width + axis
                             ] ==
                                 plan->signatures[
-                                    order[i] * plan->dimensions + axis
+                                    order[i] * plan->signature_width + axis
                                 ];
             }
             if (duplicate) {
@@ -2061,6 +2469,9 @@ static PyObject *create_native_design_plan(PyObject *, PyObject *args) {
             while (order[i] != i) {
                 const size_t other = order[i];
                 std::swap(plan->entries[i], plan->entries[other]);
+                if (plan->material_jacobian) {
+                    std::swap(plan->forward_samples[i], plan->forward_samples[other]);
+                }
                 for (size_t stencil_idx = 0;
                      stencil_idx < plan->stencil_capacity;
                      ++stencil_idx) {
@@ -2081,10 +2492,10 @@ static PyObject *create_native_design_plan(PyObject *, PyObject *args) {
                         ]
                     );
                 }
-                for (int axis = 0; axis < plan->dimensions; ++axis) {
+                for (int axis = 0; axis < plan->signature_width; ++axis) {
                     std::swap(
-                        plan->signatures[i * plan->dimensions + axis],
-                        plan->signatures[other * plan->dimensions + axis]
+                        plan->signatures[i * plan->signature_width + axis],
+                        plan->signatures[other * plan->signature_width + axis]
                     );
                 }
                 std::swap(order[i], order[other]);
@@ -2135,7 +2546,7 @@ static PyObject *native_design_plan_signature(PyObject *, PyObject *args) {
     }
     npy_intp dims[2] = {
         static_cast<npy_intp>(plan->entries.size()),
-        static_cast<npy_intp>(plan->dimensions),
+        static_cast<npy_intp>(plan->signature_width),
     };
     PyObject *array_obj = PyArray_SimpleNew(2, dims, NPY_INT64);
     if (!array_obj) {
@@ -2144,17 +2555,8 @@ static PyObject *native_design_plan_signature(PyObject *, PyObject *args) {
     npy_int64 *data = reinterpret_cast<npy_int64 *>(
         PyArray_DATA(reinterpret_cast<PyArrayObject *>(array_obj))
     );
-    for (size_t i = 0; i < plan->entries.size(); ++i) {
-        const size_t offset = static_cast<size_t>(plan->dimensions) * i;
-        data[offset] = static_cast<npy_int64>(plan->signatures[offset]);
-        data[offset + 1] = static_cast<npy_int64>(
-            plan->signatures[offset + 1]
-        );
-        if (plan->dimensions == 3) {
-            data[offset + 2] = static_cast<npy_int64>(
-                plan->signatures[offset + 2]
-            );
-        }
+    for (size_t i = 0; i < plan->signatures.size(); ++i) {
+        data[i] = static_cast<npy_int64>(plan->signatures[i]);
     }
     return array_obj;
 }
@@ -2185,8 +2587,7 @@ static PyObject *sample_native_design_plan_into(PyObject *, PyObject *args) {
     npy_cdouble *data = reinterpret_cast<npy_cdouble *>(PyArray_DATA(destination));
     try {
         for (size_t i = 0; i < plan->entries.size(); ++i) {
-            const NativeDesignEntry &entry = plan->entries[i];
-            set_npy_complex(data[i], native_design_field_value(plan, entry));
+            set_npy_complex(data[i], native_design_forward_field_value(plan, i));
         }
     } catch (const std::exception &exc) {
         PyArray_DiscardWritebackIfCopy(destination);
@@ -2244,8 +2645,7 @@ static PyObject *sample_native_design_plan_real_into(PyObject *, PyObject *args)
     double *data = reinterpret_cast<double *>(PyArray_DATA(destination));
     try {
         for (size_t i = 0; i < plan->entries.size(); ++i) {
-            const NativeDesignEntry &entry = plan->entries[i];
-            data[i] = native_design_real_field_value(plan, entry);
+            data[i] = native_design_forward_real_field_value(plan, i);
         }
     } catch (const std::exception &exc) {
         PyErr_SetString(PyExc_RuntimeError, exc.what());
@@ -3680,23 +4080,21 @@ static PyObject *run_native_forward_segment(PyObject *, PyObject *args) {
                     for (size_t point = 0;
                          point < design.plan->entries.size();
                          ++point) {
-                        const NativeDesignEntry &entry =
-                            design.plan->entries[point];
                         write_native_history_value(
                             design.history,
                             design_row,
                             static_cast<npy_intp>(point),
                             fields->is_real
                                 ? std::complex<double>(
-                                      native_design_real_field_value(
+                                      native_design_forward_real_field_value(
                                           design.plan,
-                                          entry
+                                          point
                                       ),
                                       0.0
                                   )
-                                : native_design_field_value(
+                                : native_design_forward_field_value(
                                       design.plan,
-                                      entry
+                                      point
                                   )
                         );
                     }
@@ -7312,6 +7710,12 @@ static PyMethodDef TamaNativeSamplerMethods[] = {
         "Set and process pending SIGINT at a native adjoint signal checkpoint.",
     },
     {
+        "configure_native_material_operator",
+        native_method_boundary<configure_native_material_operator>,
+        METH_VARARGS,
+        "Install the averaged tensor dielectric operator before fields are constructed.",
+    },
+    {
         "create_native_design_plan",
         native_method_boundary<create_native_design_plan>,
         METH_VARARGS,
@@ -7624,7 +8028,7 @@ PyMODINIT_FUNC PyInit_native_sampler(void) {
     if (!module) {
         return nullptr;
     }
-    if (PyModule_AddIntConstant(module, "API_VERSION", 12) < 0) {
+    if (PyModule_AddIntConstant(module, "API_VERSION", 13) < 0) {
         Py_DECREF(module);
         return nullptr;
     }

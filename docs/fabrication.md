@@ -80,10 +80,11 @@ exact endpoint, so the documented VJP is unchanged in the interior.
 
 `beta=0` (and numerically indistinguishable positive values below the
 double-precision stability threshold) makes the projection and its VJP exact
-identities. TAMA's native
-design-gradient path still requires `MaterialGrid(beta=0, do_averaging=False)`;
-the public external projection shown above is applied before
-`DesignGrid.update_weights`.
+identities. In this example, use `MaterialGrid(beta=0, do_averaging=False)`
+because the external projection is applied before `DesignGrid.update_weights`.
+The Cartesian native gradient also supports MaterialGrid's internal projection
+and averaging. When using those options, TAMA includes their derivatives;
+apply only the VJPs of mappings that you perform outside the MaterialGrid.
 
 ## RGB Router Example
 

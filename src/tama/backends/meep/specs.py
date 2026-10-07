@@ -24,8 +24,10 @@ class DesignGrid:
             cylindrical coordinates.
         background: Background medium used to infer `d epsilon / d rho`.
         design_material: Design medium used to infer `d epsilon / d rho`.
-        material_factor: Explicit `d epsilon / d rho`. If omitted,
-            `background` and `design_material` are required.
+        material_factor: Explicit scalar `d epsilon / d rho`. If omitted,
+            `background` and `design_material` are required. The Cartesian
+            tensor/projection/averaging path instead derives its material
+            Jacobian directly from the MaterialGrid endpoints.
         coordinate_system: `cartesian` (default) or `cylindrical`.
             Cylindrical grids use public shape `(nr, nz)` and require a Meep
             MaterialGrid with grid size `(nr, 1, nz)`.

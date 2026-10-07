@@ -19,8 +19,13 @@ def create_native_design_plan(
     ny: int,
     nz: int,
     component: int,
+    material_jacobian: bool = False,
+    eps_averaging: bool = False,
+    subpixel_tol: float = 1e-4,
+    subpixel_maxeval: int = 100000,
+    material_derivative_step: float = 1e-5,
 ) -> Any:
-    """Create a rank-local exact-Yee/MaterialGrid-transpose plan.
+    """Create a rank-local Yee/material-Jacobian plan.
 
     Cylindrical plans use `center_x/size_x` for r, `center_z/size_z`
     for z, and logical counts `(nx, ny) == (nr, nz)` with `nz == 1`.
@@ -28,13 +33,24 @@ def create_native_design_plan(
     ...
 
 
+def configure_native_material_operator(
+    structure_addr: int,
+    geps_addr: int,
+    eps_averaging: bool,
+    subpixel_tol: float,
+    subpixel_maxeval: int,
+) -> None:
+    """Initialize anisotropic MaterialGrid averaging before fields are created."""
+    ...
+
+
 def native_design_plan_local_size(plan: Any) -> int:
-    """Return the rank-local native Yee point count."""
+    """Return the rank-local history entry count, including tensor stencils."""
     ...
 
 
 def native_design_plan_signature(plan: Any) -> NDArray[np.int64]:
-    """Return deterministic Yee coordinates as x/y[/z] or r/z integer pairs."""
+    """Return Yee coordinates; tensor plans append component and stencil node."""
     ...
 
 

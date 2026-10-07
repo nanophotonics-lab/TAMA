@@ -23,5 +23,5 @@ minimum-version = "1.0"
 cmake.version = ">=3.20"
 wheel.packages = ["src/tama_meep_native"]
 sdist.inclusion-mode = "explicit"
-sdist.include = ["LICENSE", "README.md", "pyproject.toml", "CMakeLists.txt", "native_sampler.cpp", "src/tama_meep_native/**"]
+sdist.include = ["LICENSE", "README.md", "pyproject.toml", "CMakeLists.txt", "native_sampler.cpp", "material_tensor.hpp", "src/tama_meep_native/**"]
 sdist.exclude = ["**/__pycache__/**", "**/*:Zone.Identifier"]

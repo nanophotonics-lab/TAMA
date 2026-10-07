@@ -1387,6 +1387,7 @@ def test_multi_tda_objective_requires_design_only_for_gradients(monkeypatch):
 
 
 class _FakeSimulation:
+    eps_averaging = False
     def __init__(self, dt, samples, actual_time=None):
         self.dt = dt
         self.fields = _FakeFields(dt)
@@ -1466,6 +1467,7 @@ class _CylindricalFluxFakeSimulation(_FakeSimulation):
 
 
 class _FakeSimulationSpec:
+    eps_averaging = False
     def __init__(self, factory, *, dimensions=2, m=0):
         self.factory = factory
         self.resolution = 10
@@ -1752,6 +1754,7 @@ def _fake_native_path():
 
 
 class _RaisingSimulation:
+    eps_averaging = False
     def __init__(self):
         self.index = 0
 
@@ -3050,7 +3053,7 @@ def test_multi_tda_objective_accepts_bundled_design_simulation_and_targets():
     assert obj.design is design
     assert obj.monitor_positions == [target.position for target in targets]
     assert obj.component == mp.Ez
-    assert obj.gradient_components == (mp.Ez,)
+    assert obj.gradient_components == (mp.Ex, mp.Ey, mp.Ez)
     assert obj.adjoint_source_amplitude == amplitude
 
 
