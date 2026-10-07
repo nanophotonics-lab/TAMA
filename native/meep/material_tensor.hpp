@@ -131,10 +131,12 @@ inline void generalized_material_row(meep_geom::geom_epsilon *geps, meep::compon
     auto *material = tree ? static_cast<material_data *>(tree->objects[object_index].o->material)
                           : nullptr;
     if (!material || !is_material_grid(material) || !material->do_averaging ||
-        !(anisotropic(material->medium_1) || anisotropic(material->medium_2))) {
+        !(v.dim == meep::D3 || anisotropic(material->medium_1) ||
+          anisotropic(material->medium_2))) {
         geps->eff_chi1inv_row(c, row, v, tol, maxeval);
         return;
     }
+    // Scalar 3D also needs the normalized kernel (Meep 1.34 used integer 4/3).
     // Preserve Meep's analytic geometric-interface branch whenever it applies.
     symm_matrix base;
     bool fallback;

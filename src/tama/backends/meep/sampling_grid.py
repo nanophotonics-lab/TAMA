@@ -1216,7 +1216,8 @@ def _prepare_native_material(sim, design) -> None:
         bool(sim.eps_averaging)
         and grid.do_averaging
         and (
-            not _is_isotropic_design_medium(grid.medium1)
+            sim._infer_dimensions(sim.k_point) == 3
+            or not _is_isotropic_design_medium(grid.medium1)
             or not _is_isotropic_design_medium(grid.medium2)
         )
     )
@@ -1232,7 +1233,7 @@ def _prepare_native_material(sim, design) -> None:
         return
     if sim.fields is not None:
         raise ValueError(
-            "anisotropic MaterialGrid averaging requires an uninitialized Simulation; "
+            "3D or anisotropic MaterialGrid averaging requires an uninitialized Simulation; "
             "let TAMA initialize the simulation returned by the factory"
         )
     _require_native_sampler()
