@@ -1,7 +1,7 @@
 import gc
 import tempfile
 import time
-from typing import Callable, Optional, Tuple, Union
+from typing import Callable, Optional, Sequence, Tuple, Union
 
 from autograd import grad
 import autograd.numpy as npa
@@ -12,10 +12,13 @@ from .sampling_grid import (
     FastPointMonitor,
     _require_no_meep_symmetries,
     history_storage_dtype,
-    _uses_material_jacobian,
     _prepare_native_material,
-    _native_design_components,
-    _native_design_gradient_scale,
+)
+from .design_collection import (
+    _resolve_designs, _DesignCollection,
+    _collection_components as _native_design_components,
+    _collection_gradient_scale as _native_design_gradient_scale,
+    _collection_uses_material_jacobian as _uses_material_jacobian,
 )
 from .native_design import (
     _NativeDesignAccumulator,
@@ -56,10 +59,12 @@ from .specs import (
     EigenmodeCoefficientTarget,
     FieldRegionTarget,
     FluxTarget,
+    Near2FarTarget,
     PointTarget,
     SimulationSpec,
 )
 from .adaptive_chunking import AdaptiveAdjointChunkBalancer
+from .near2far import evaluate_near2far, farfield_intensity
 from ...nyquist import (
     _aligned_run_until,
     _monitor_history_stop,
@@ -79,8 +84,8 @@ class TDAObjective:
 
     Users provide Meep simulation construction through `sim_factory`, design
     updates through `update_design`, and a point, regional-field, flux, or
-    eigenmode-coefficient target. The scalar FoM can be customized with
-    `fom_fn`; when no adjoint signal is supplied, autograd differentiates it
+    eigenmode-coefficient or discrete-frequency far-field target. The scalar
+    FoM can be customized with `fom_fn`; without an adjoint signal, autograd differentiates it
     with respect to the sampled target history.
 
     Sign convention: `evaluate` / `fom_and_grad` return
@@ -106,6 +111,7 @@ class TDAObjective:
         resolution: Optional[float] = None,
         sampling_interval: int = 1,
         design: Optional[DesignGrid] = None,
+        designs: Optional[Sequence[DesignGrid]] = None,
         simulation: Optional[SimulationSpec] = None,
         target: Optional[
             Union[
@@ -113,6 +119,7 @@ class TDAObjective:
                 FieldRegionTarget,
                 FluxTarget,
                 EigenmodeCoefficientTarget,
+                Near2FarTarget,
             ]
         ] = None,
         history_dtype=np.complex128,
@@ -128,6 +135,9 @@ class TDAObjective:
         Args:
             update_design: Function that writes the design vector `x` into
                 the Meep geometry or material grid.
+            designs: Ordered independent DesignGrid regions, mutually exclusive
+                with `design`. Variables and gradients concatenate each region's
+                C-order flattened array in this order.
             t_final: Positive finite forward simulation end time.
             sim_factory: Function returning a Meep `Simulation`. It is called
                 with no arguments for the forward run and with a source list for
@@ -194,7 +204,7 @@ class TDAObjective:
                 required for cylindrical gradients and supplies their forward
                 angular mode `m`.
             target: Optional `PointTarget`, `FieldRegionTarget`,
-                `FluxTarget`, or `EigenmodeCoefficientTarget` bundle.
+                `FluxTarget`, `EigenmodeCoefficientTarget`, or `Near2FarTarget` bundle.
                 A regional target exposes a history whose first axis is time
                 and whose remaining axes follow `sample_shape`. It samples
                 explicitly ordered physical positions and requires direct
@@ -205,7 +215,11 @@ class TDAObjective:
                 combined in one adjoint simulation. An eigenmode target
                 exposes the complex time-domain overlap with one fixed,
                 power-normalized reference mode and uses the same
-                combined-adjoint structure.
+                combined-adjoint structure. A near-to-far target exposes complex
+                fields shaped `(far_points, frequencies, 6)` in Ex/Ey/Ez/Hx/Hy/Hz
+                order. Its default FoM sums electric-field intensity over points
+                and frequencies. It uses fixed chunks and always restarts the
+                forward simulation for exact indexed adjoint-source ownership.
             history_dtype: Real or complex floating dtype requested for
                 temporary forward field histories. Its real counterpart is
                 used automatically when Meep initializes real forward fields;
@@ -228,10 +242,19 @@ class TDAObjective:
                 and should only be enabled for restart-safe, time-invariant
                 simulations. Cylindrical reuse changes the mode from `m` to
                 `-m` before the adjoint run.
+                Near-to-far targets always reuse the initialized simulation.
         """
         uses_simulation_spec = simulation is not None and (
             sim_factory is None or getattr(sim_factory, "__self__", None) is simulation
         )
+        near2far_target = isinstance(target, Near2FarTarget)
+        resolved_designs = _resolve_designs(design, designs)
+        design = (_DesignCollection(resolved_designs) if len(resolved_designs) > 1
+                  else next(iter(resolved_designs), None))
+        if near2far_target and chunk_balancer == "auto":
+            chunk_balancer = None
+        if near2far_target and (not uses_simulation_spec or chunk_balancer is not None):
+            raise ValueError("Near2FarTarget requires direct SimulationSpec and fixed chunk layout")
         uses_concrete_simulation_spec = uses_simulation_spec and isinstance(
             simulation,
             SimulationSpec,
@@ -243,8 +266,11 @@ class TDAObjective:
                 AdaptiveAdjointChunkBalancer()
                 if uses_concrete_simulation_spec
                 and simulation.chunk_layout is None
+                and not simulation.symmetries
                 else None
             )
+        if chunk_balancer is not None and getattr(simulation, "symmetries", ()):
+            raise ValueError("Mirror simulations do not support adaptive chunk balancing")
         if design is not None:
             update_design = update_design if update_design is not None else design.update_weights
         if simulation is not None:
@@ -254,7 +280,7 @@ class TDAObjective:
         flux_target = isinstance(target, FluxTarget)
         eigenmode_target = isinstance(target, EigenmodeCoefficientTarget)
         mixed_surface_target = flux_target or eigenmode_target
-        if regional_target or mixed_surface_target:
+        if regional_target or mixed_surface_target or near2far_target:
             conflicting = [
                 name
                 for name, value in (
@@ -297,14 +323,14 @@ class TDAObjective:
                 (
                     "monitor_position",
                     (
-                        target.positions
-                        if regional_target or mixed_surface_target
+                        target.far_points if near2far_target else target.positions
+                        if regional_target or mixed_surface_target or near2far_target
                         else monitor_position
                     ),
                 ),
                 (
                     "component",
-                    target.normal if mixed_surface_target else component,
+                    mp.Ex if near2far_target else target.normal if mixed_surface_target else component,
                 ),
             )
             if value is None
@@ -432,6 +458,9 @@ class TDAObjective:
         self._is_regional_target = regional_target
         self._is_flux_target = flux_target
         self._is_eigenmode_target = eigenmode_target
+        self._is_near2far_target = near2far_target
+        self.last_far_fields = None
+        self.last_actual_time = None
         self._reference_mode_fields = None
         self.objective = (
             _FieldRegionTarget(
@@ -443,7 +472,7 @@ class TDAObjective:
             )
             if regional_target
             else target
-            if mixed_surface_target
+            if mixed_surface_target or near2far_target
             else _PointTarget(
                 monitor_position=monitor_position,
                 component=component,
@@ -452,7 +481,9 @@ class TDAObjective:
             )
         )
         self._uses_default_fom = fom_fn is None
-        if fom_fn is None and regional_target:
+        if fom_fn is None and near2far_target:
+            fom_fn = farfield_intensity
+        elif fom_fn is None and regional_target:
             spatial_weights = npa.asarray(self.objective.spatial_weights)
 
             def fom_fn(monitor_history, sample_dt):
@@ -473,8 +504,11 @@ class TDAObjective:
         self.fom_fn = fom_fn if fom_fn is not None else _default_intensity_fom
         self.adjoint_signal_fn = adjoint_signal_fn
         self.design = design
+        self.designs = resolved_designs
         if design is None:
             self.gradient_components = ()
+        elif near2far_target:
+            self.gradient_components = (mp.Ex, mp.Ey, mp.Ez)
         elif mixed_surface_target:
             required = set()
             for electric, magnetic, _ in flux_component_pairs(
@@ -520,7 +554,7 @@ class TDAObjective:
         ):
             self.gradient_components = (mp.Ex, mp.Ey, mp.Ez)
         self._native_adjoint_midpoint = (
-            False if mixed_surface_target else _is_magnetic_component(component)
+            False if mixed_surface_target or near2far_target else _is_magnetic_component(component)
         )
 
     def _make_history_memmap(self, shape, *, dtype=None):
@@ -1281,6 +1315,8 @@ class TDAObjective:
             `(objective_value, gradient)`. The gradient is a flat real array
             from the objective model, or `None` for value-only evaluation.
         """
+        if self.chunk_balancer is not None and getattr(self._simulation_spec, "symmetries", ()):
+            raise ValueError("Mirror simulations do not support adaptive chunk balancing")
         if need_gradient and self.design is None:
             raise ValueError(
                 "TDAObjective gradient evaluation requires design=DesignGrid(...)"
@@ -1294,7 +1330,7 @@ class TDAObjective:
                 "SimulationSpec.m must not change after TDAObjective construction"
             )
         if need_gradient and not (
-            self._is_flux_target or self._is_eigenmode_target
+            self._is_flux_target or self._is_eigenmode_target or self._is_near2far_target
         ):
             _validate_logical_adjoint_source_amplitudes(
                 (self.objective.adjoint_source_amplitude,)
@@ -1318,6 +1354,8 @@ class TDAObjective:
                 "simulation=SimulationSpec(...)"
             )
         forward_sources = self._forward_sources_for_evaluation()
+        if self._is_near2far_target:
+            return evaluate_near2far(self, x, need_gradient, forward_sources)
         if self._is_flux_target or self._is_eigenmode_target:
             if need_gradient and not self._uses_simulation_spec:
                 raise ValueError(
@@ -1434,6 +1472,11 @@ class TDAObjective:
             balance_wall_start = time.perf_counter() if balance_enabled else None
             sim_fwd = self._make_forward_simulation(forward_sources)
             _require_no_meep_symmetries(sim_fwd)
+            if (need_gradient and getattr(sim_fwd, "symmetries", ())
+                    and (not self._uses_simulation_spec or not all(indexed_source_mask))):
+                raise ValueError(
+                    "Mirror gradients require direct SimulationSpec and exact indexed adjoint sources"
+                )
             is_cylindrical = _is_cylindrical_simulation(sim_fwd)
             forward_mode = getattr(sim_fwd, "m", 0)
             forward_mode = 0 if forward_mode is None else forward_mode

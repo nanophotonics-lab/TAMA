@@ -34,10 +34,14 @@ from .sampling_grid import (
     FastPointMonitor,
     _require_no_meep_symmetries,
     history_storage_dtype,
-    _uses_material_jacobian,
     _prepare_native_material,
-    _native_design_components,
-    _native_design_gradient_scale,
+)
+from .design_collection import (
+    _DesignCollection,
+    _resolve_designs,
+    _collection_components as _native_design_components,
+    _collection_gradient_scale as _native_design_gradient_scale,
+    _collection_uses_material_jacobian as _uses_material_jacobian,
 )
 from .native_design import (
     _NativeDesignAccumulator,
@@ -51,6 +55,7 @@ from .specs import (
     EigenmodeCoefficientTarget,
     FieldRegionTarget,
     FluxTarget,
+    Near2FarTarget,
     PointTarget,
     SimulationSpec,
 )
@@ -75,6 +80,13 @@ from ...nyquist import (
     _positive_finite_float,
     _validate_reconstruction_settings,
     nyquist_sampling_interval,
+)
+
+
+_NEAR2FAR_SAMPLING_ATTRIBUTES = (
+    "t_final", "dt", "resolution", "_fallback_courant", "sampling_interval",
+    "max_frequency", "history_dtype", "reconstruction_window",
+    "reconstruction_window_params", "reconstruction_half_width",
 )
 
 
@@ -622,6 +634,7 @@ class MultiTDAObjective:
         history_dtype=np.complex128,
         target_history_block_size: Optional[int] = None,
         design: Optional[DesignGrid] = None,
+        designs: Optional[Sequence[DesignGrid]] = None,
         simulation: Optional[SimulationSpec] = None,
         targets: Optional[
             Sequence[
@@ -630,6 +643,7 @@ class MultiTDAObjective:
                     FieldRegionTarget,
                     FluxTarget,
                     EigenmodeCoefficientTarget,
+                    Near2FarTarget,
                 ]
             ]
         ] = None,
@@ -823,12 +837,70 @@ class MultiTDAObjective:
             reconstruction_half_width: Number of sparse samples on each side
                 of the finite sinc support. Default is 64.
         """
+        self._near2far_objective = None
+        if targets is not None:
+            targets = tuple(targets)
+        if targets and any(isinstance(target, Near2FarTarget) for target in targets):
+            if not all(isinstance(target, Near2FarTarget) for target in targets):
+                raise ValueError("Near2FarTarget cannot be mixed with temporal targets")
+            if any(value is not None for value in
+                   (wavelength_bands, weights, kernel_length, transition_width,
+                    kernel_window_params, target_history_block_size)) or (
+                        filter_bank != "independent" or kernel_window != "hamming"
+                    ):
+                raise ValueError(
+                    "Near2FarTarget uses discrete frequencies, not PC-FIR "
+                    "wavelength_bands, weights, kernel settings, or temporal history settings"
+                )
+            from .tda_objective import TDAObjective
+
+            fns = _normalize_band_callbacks(fom_fn, len(targets), "fom_fn")
+            signals = _normalize_band_callbacks(adjoint_signal_fn, len(targets), "adjoint_signal_fn")
+            _validate_band_callback_pairs(fns, signals)
+            core = TDAObjective(
+                update_design=update_design, sim_factory=sim_factory, t_final=t_final,
+                monitor_position=monitor_positions, component=component,
+                adjoint_source_size=adjoint_source_size,
+                adjoint_source_amplitude=adjoint_source_amplitude,
+                design=design, designs=designs, simulation=simulation, target=targets[0],
+                dt=dt, resolution=resolution, history_dtype=history_dtype,
+                chunk_balancer=chunk_balancer, sampling_interval=sampling_interval,
+                max_frequency=max_frequency, reuse_simulation=reuse_simulation,
+                reconstruction_window=reconstruction_window,
+                reconstruction_window_params=reconstruction_window_params,
+                reconstruction_half_width=reconstruction_half_width,
+            )
+            self._near2far_objective = core
+            self.targets = targets
+            self.design, self.designs = core.design, core.designs
+            self.gradient_components = core.gradient_components
+            self.chunk_balancer = core.chunk_balancer
+            self.reuse_simulation = core.reuse_simulation
+            self._simulation_spec = simulation
+            self.update_design = core.update_design
+            self._explicit_dt = None if dt is None else float(dt)
+            for name in _NEAR2FAR_SAMPLING_ATTRIBUTES:
+                setattr(self, name, getattr(core, name))
+            self.fom_fn, self.adjoint_signal_fn = fom_fn, adjoint_signal_fn
+            self.scalarization_fn = scalarization_fn or self._weighted_sum_scalarization
+            self.last_far_fields = None
+            self.last_band_objectives = self.last_band_losses = self.last_band_coeffs = None
+            self.last_scalarization_info = self.last_smooth_min = self.last_total_fom = None
+            self.last_sampling_interval = None
+            self.last_actual_time = None
+            return
+
         uses_simulation_spec = simulation is not None and (
             sim_factory is None or getattr(sim_factory, "__self__", None) is simulation
         )
         uses_concrete_simulation_spec = uses_simulation_spec and isinstance(
             simulation,
             SimulationSpec,
+        )
+        resolved_designs = _resolve_designs(design, designs)
+        design = (
+            _DesignCollection(resolved_designs) if len(resolved_designs) > 1
+            else next(iter(resolved_designs), None)
         )
         if design is not None:
             update_design = update_design if update_design is not None else design.update_weights
@@ -1212,9 +1284,12 @@ class MultiTDAObjective:
                 if (
                     uses_concrete_simulation_spec
                     and simulation.chunk_layout is None
+                    and not simulation.symmetries
                 )
                 else None
             )
+        if chunk_balancer is not None and getattr(simulation, "symmetries", ()):
+            raise ValueError("Mirror simulations do not support adaptive chunk balancing")
         if chunk_balancer is not None and not uses_simulation_spec:
             raise ValueError("adaptive chunk balancing requires SimulationSpec.make")
         if (
@@ -1351,6 +1426,7 @@ class MultiTDAObjective:
             )
         )
         self.design = design
+        self.designs = resolved_designs
         self._simulation_spec = simulation
         self._configured_simulation_m = (
             int(simulation.m) if uses_simulation_spec else None
@@ -1769,6 +1845,12 @@ class MultiTDAObjective:
             return courant / resolution
         raise ValueError("MultiTDAObjective requires dt or resolution")
 
+    def _sync_near2far_sampling(self):
+        core = self._near2far_objective
+        for name in _NEAR2FAR_SAMPLING_ATTRIBUTES:
+            setattr(core, name, getattr(self, name))
+        return core
+
     def time_step(self, sim: mp.Simulation) -> float:
         """Return the time step used by TAMA sampling.
 
@@ -1779,6 +1861,8 @@ class MultiTDAObjective:
             The initialized Meep time step when available, otherwise explicit
             `dt` when supplied, otherwise `Courant / resolution`.
         """
+        if self._near2far_objective is not None:
+            return self._sync_near2far_sampling().time_step(sim)
         sim_dt = _simulation_time_step(sim, self._explicit_dt)
         if sim_dt is not None:
             return sim_dt
@@ -2437,6 +2521,7 @@ class MultiTDAObjective:
         if (
             self.target_history_block_size is None
             or not self._uses_concrete_simulation_spec
+            or bool(getattr(self._simulation_spec, "symmetries", ()))
             or self._is_cylindrical
             or not (
                 all(self._regional_target_mask)
@@ -3545,6 +3630,31 @@ class MultiTDAObjective:
             the same number of entries as `x` when `need_gradient=True`;
             otherwise it is `None`.
         """
+        if self.chunk_balancer is not None and getattr(self._simulation_spec, "symmetries", ()):
+            raise ValueError("Mirror simulations do not support adaptive chunk balancing")
+        if self._near2far_objective is not None:
+            from .near2far import evaluate_near2far
+
+            if need_gradient and self.design is None:
+                raise ValueError("gradient evaluation requires a DesignGrid")
+            callbacks = _normalize_band_callbacks(self.fom_fn, len(self.targets), "fom_fn")
+            signals = _normalize_band_callbacks(
+                self.adjoint_signal_fn, len(self.targets), "adjoint_signal_fn"
+            )
+            if need_gradient:
+                _validate_band_callback_pairs(callbacks, signals)
+            core = self._sync_near2far_sampling()
+            core.update_design = self.update_design
+            result = evaluate_near2far(
+                core, x, need_gradient, targets=self.targets, fom_fns=callbacks,
+                adjoint_signal_fns=signals, scalarize=self._evaluate_scalarization,
+            )
+            for name in ("last_far_fields", "last_band_objectives", "last_band_losses",
+                         "last_band_coeffs", "last_scalarization_info", "last_smooth_min",
+                         "last_total_fom", "last_sampling_interval", "last_actual_time"):
+                setattr(self, name, getattr(core, name))
+            return result
+
         if need_gradient and self.design is None:
             raise ValueError(
                 "MultiTDAObjective gradient evaluation requires design=DesignGrid(...)"
@@ -3708,6 +3818,11 @@ class MultiTDAObjective:
             balance_wall_start = time.perf_counter() if balance_enabled else None
             sim_fwd = self._make_forward_simulation(forward_sources)
             _require_no_meep_symmetries(sim_fwd)
+            if (need_gradient and getattr(sim_fwd, "symmetries", ())
+                    and (not self._uses_simulation_spec or not all(indexed_source_mask))):
+                raise ValueError(
+                    "Mirror gradients require direct SimulationSpec and exact indexed adjoint sources"
+                )
             is_cylindrical = _is_cylindrical_simulation(sim_fwd)
             forward_mode = getattr(sim_fwd, "m", 0)
             forward_mode = 0 if forward_mode is None else forward_mode

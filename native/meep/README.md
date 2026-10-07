@@ -23,7 +23,9 @@ resolve to this same module, including the original native API capability check.
 Builds are tied to the selected Python, Meep, MPI and NumPy ABI; do not distribute
 a locally built wheel as a universal binary.
 
-Native API 13 adds Cartesian real symmetric dielectric MaterialGrid gradients,
-internal projection, and subpixel averaging. Tensor interface averaging uses
+Native API 14 adds independent design-region offsets and Cartesian Mirror
+sampling, source transposes, and near-to-far source folding. It retains the
+real symmetric dielectric MaterialGrid gradients, internal projection, and
+subpixel averaging introduced in API 13. Tensor interface averaging uses
 libctlgeom's existing adaptive quadrature. Reinstall both the Python core and
 this extension after updating; an older native API is rejected.

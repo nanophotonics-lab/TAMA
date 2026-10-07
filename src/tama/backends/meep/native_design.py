@@ -7,6 +7,7 @@ import meep as mp
 import numpy as np
 
 from . import native_sampler
+from .design_collection import _DesignCollection, _region_component
 from .sampling_grid import (
     FastFieldGrid,
     NativeDesignField,
@@ -76,10 +77,11 @@ class _NativeDesignHistorySet:
         """Create all forward plans and fixed-capacity history arrays."""
         for component in self.components:
             if component not in self.forward_fields:
+                region, field_component, _ = _region_component(self.design, component)
                 self.forward_fields[component] = NativeDesignField(
                     sim,
-                    component,
-                    self.design,
+                    field_component,
+                    region,
                 )
             if component not in self.states:
                 native_field = self.forward_fields[component]
@@ -217,10 +219,11 @@ class _NativeDesignAccumulator:
         forward_derivative: np.ndarray,
     ) -> None:
         if component not in self.fields:
+            region, field_component, _ = _region_component(self.design, component)
             self.fields[component] = NativeDesignField(
                 sim,
-                component,
-                self.design,
+                field_component,
+                region,
                 expected_signature=self.signatures[component],
             )
         native_field = self.fields[component]
@@ -248,10 +251,13 @@ class _NativeDesignAccumulator:
                 self.design.shape,
                 dtype=np.float64 if self._use_real else np.complex128,
             )
+        region, _, offset = _region_component(self.design, component)
+        local = self.local.reshape(-1)[offset:offset + int(np.prod(region.shape))]
+        local = local.reshape(region.shape)
         if self.midpoint:
-            native_field.accumulate_midpoint(derivative, self.local)
+            native_field.accumulate_midpoint(derivative, local)
         else:
-            native_field.accumulate(derivative, self.local)
+            native_field.accumulate(derivative, local)
 
     def run_segment(
         self,
@@ -272,10 +278,11 @@ class _NativeDesignAccumulator:
         ordered_plans = []
         for component in self.components:
             if component not in self.fields:
+                region, field_component, _ = _region_component(self.design, component)
                 self.fields[component] = NativeDesignField(
                     sim,
-                    component,
-                    self.design,
+                    field_component,
+                    region,
                     expected_signature=self.signatures[component],
                 )
             native_field = self.fields[component]
@@ -307,6 +314,12 @@ class _NativeDesignAccumulator:
                 dtype=np.float64 if self._use_real else np.complex128,
             )
 
+        offset_args = ()
+        if isinstance(self.design, _DesignCollection):
+            offset_args = (tuple(
+                int(_region_component(self.design, component)[2])
+                for component in self.components
+            ),)
         setup_seconds = time.perf_counter() - setup_start
         return setup_seconds + float(
             _native_design_call(
@@ -326,6 +339,7 @@ class _NativeDesignAccumulator:
                 int(sample_count),
                 float(dt),
                 bool(self.midpoint),
+                *offset_args,
             )
         )
 
@@ -433,6 +447,7 @@ def _run_native_forward_loop(
                 start_fine_index,
                 sample_count,
                 monitor_times,
+                *((int(fields.this),) if not monitor_plans else ()),
             )
         )
         state["samples"] += sample_count

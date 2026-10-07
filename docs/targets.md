@@ -241,7 +241,7 @@ temporal-filter transpose, and indexed Yee-point transpose are all applied.
 One gradient evaluation therefore uses one forward run followed by one
 combined electric/magnetic adjoint run.
 
-The implementation supports nonsymmetric Cartesian 2D lines and 3D planes,
+The implementation supports Cartesian 2D lines and 3D planes,
 plus cylindrical radial or axial surfaces, with explicit quadrature points.
 Meep does not solve cylindrical eigenmodes, so a cylindrical target supplies
 `reference_mode_fields` and `reference_m` matching the forward simulation.
@@ -253,3 +253,80 @@ updates. Oblique ports, azimuthal cylindrical normals, degenerate-mode
 subspaces, automatic port grids, and frequency-dependent broadband mode
 profiles are not supported. This is a fixed-reference time-domain overlap,
 not a wrapper around Meep's DFT `get_eigenmode_coefficients()`.
+
+## Near-to-Far Targets
+
+`Near2FarTarget` uses Meep's near-to-far transform at explicit frequencies and
+far-field points. Supply ordinary Meep near surfaces:
+
+```python
+far_target = tm.Near2FarTarget(
+    near_regions=near_surfaces,  # sequence of mp.Near2FarRegion objects
+    frequencies=[0.6, 0.8],
+    far_points=[mp.Vector3(10, 2), mp.Vector3(10, -2)],
+)
+problem = tm.TDAObjective(
+    design=design, simulation=simulation, target=far_target, t_final=t_final,
+)
+value, gradient = problem.fom_and_grad(x)
+far_fields = problem.last_far_fields
+```
+
+The callback argument and `last_far_fields` have shape
+`(n_far_points, n_frequencies, 6)`, with components
+`Ex, Ey, Ez, Hx, Hy, Hz` in the supplied point/frequency order. The default FoM
+is `0.5 * sum(abs(far_fields[..., :3])**2)`. This is summed electric-field
+intensity at discrete frequencies, not integrated radiated power, a normalized
+transmission efficiency, or a PC-FIR wavelength-band energy. Supply an
+autograd-compatible `fom_fn(far_fields, dt)` to choose components, weights, or a
+different scalar objective.
+
+Manual `adjoint_signal_fn` retains the existing convention
+`delta FoM = dt * Re(sum(q * delta far_fields))`. Thus, for this target's
+default FoM, a manual covector is zero in the H slots and
+`conj(far_fields[..., :3]) / dt` in the E slots. The callback output must have
+the same shape as `far_fields`.
+
+Meep supplies the forward DFT, Green-function transform, and spatial source
+pullback. TAMA transposes the finite-time Fourier sum into time-domain electric
+and magnetic currents, then uses its native design-history gradient. It does
+not call `meep.adjoint.OptimizationProblem`. Near-field DFTs remain full rate
+(`decimation_factor=1`); `sampling_interval` only reduces stored design-field
+history.
+
+For sparse design histories with stride `K`, both value-only and gradient
+evaluations align the final DFT time to the same stored-history step. This may
+extend the run by up to `K-1` Meep steps. Use a stride-aligned `t_final` when
+comparing dense and sparse results over exactly the same time interval.
+`last_actual_time` reports the completed DFT end time for either objective
+class.
+
+The near surfaces must be finite axis-aligned lines in 2D or planes in 3D,
+with half a grid cell of clearance from PML and cell boundaries. They must
+lie in the same homogeneous, isotropic,
+lossless exterior medium used by the Green function. The far points must be
+in that exterior region. This material condition is a user precondition;
+TAMA does not inspect the entire exterior geometry to prove it.
+Cartesian 2D/3D, independent design regions, and
+compatible mirror symmetries are supported. Nonzero Bloch wavevectors,
+cylindrical near-to-far gradients, and periodic-image sums are not supported.
+
+Near-to-far gradients require direct `SimulationSpec` use and restart-safe,
+time-invariant simulation state. The adjoint always restarts the forward
+simulation to preserve Meep's indexed-source chunk ownership, including when
+`reuse_simulation=False`. DFT monitors are removed and sources replaced before
+the adjoint run.
+The default `chunk_balancer="auto"` is disabled for this target; explicit
+adaptive balancers are rejected. A fixed `SimulationSpec.chunk_layout` is
+supported without mirrors. Combining mirrors with an explicit chunk layout is
+rejected: stock Meep 1.34 duplicated near-to-far surface contributions in the
+tested reduced-domain layouts. Mirrored near-to-far objectives use Meep's
+default partitioning. All ranks retain the same forward/adjoint ownership.
+
+`MultiTDAObjective(targets=[far_target_a, far_target_b], ...)` combines
+per-target spectral objectives through its usual `scalarization_fn`, using one
+forward and one combined adjoint simulation. Each target may have its own
+surfaces, frequencies, points, and FoM. `last_far_fields` is then a tuple of
+target arrays. This mode requires all targets to be `Near2FarTarget` and does
+not accept wavelength bands or temporal FIR filtering; temporal and spectral
+targets cannot be mixed in one objective.

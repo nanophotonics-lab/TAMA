@@ -10,7 +10,7 @@ from typing import Any, Mapping, Optional, Sequence
 
 from . import native_sampler
 
-_NATIVE_API_VERSION = 13
+_NATIVE_API_VERSION = 14
 _REQUIRED_NATIVE_OPERATIONS = (
     "create_component_grid_plan",
     "sample_component_grid_plan_allreduced",
@@ -46,6 +46,7 @@ _REQUIRED_NATIVE_OPERATIONS = (
     "shift_tabulated_bspline",
     "create_native_design_plan",
     "configure_native_material_operator",
+    "fold_near2far_sources",
     "native_design_plan_local_size",
     "native_design_plan_signature",
     "sample_native_design_plan_into",
@@ -272,9 +273,46 @@ def _simulation_has_symmetry(sim: mp.Simulation) -> bool:
 
 
 def _require_no_meep_symmetries(sim: mp.Simulation) -> None:
-    """Reject Meep symmetry reductions unsupported by exact native sampling."""
-    if _simulation_has_symmetry(sim):
-        raise ValueError("TAMA does not support Meep symmetries")
+    """Accept Cartesian Mirror reductions supported by exact native sampling."""
+    symmetries = tuple(getattr(sim, "symmetries", ()))
+    if not symmetries:
+        return
+    if getattr(sim, "is_cylindrical", False) or getattr(sim, "dimensions", 2) == mp.CYLINDRICAL:
+        raise ValueError("explicit Mirror symmetries require Cartesian simulations")
+    directions = set()
+    for symmetry in symmetries:
+        if not isinstance(symmetry, mp.Mirror) or symmetry.phase not in (-1, 1):
+            raise ValueError("TAMA supports only mp.Mirror symmetries with phase +1 or -1")
+        if symmetry.direction not in ((mp.X, mp.Y) if getattr(sim, "dimensions", 2) == 2 else (mp.X, mp.Y, mp.Z)):
+            raise ValueError("Mirror direction must be an active Cartesian simulation axis")
+        if symmetry.direction in directions:
+            raise ValueError("Mirror directions must be distinct")
+        directions.add(symmetry.direction)
+
+
+def _validate_mirror_design(sim, design) -> None:
+    symmetries = tuple(getattr(sim, "symmetries", ()))
+    if not symmetries:
+        return
+    grid = design.material_grid
+    weights = np.asarray(grid.weights).reshape(design.shape)
+    center = tuple(design.center)
+    mirror_center = tuple(getattr(sim, "geometry_center", None) or mp.Vector3())
+    for symmetry in symmetries:
+        axis = int(symmetry.direction)
+        if (getattr(sim, "eps_averaging", False) and grid.do_averaging
+                and axis < weights.ndim and weights.shape[axis] > 1
+                and weights.shape[axis] % 2):
+            raise ValueError("averaged Mirror designs require an even grid size along each reflected axis (or size 1); an odd center interpolation knot has a one-sided interface normal")
+        if not np.isclose(center[axis], mirror_center[axis], rtol=0, atol=1e-12):
+            raise ValueError("each design Block must be invariant under every Mirror; exchanging independent regions is unsupported")
+        if axis < weights.ndim and not np.allclose(weights, np.flip(weights, axis), rtol=0, atol=1e-12):
+            raise ValueError("MaterialGrid weights must obey the specified Mirror symmetry")
+        for medium in (grid.medium1, grid.medium2):
+            xy, xz, yz = tuple(medium.epsilon_offdiag)
+            offdiag = np.asarray(((0, xy, xz), (xy, 0, yz), (xz, yz, 0)))
+            if np.any(offdiag[axis] != 0):
+                raise ValueError("MaterialGrid endpoint tensors must be invariant under every Mirror")
 
 
 class _NativePlanFieldsGuard:
@@ -687,7 +725,8 @@ class FastFieldGrid(_NativePlanFieldsGuard):
         self.coords_y = list(coords_y)
         self.shape = (len(self.coords_x), len(self.coords_y))
         _require_native_sampler()
-        _require_no_meep_symmetries(sim)
+        if getattr(sim, "symmetries", None):
+            raise ValueError("FastFieldGrid does not support Meep symmetries")
         if (
             getattr(sim, "dimensions", 2) != 2
             or bool(getattr(sim, "is_cylindrical", False))
@@ -1195,16 +1234,21 @@ def _validate_native_material_grid(grid) -> None:
 def _prepare_native_material(sim, design) -> None:
     """Install tensor MaterialGrid averaging before Meep constructs fields."""
     _require_no_meep_symmetries(sim)
-    if design is None or not _uses_material_jacobian(sim, design):
+    designs = () if design is None else tuple(getattr(design, "designs", (design,)))
+    for region in designs:
+        _validate_mirror_design(sim, region)
+    active_designs = tuple(region for region in designs if _uses_material_jacobian(sim, region))
+    if not active_designs:
         return
-    _validate_native_material_grid(design.material_grid)
-    if getattr(design, "is_cylindrical", False):
-        raise ValueError(
-            "tensor material gradients and averaging currently require Cartesian 2D/3D"
-        )
+    for region in active_designs:
+        _validate_native_material_grid(region.material_grid)
+        if getattr(region, "is_cylindrical", False):
+            raise ValueError(
+                "tensor material gradients and averaging currently require Cartesian 2D/3D"
+            )
     sim.force_all_components = True
-    grid = design.material_grid
-    if sim.eps_averaging and grid.do_averaging and sim.subpixel_tol > 1.0e-8:
+    grids = tuple(region.material_grid for region in active_designs)
+    if sim.eps_averaging and any(grid.do_averaging for grid in grids) and sim.subpixel_tol > 1.0e-8:
         if sim.structure is not None or sim.fields is not None:
             raise ValueError(
                 "MaterialGrid averaging requires an uninitialized Simulation "
@@ -1214,12 +1258,11 @@ def _prepare_native_material(sim, design) -> None:
         sim.subpixel_tol = 1.0e-8
     tensor_averaging = (
         bool(sim.eps_averaging)
-        and grid.do_averaging
-        and (
+        and any(grid.do_averaging and (
             sim._infer_dimensions(sim.k_point) == 3
             or not _is_isotropic_design_medium(grid.medium1)
             or not _is_isotropic_design_medium(grid.medium2)
-        )
+        ) for grid in grids)
     )
     if not tensor_averaging:
         if sim.fields is not None:

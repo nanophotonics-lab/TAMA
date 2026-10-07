@@ -490,6 +490,7 @@ struct ComponentPointPlan {
     meep::component component;
     bool cylindrical;
     std::vector<std::vector<PointSampleEntry>> points;
+    std::vector<double> monitor_identity;
     std::vector<std::complex<double>> local;
     std::vector<std::complex<double>> reduced;
     bool history_sampling_configured = false;
@@ -541,6 +542,7 @@ struct NativeDesignPlan {
     int dimensions;
     int signature_width;
     bool material_jacobian = false;
+    unsigned mirror_axes = 0;
     size_t stencil_capacity;
     std::vector<NativeDesignEntry> entries;
     std::vector<NativeDesignForwardSample> forward_samples;
@@ -551,6 +553,64 @@ struct NativeDesignPlan {
     std::vector<double> previous_real_adjoint_values;
     int adjoint_midpoint_kind = 0;
 };
+
+static unsigned native_mirror_axes(const meep::fields *fields) {
+    if (fields->gv.dim == meep::Dcyl) {
+        return 0;
+    }
+    unsigned axes = 0;
+    for (int n = 1; n < fields->S.multiplicity(); ++n) {
+        LOOP_OVER_DIRECTIONS(fields->gv.dim, d) {
+            if (fields->S.transform(d, n).flipped) {
+                axes |= 1u << static_cast<unsigned>(d);
+            }
+        }
+    }
+    return axes;
+}
+
+// The reduced Yee grid includes a redundant negative half-cell. Integrate
+// only the positive half-space, with half measure on each mirror plane.
+static double native_mirror_measure(const meep::fields *fields, const meep::ivec &location) {
+    const unsigned axes = native_mirror_axes(fields);
+    double weight = 1.0;
+    LOOP_OVER_DIRECTIONS(fields->gv.dim, d) {
+        if (!(axes & (1u << static_cast<unsigned>(d)))) {
+            continue;
+        }
+        const int offset = location.in_direction(d) - fields->S.i_symmetry_point.in_direction(d);
+        if (offset < 0) {
+            return 0.0;
+        }
+        if (offset == 0) {
+            weight *= 0.5;
+        }
+    }
+    return weight;
+}
+
+static bool fold_native_mirror_point(const meep::fields *fields, meep::component &component,
+                                     meep::ivec &location, std::complex<double> &phase) {
+    if (!native_mirror_axes(fields)) {
+        return true;
+    }
+    for (int n = 1; n < fields->S.multiplicity(); ++n) {
+        if (fields->S.transform(location, n) == location &&
+            fields->S.phase_shift(component, n) != std::complex<double>(1.0, 0.0)) {
+            return false;
+        }
+    }
+    for (int n = 0; n < fields->S.multiplicity(); ++n) {
+        const meep::ivec candidate = fields->S.transform(location, n);
+        if (native_mirror_measure(fields, candidate) > 0.0) {
+            location = candidate;
+            phase *= fields->S.phase_shift(component, n);
+            component = fields->S.transform(component, n);
+            return true;
+        }
+    }
+    return false;
+}
 
 struct MeepGroupCommunicator {
     MPI_Comm comm = MPI_COMM_NULL;
@@ -797,6 +857,8 @@ static MeepGroupCommunicator active_meep_group_communicator() {
     free_owned_group(world_group);
     return {active_comm, true};
 }
+
+#include "near2far_sources.hpp"
 
 static void allreduce_inplace_chunked(
     void *buffer,
@@ -1190,19 +1252,38 @@ static size_t native_material_support(
     return count;
 }
 
-struct NativeMaterialWeightRestore {
-    double &weight;
-    double original;
-    explicit NativeMaterialWeightRestore(double &value) : weight(value), original(value) {}
-    ~NativeMaterialWeightRestore() { weight = original; }
-};
-
 struct NativeMaterialVolumeRestore {
     meep_geom::geom_epsilon *geps;
     ~NativeMaterialVolumeRestore() { geps->unset_volume(); }
 };
 
+static size_t reflected_native_design_index(const NativeDesignPlan *, size_t, unsigned);
+
+struct NativeMaterialOrbitRestore {
+    double *weights;
+    std::vector<size_t> indices;
+    std::vector<double> originals;
+    NativeMaterialOrbitRestore(double *values, const NativeDesignPlan *plan, size_t index)
+        : weights(values) {
+        for (unsigned reflection = plan->mirror_axes;; reflection = (reflection - 1) & plan->mirror_axes) {
+            const size_t reflected = reflected_native_design_index(plan, index, reflection);
+            if (std::find(indices.begin(), indices.end(), reflected) == indices.end()) {
+                indices.push_back(reflected);
+                originals.push_back(weights[reflected]);
+            }
+            if (!reflection) break;
+        }
+    }
+    void perturb(double step) {
+        for (size_t i = 0; i < indices.size(); ++i) weights[indices[i]] = originals[i] + step;
+    }
+    ~NativeMaterialOrbitRestore() {
+        for (size_t i = 0; i < indices.size(); ++i) weights[indices[i]] = originals[i];
+    }
+};
+
 static void native_material_row_derivatives(
+    const NativeDesignPlan *plan,
     meep_geom::geom_epsilon *geps,
     meep_geom::material_type material,
     meep::component component,
@@ -1260,15 +1341,25 @@ static void native_material_row_derivatives(
     double base[3];
     tama_material_tensor::generalized_material_row(geps, component, base, voxel, tol, maxeval);
     for (size_t j = 0; j < count; ++j) {
-        NativeMaterialWeightRestore restore(material->weights[indices[j]]);
+        NativeMaterialOrbitRestore restore(material->weights, plan, indices[j]);
+        // Differentiate the constrained density orbit once, even when both
+        // partners occur in this interpolation stencil.
+        bool duplicate = false;
+        for (size_t previous = 0; previous < j; ++previous) {
+            if (std::find(restore.indices.begin(), restore.indices.end(), indices[previous]) != restore.indices.end()) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (duplicate) continue;
         double first[3], second[3];
-        const bool forward = restore.original < step;
-        const bool backward = restore.original > 1.0 - step;
+        const bool forward = restore.originals.front() < step;
+        const bool backward = restore.originals.front() > 1.0 - step;
         const double h = backward ? -step : step;
-        restore.weight = restore.original + h;
+        restore.perturb(h);
         check_normal_branch();
         tama_material_tensor::generalized_material_row(geps, component, first, voxel, tol, maxeval);
-        restore.weight = restore.original + ((forward || backward) ? 2.0 * h : -h);
+        restore.perturb((forward || backward) ? 2.0 * h : -h);
         check_normal_branch();
         tama_material_tensor::generalized_material_row(geps, component, second, voxel, tol, maxeval);
         for (int d = 0; d < 3; ++d) {
@@ -1311,6 +1402,10 @@ static void build_native_material_jacobian_plan(
         const std::ptrdiff_t stride_a = chunk->gv.stride(a);
         LOOP_OVER_VOL_OWNED(chunk->gv, plan->component, idx) {
             IVEC_LOOP_ILOC(chunk->gv, iloc);
+            const double mirror_weight = native_mirror_measure(plan->fields, iloc);
+            if (mirror_weight == 0.0) {
+                continue;
+            }
             // Diagonal coefficients live at the Yee point; off-diagonals live
             // at the two shared vertices in Meep's electric OFFDIAG stencil.
             for (int node = -1; node < 2; ++node) {
@@ -1326,7 +1421,7 @@ static void build_native_material_jacobian_plan(
                 }
                 std::array<std::array<double, 3>, 8> derivatives{};
                 native_material_row_derivatives(
-                    geps, material, plan->component, voxel, indices, count,
+                    plan, geps, material, plan->component, voxel, indices, count,
                     tol, maxeval, step, derivatives
                 );
                 for (int b = 0; b < 3; ++b) {
@@ -1336,7 +1431,7 @@ static void build_native_material_jacobian_plan(
                     NativeDesignBuildRecord record;
                     record.entry.chunk_idx = chunk_idx;
                     record.entry.field_index = idx;
-                    record.entry.integration_weight = chunk->gv.dV(plan->component, idx).full_volume();
+                    record.entry.integration_weight = mirror_weight * chunk->gv.dV(plan->component, idx).full_volume();
                     record.signature = native_design_signature(iloc, false);
                     record.signature[plan->dimensions] = b;
                     record.signature[plan->dimensions + 1] = node;
@@ -1810,6 +1905,12 @@ static PyObject *create_component_point_plan(PyObject *, PyObject *args) {
     );
     plan->component = static_cast<meep::component>(component_int);
     plan->cylindrical = plan->fields->gv.dim == meep::Dcyl;
+    plan->monitor_identity.push_back(static_cast<double>(component_int));
+    for (size_t i = 0; i < xs.size(); ++i) {
+        plan->monitor_identity.push_back(xs[i]);
+        plan->monitor_identity.push_back(ys[i]);
+        plan->monitor_identity.push_back(zs_obj ? zs[i] : 0.0);
+    }
     const bool cartesian_3d = plan->fields->gv.dim == meep::D3;
     if (cartesian_3d && !zs_obj) {
         PyErr_SetString(
@@ -1919,7 +2020,10 @@ static PyObject *create_component_point_plan(PyObject *, PyObject *args) {
                         &component,
                         &location,
                         &phase
-                    )) {
+                )) {
+                    return;
+                }
+                if (!fold_native_mirror_point(plan->fields, component, location, phase)) {
                     return;
                 }
                 for (int chunk_idx = 0;
@@ -2176,16 +2280,30 @@ static PyObject *create_native_design_plan(PyObject *, PyObject *args) {
     meep_geom::material_type target_material = nullptr;
     int material_grid_count = 0;
     for (int object_idx = 0; object_idx < geps->geometry.num_items; ++object_idx) {
+        const geometric_object &object = geps->geometry.items[object_idx];
         meep_geom::material_type material = static_cast<meep_geom::material_type>(
-            geps->geometry.items[object_idx].material
+            object.material
         );
         if (material && material->which_subclass == meep_geom::material_data::MATERIAL_GRID) {
+            if (object.which_subclass != geometric_object::BLOCK) {
+                continue;
+            }
+            const vector3 block_size = object.subclass.block_data->size;
+            if (std::abs(object.center.x - center_x) > 1e-10 ||
+                std::abs(object.center.y - center_y) > 1e-10 ||
+                std::abs(object.center.z - center_z) > 1e-10 ||
+                std::abs(block_size.x - size_x) > 1e-10 ||
+                (is_cylindrical ? std::abs(block_size.z - size_z) > 1e-10 :
+                 std::abs(block_size.y - size_y) > 1e-10 ||
+                 (is_3d && std::abs(block_size.z - size_z) > 1e-10))) {
+                continue;
+            }
             target_material = material;
             material_grid_count += 1;
         }
     }
     if (material_grid_count != 1 || !target_material) {
-        PyErr_SetString(PyExc_ValueError, "native design plans require exactly one MaterialGrid geometry object");
+        PyErr_SetString(PyExc_ValueError, "native design plans require exactly one matching MaterialGrid Block");
         return nullptr;
     }
     const bool grid_size_matches =
@@ -2251,6 +2369,7 @@ static PyObject *create_native_design_plan(PyObject *, PyObject *args) {
         plan->nz = static_cast<size_t>(nz);
         plan->dimensions = is_3d ? 3 : 2;
         plan->material_jacobian = material_jacobian != 0;
+        plan->mirror_axes = native_mirror_axes(fields);
         plan->signature_width = plan->dimensions + (material_jacobian ? 2 : 0);
         plan->stencil_capacity = is_3d ? 8 : 4;
         if (material_jacobian) {
@@ -2271,6 +2390,10 @@ static PyObject *create_native_design_plan(PyObject *, PyObject *args) {
             LOOP_OVER_VOL_OWNED(chunk->gv, component, idx) {
                 IVEC_LOOP_ILOC(chunk->gv, iloc);
                 IVEC_LOOP_LOC(chunk->gv, location);
+                const double mirror_weight = native_mirror_measure(fields, iloc);
+                if (mirror_weight == 0.0) {
+                    continue;
+                }
                 meep_geom::material_type material = nullptr;
                 geps->get_material_pt(material, location);
                 if (material != target_material) {
@@ -2350,7 +2473,7 @@ static PyObject *create_native_design_plan(PyObject *, PyObject *args) {
                     is_cylindrical &&
                             std::abs(location.r()) <= coordinate_tolerance
                         ? 0.0
-                        : chunk->gv.dV(component, idx).full_volume();
+                        : mirror_weight * chunk->gv.dV(component, idx).full_volume();
                 record.signature = native_design_signature(
                     iloc,
                     is_cylindrical
@@ -2694,6 +2817,16 @@ static int native_design_accumulation_arrays(
     return 0;
 }
 
+static size_t reflected_native_design_index(const NativeDesignPlan *plan, size_t index, unsigned reflection) {
+    size_t z = index % plan->nz;
+    size_t y = (index / plan->nz) % plan->ny;
+    size_t x = index / (plan->ny * plan->nz);
+    if (reflection & 1u) x = plan->nx - 1 - x;
+    if (reflection & 2u) y = plan->ny - 1 - y;
+    if (reflection & 4u) z = plan->nz - 1 - z;
+    return (x * plan->ny + y) * plan->nz + z;
+}
+
 static void accumulate_native_design_entry(
     const NativeDesignPlan *plan,
     size_t entry_index,
@@ -2704,11 +2837,18 @@ static void accumulate_native_design_entry(
     const std::complex<double> weighted_product = entry.integration_weight * product;
     const size_t stencil_offset = entry_index * plan->stencil_capacity;
     for (size_t stencil_idx = 0; stencil_idx < entry.stencil_size; ++stencil_idx) {
-        add_npy_complex(
-            accumulator[plan->design_indices[stencil_offset + stencil_idx]],
-            plan->design_weights[stencil_offset + stencil_idx] *
-                weighted_product
-        );
+        const size_t index = plan->design_indices[stencil_offset + stencil_idx];
+        const std::complex<double> value = plan->design_weights[stencil_offset + stencil_idx] * weighted_product;
+        if (!plan->mirror_axes) {
+            add_npy_complex(accumulator[index], value);
+            continue;
+        }
+        const double count = static_cast<double>(1u << popcount_size_t(plan->mirror_axes));
+        for (unsigned reflection = 0; reflection <= plan->mirror_axes; ++reflection) {
+            if (!(reflection & ~plan->mirror_axes)) {
+                add_npy_complex(accumulator[reflected_native_design_index(plan, index, reflection)], value / count);
+            }
+        }
     }
 }
 
@@ -2722,9 +2862,18 @@ static void accumulate_native_design_entry_real(
     const double weighted_product = entry.integration_weight * product;
     const size_t stencil_offset = entry_index * plan->stencil_capacity;
     for (size_t stencil_idx = 0; stencil_idx < entry.stencil_size; ++stencil_idx) {
-        accumulator[plan->design_indices[stencil_offset + stencil_idx]] +=
-            plan->design_weights[stencil_offset + stencil_idx] *
-                weighted_product;
+        const size_t index = plan->design_indices[stencil_offset + stencil_idx];
+        const double value = plan->design_weights[stencil_offset + stencil_idx] * weighted_product;
+        if (!plan->mirror_axes) {
+            accumulator[index] += value;
+            continue;
+        }
+        const double count = static_cast<double>(1u << popcount_size_t(plan->mirror_axes));
+        for (unsigned reflection = 0; reflection <= plan->mirror_axes; ++reflection) {
+            if (!(reflection & ~plan->mirror_axes)) {
+                accumulator[reflected_native_design_index(plan, index, reflection)] += value / count;
+            }
+        }
     }
 }
 
@@ -3739,9 +3888,10 @@ static PyObject *run_native_forward_segment(PyObject *, PyObject *args) {
     long long fine_step_count = 0;
     long long start_fine_index = 0;
     long long sample_count = 0;
+    unsigned long long fields_addr = 0;
     if (!PyArg_ParseTuple(
             args,
-            "OOOOiLLLO:run_native_forward_segment",
+            "OOOOiLLLO|K:run_native_forward_segment",
             &monitor_plans_obj,
             &monitor_histories_obj,
             &design_plans_obj,
@@ -3750,7 +3900,8 @@ static PyObject *run_native_forward_segment(PyObject *, PyObject *args) {
             &fine_step_count,
             &start_fine_index,
             &sample_count,
-            &monitor_times_obj
+            &monitor_times_obj,
+            &fields_addr
         )) {
         return nullptr;
     }
@@ -3818,7 +3969,6 @@ static PyObject *run_native_forward_segment(PyObject *, PyObject *args) {
     const Py_ssize_t monitor_count = PySequence_Fast_GET_SIZE(monitor_plans);
     const Py_ssize_t design_count = PySequence_Fast_GET_SIZE(design_plans);
     if (
-        monitor_count < 1 ||
         PySequence_Fast_GET_SIZE(monitor_histories) != monitor_count ||
         PySequence_Fast_GET_SIZE(design_histories) != design_count
     ) {
@@ -3875,7 +4025,7 @@ static PyObject *run_native_forward_segment(PyObject *, PyObject *args) {
         return PyErr_NoMemory();
     }
 
-    meep::fields *fields = nullptr;
+    meep::fields *fields = reinterpret_cast<meep::fields *>(static_cast<uintptr_t>(fields_addr));
     for (Py_ssize_t index = 0; index < monitor_count; ++index) {
         PyObject *plan_obj = PySequence_Fast_GET_ITEM(monitor_plans, index);
         PyObject *history_obj = PySequence_Fast_GET_ITEM(
@@ -4160,9 +4310,10 @@ static PyObject *run_native_design_adjoint_segment(
     long long sample_count = 0;
     double dt = 0.0;
     int midpoint = 0;
+    PyObject *gradient_offsets_obj = Py_None;
     if (!PyArg_ParseTuple(
             args,
-            "OOOOiiLLLdi:run_native_design_adjoint_segment",
+            "OOOOiiLLLdi|O:run_native_design_adjoint_segment",
             &plans_obj,
             &histories_obj,
             &weights_obj,
@@ -4173,7 +4324,8 @@ static PyObject *run_native_design_adjoint_segment(
             &start_fine_index,
             &sample_count,
             &dt,
-            &midpoint
+            &midpoint,
+            &gradient_offsets_obj
         )) {
         return nullptr;
     }
@@ -4213,7 +4365,16 @@ static PyObject *run_native_design_adjoint_segment(
         Py_DECREF(plans);
         return nullptr;
     }
+    PyObject *gradient_offsets = gradient_offsets_obj == Py_None ? nullptr :
+        PySequence_Fast(gradient_offsets_obj, "gradient offsets must be a sequence");
+    if (gradient_offsets_obj != Py_None && !gradient_offsets) {
+        Py_DECREF(weights);
+        Py_DECREF(histories);
+        Py_DECREF(plans);
+        return nullptr;
+    }
     auto cleanup = [&]() {
+        Py_XDECREF(gradient_offsets);
         Py_DECREF(weights);
         Py_DECREF(histories);
         Py_DECREF(plans);
@@ -4221,7 +4382,8 @@ static PyObject *run_native_design_adjoint_segment(
 
     const Py_ssize_t component_count = PySequence_Fast_GET_SIZE(plans);
     if (component_count < 1 ||
-        PySequence_Fast_GET_SIZE(histories) != component_count) {
+        PySequence_Fast_GET_SIZE(histories) != component_count ||
+        (gradient_offsets && PySequence_Fast_GET_SIZE(gradient_offsets) != component_count)) {
         cleanup();
         PyErr_SetString(
             PyExc_ValueError,
@@ -4267,9 +4429,11 @@ static PyObject *run_native_design_adjoint_segment(
 
     std::vector<NativeDesignPlan *> native_plans;
     std::vector<PyArrayObject *> native_histories;
+    std::vector<size_t> native_offsets;
     try {
         native_plans.reserve(static_cast<size_t>(component_count));
         native_histories.reserve(static_cast<size_t>(component_count));
+        native_offsets.reserve(static_cast<size_t>(component_count));
     } catch (const std::bad_alloc &) {
         cleanup();
         return PyErr_NoMemory();
@@ -4324,9 +4488,17 @@ static PyObject *run_native_design_adjoint_segment(
             );
             return nullptr;
         }
-        if (PyArray_DIM(accumulator, 0) != static_cast<npy_intp>(
-                plan->nx * plan->ny * plan->nz
-            )) {
+        const Py_ssize_t gradient_offset = gradient_offsets ? PyLong_AsSsize_t(
+            PySequence_Fast_GET_ITEM(gradient_offsets, component_index)) : 0;
+        if (PyErr_Occurred()) {
+            cleanup();
+            return nullptr;
+        }
+        const size_t region_size = plan->nx * plan->ny * plan->nz;
+        const size_t total_size = static_cast<size_t>(PyArray_DIM(accumulator, 0));
+        if (gradient_offset < 0 || static_cast<size_t>(gradient_offset) > total_size ||
+            region_size > total_size - static_cast<size_t>(gradient_offset) ||
+            (!gradient_offsets && total_size != region_size)) {
             cleanup();
             PyErr_SetString(
                 PyExc_ValueError,
@@ -4357,6 +4529,7 @@ static PyObject *run_native_design_adjoint_segment(
         fields = plan->fields;
         native_plans.push_back(plan);
         native_histories.push_back(history);
+        native_offsets.push_back(static_cast<size_t>(gradient_offset));
     }
 
     if (PyArray_DIM(weights, 1) > std::numeric_limits<int>::max() ||
@@ -4474,7 +4647,8 @@ static PyObject *run_native_design_adjoint_segment(
                     accumulate_native_adjoint_real_row(
                         plan,
                         derivative,
-                        reinterpret_cast<double *>(PyArray_DATA(accumulator)),
+                        reinterpret_cast<double *>(PyArray_DATA(accumulator)) +
+                            native_offsets[static_cast<size_t>(component_index)],
                         midpoint != 0
                     );
                 } else {
@@ -4484,7 +4658,7 @@ static PyObject *run_native_design_adjoint_segment(
                         true,
                         reinterpret_cast<npy_cdouble *>(
                             PyArray_DATA(accumulator)
-                        ),
+                        ) + native_offsets[static_cast<size_t>(component_index)],
                         midpoint != 0
                     );
                 }
@@ -4583,6 +4757,31 @@ static PyObject *component_point_plan_indexed_stencil(PyObject *, PyObject *args
     if (!plan) {
         return nullptr;
     }
+    if (native_mirror_axes(plan->fields) && meep::count_processors() > 1) {
+        const double count = static_cast<double>(plan->points.size());
+        if (meep::max_to_all(count) != -meep::max_to_all(-count)) {
+            throw std::invalid_argument("Mirror indexed monitors require the same point count on every rank");
+        }
+        // Per-point source routing requires identical channel identities, not
+        // just equal counts, in every process of the active Meep subgroup.
+        std::vector<double> reference = plan->monitor_identity;
+        MeepGroupCommunicator group = active_meep_group_communicator();
+        try {
+            for (size_t offset = 0; offset < reference.size();) {
+                const int block = static_cast<int>(std::min(reference.size() - offset, static_cast<size_t>(INT_MAX)));
+                require_mpi_success(MPI_Bcast(reference.data() + offset, block, MPI_DOUBLE, 0, group.comm),
+                                    "Mirror monitor identity");
+                offset += block;
+            }
+        } catch (...) {
+            if (group.owned) free_owned_communicator(group.comm);
+            throw;
+        }
+        if (group.owned) free_owned_communicator(group.comm);
+        if (meep::sum_to_all(static_cast<int>(reference != plan->monitor_identity))) {
+            throw std::invalid_argument("Mirror indexed monitors require the same monitor component and coordinates on every rank");
+        }
+    }
     std::vector<npy_intp> offsets(plan->points.size() + 1, 0);
     std::vector<npy_int64> components;
     std::vector<npy_int64> chunk_indices;
@@ -4590,13 +4789,8 @@ static PyObject *component_point_plan_indexed_stencil(PyObject *, PyObject *args
     std::vector<std::complex<double>> amplitudes;
     try {
         for (size_t point_idx = 0; point_idx < plan->points.size(); ++point_idx) {
-            struct IndexedEntry {
-                meep::component component;
-                int chunk_idx;
-                ptrdiff_t local_index;
-                std::complex<double> amplitude;
-            };
-            std::vector<IndexedEntry> indexed_entries;
+            using SourceNode = std::tuple<int, int, ptrdiff_t>;
+            std::map<SourceNode, std::vector<std::complex<double>>> indexed_entries;
             for (const PointSampleEntry &entry : plan->points[point_idx]) {
                 meep::fields_chunk *chunk =
                     plan->fields->chunks[entry.chunk_idx];
@@ -4616,7 +4810,7 @@ static PyObject *component_point_plan_indexed_stencil(PyObject *, PyObject *args
                 if (constrained_axis_component) {
                     continue;
                 }
-                const double volume = chunk->gv
+                const double volume = native_mirror_measure(plan->fields, entry.loc) * chunk->gv
                                           .dV(entry.component, index)
                                           .full_volume();
                 if (!std::isfinite(volume) || volume <= 0.0) {
@@ -4626,42 +4820,48 @@ static PyObject *component_point_plan_indexed_stencil(PyObject *, PyObject *args
                     );
                 }
                 const std::complex<double> amplitude = entry.weight / volume;
-                auto existing = std::find_if(
-                    indexed_entries.begin(),
-                    indexed_entries.end(),
-                    [&entry, index](const IndexedEntry &candidate) {
-                        return candidate.component == entry.component &&
-                               candidate.chunk_idx == entry.chunk_idx &&
-                               candidate.local_index == index;
+                std::vector<SourceNode> images;
+                const int image_count = native_mirror_axes(plan->fields) ? plan->fields->S.multiplicity() : 1;
+                for (int n = 0; n < image_count; ++n) {
+                    const auto location = plan->fields->S.transform(entry.loc, n);
+                    if (n && native_mirror_measure(plan->fields, location) > 0.0) {
+                        continue;
                     }
-                );
-                if (existing == indexed_entries.end()) {
-                    indexed_entries.push_back(
-                        {
-                            entry.component,
-                            entry.chunk_idx,
-                            index,
-                            amplitude,
+                    const auto component = plan->fields->S.transform(entry.component, n);
+                    for (int ci = 0; ci < plan->fields->num_chunks; ++ci) {
+                        auto *owner = plan->fields->chunks[ci];
+                        if (!owner || !owner->gv.owns(location)) continue;
+                        const SourceNode key(static_cast<int>(component), ci,
+                                              owner->gv.index(component, location));
+                        if (std::find(images.begin(), images.end(), key) == images.end()) {
+                            images.push_back(key);
+                            auto &values = indexed_entries[key];
+                            if (values.empty()) values.resize(1, 0.0);
+                            // Meep evolves the redundant negative half-cell too;
+                            // its source must have the same reflected value.
+                            values[0] += amplitude * plan->fields->S.phase_shift(entry.component, n);
                         }
-                    );
-                } else {
-                    existing->amplitude += amplitude;
+                        break;
+                    }
                 }
             }
-            for (const IndexedEntry &entry : indexed_entries) {
-                if (std::abs(entry.amplitude) <= 1e-15) {
+            if (native_mirror_axes(plan->fields)) {
+                route_native_source_nodes(plan->fields, indexed_entries, 1);
+            }
+            for (const auto &entry : indexed_entries) {
+                if (std::abs(entry.second[0]) <= 1e-15) {
                     continue;
                 }
                 components.push_back(
-                    static_cast<npy_int64>(entry.component)
+                    static_cast<npy_int64>(std::get<0>(entry.first))
                 );
                 chunk_indices.push_back(
-                    static_cast<npy_int64>(entry.chunk_idx)
+                    static_cast<npy_int64>(std::get<1>(entry.first))
                 );
                 local_indices.push_back(
-                    static_cast<npy_intp>(entry.local_index)
+                    static_cast<npy_intp>(std::get<2>(entry.first))
                 );
-                amplitudes.push_back(entry.amplitude);
+                amplitudes.push_back(entry.second[0]);
             }
             offsets[point_idx + 1] =
                 static_cast<npy_intp>(amplitudes.size());
@@ -7711,6 +7911,12 @@ static PyMethodDef TamaNativeSamplerMethods[] = {
         "Set and process pending SIGINT at a native adjoint signal checkpoint.",
     },
     {
+        "fold_near2far_sources",
+        native_method_boundary<fold_near2far_sources>,
+        METH_VARARGS,
+        "Fold the near-to-far transpose into canonical Mirror source nodes.",
+    },
+    {
         "configure_native_material_operator",
         native_method_boundary<configure_native_material_operator>,
         METH_VARARGS,
@@ -8029,7 +8235,7 @@ PyMODINIT_FUNC PyInit_native_sampler(void) {
     if (!module) {
         return nullptr;
     }
-    if (PyModule_AddIntConstant(module, "API_VERSION", 13) < 0) {
+    if (PyModule_AddIntConstant(module, "API_VERSION", 14) < 0) {
         Py_DECREF(module);
         return nullptr;
     }

@@ -199,6 +199,8 @@ class SimulationSpec:
         m: Integer angular mode number for cylindrical simulations.
             `TDAObjective` and `MultiTDAObjective` gradients currently support
             `m=-1`, `0`, and `+1`.
+        symmetries: Meep `Mirror` objects. Geometry, design updates, and sources
+            must obey the specified parity.
     """
 
     cell_size: mp.Vector3
@@ -213,8 +215,15 @@ class SimulationSpec:
     m: int = 0
     courant: float = 0.5
     k_point: Union[bool, mp.Vector3] = False
+    symmetries: Sequence = ()
 
     def __post_init__(self) -> None:
+        self.symmetries = tuple(self.symmetries)
+        for symmetry in self.symmetries:
+            if not isinstance(symmetry, mp.Mirror):
+                raise ValueError("symmetries currently support mp.Mirror only")
+            if symmetry.phase not in (-1, 1):
+                raise ValueError("Mirror phase must be +1 or -1")
         if isinstance(self.resolution, (bool, np.bool_)):
             raise ValueError("resolution must be a positive finite number")
         self.resolution = float(self.resolution)
@@ -293,6 +302,7 @@ class SimulationSpec:
             "sources": self.resolve_sources(sources),
             "resolution": self.resolution,
             "Courant": self.courant,
+            "symmetries": list(self.symmetries),
         }
         selected_m = self.m if m is None else self._normalize_m(m)
         if selected_m != 0 and not self.is_cylindrical:
@@ -309,6 +319,45 @@ class SimulationSpec:
         if self.is_cylindrical:
             kwargs["m"] = selected_m
         return mp.Simulation(**kwargs)
+
+
+@dataclass(frozen=True)
+class Near2FarTarget:
+    """Discrete-frequency far fields from Meep near-surface monitors.
+
+    The objective receives complex fields of shape `(points, frequencies, 6)`,
+    ordered Ex, Ey, Ez, Hx, Hy, Hz. Frequencies and points retain input order.
+    The near surfaces and propagation region must share a homogeneous,
+    isotropic, lossless medium. The initial implementation uses Cartesian
+    coordinates and accumulates every time step (DFT decimation factor 1).
+    """
+
+    near_regions: Sequence[mp.Near2FarRegion]
+    frequencies: Sequence[float]
+    far_points: Sequence[mp.Vector3]
+
+    def __post_init__(self) -> None:
+        regions = tuple(self.near_regions)
+        if not regions or any(not isinstance(r, mp.Near2FarRegion) for r in regions):
+            raise ValueError("near_regions must contain Meep Near2FarRegion objects")
+        if not np.isrealobj(self.frequencies):
+            raise ValueError("frequencies must be real")
+        frequencies = np.asarray(self.frequencies, dtype=float)
+        if (
+            frequencies.ndim != 1 or not frequencies.size
+            or not np.all(np.isfinite(frequencies)) or np.any(frequencies <= 0)
+        ):
+            raise ValueError("frequencies must be a nonempty sequence of positive finite values")
+        points = tuple(self.far_points)
+        if not points or any(
+            not isinstance(p, mp.Vector3) or not np.isrealobj(tuple(p))
+            or not np.all(np.isfinite(tuple(p)))
+            for p in points
+        ):
+            raise ValueError("far_points must contain finite real Meep Vector3 positions")
+        object.__setattr__(self, "near_regions", regions)
+        object.__setattr__(self, "frequencies", tuple(frequencies.tolist()))
+        object.__setattr__(self, "far_points", points)
 
 
 @dataclass(frozen=True)

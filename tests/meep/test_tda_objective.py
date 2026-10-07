@@ -980,7 +980,7 @@ def test_tda_rejects_manual_adjoint_signal_with_wrong_shape(
         )
 
 
-def test_tda_objective_rejects_meep_symmetries_before_forward_run():
+def test_tda_objective_rejects_unsupported_symmetries_before_forward_run():
     class SymmetricSimulation:
         symmetries = [object()]
 
@@ -999,14 +999,14 @@ def test_tda_objective_rejects_meep_symmetries_before_forward_run():
         sim_factory=lambda sources=None: simulation,
     )
 
-    with pytest.raises(ValueError, match="does not support Meep symmetries"):
+    with pytest.raises(ValueError, match="supports only mp.Mirror"):
         objective.evaluate(np.zeros(4), need_gradient=False)
 
     assert not simulation.run_called
     assert simulation.reset_called
 
 
-def test_tda_objective_rejects_meep_symmetries_before_adjoint_run(monkeypatch):
+def test_tda_objective_rejects_unsupported_symmetries_before_adjoint_run(monkeypatch):
     _install_fake_native_backend(monkeypatch)
     forward = _ReusableSimulation(0.1, 6)
     adjoint = _ReusableSimulation(0.1, 6)
@@ -1016,7 +1016,7 @@ def test_tda_objective_rejects_meep_symmetries_before_adjoint_run(monkeypatch):
         sim_factory=lambda sources=None: next(simulations),
     )
 
-    with pytest.raises(ValueError, match="does not support Meep symmetries"):
+    with pytest.raises(ValueError, match="supports only mp.Mirror"):
         objective.evaluate(np.zeros(4), need_gradient=True)
 
     assert forward.events.count("run") == 1

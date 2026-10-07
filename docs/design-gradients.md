@@ -29,10 +29,10 @@ Meep's MaterialGrid coordinate map or constitutive-operator Jacobian.
 The native path currently requires:
 
 - a 2D or 3D Cartesian simulation, or a 2D Meep cylindrical simulation;
-- exactly one MaterialGrid geometry object, used by one matching,
-  axis-aligned `mp.Block`;
+- one distinct MaterialGrid per independent design region, each used by one
+  matching, axis-aligned `mp.Block`;
 - matching `DesignGrid` and Block center, size, shape, and dimensionality;
-- no Meep symmetries, and either Meep's default
+- Cartesian mirror symmetry as described below, or no symmetry; either Meep's default
   `k_point=False` metallic boundaries or normal-incidence Gamma-point periodic
   boundaries selected explicitly with `k_point=mp.Vector3()`;
 - a design Block that does not overlap PML or absorber layers, with an
@@ -52,6 +52,72 @@ direct interpolation transpose and requires `material_factor` to equal the
 endpoint permittivity contrast. Other Cartesian cases derive the material
 Jacobian from the MaterialGrid endpoints and do not multiply by
 `material_factor`. Cylindrical gradients retain the scalar restrictions below.
+
+## Independent Design Regions
+
+Both objective classes accept `designs=[design_a, design_b, ...]` instead of
+the existing `design=design_a`. Supply only one of these arguments. Each region
+has its own MaterialGrid, shape, endpoints, and projection/averaging settings.
+Regions must not overlap and must use the same dimensionality and coordinate
+system. Reusing one MaterialGrid object in several independent regions is
+rejected.
+
+The optimizer vector and returned gradient concatenate the flattened region
+arrays in list order:
+
+```python
+x = np.concatenate([rho_a.ravel(), rho_b.ravel()])
+problem = tm.TDAObjective(
+    designs=[design_a, design_b], simulation=simulation,
+    target=target, t_final=t_final,
+)
+value, gradient = problem.fom_and_grad(x)
+gradient_a = gradient[:rho_a.size].reshape(rho_a.shape)
+gradient_b = gradient[rho_a.size:].reshape(rho_b.shape)
+```
+
+All regions share one forward simulation and one combined adjoint simulation
+for a scalar objective. Histories remain rank-local and separate for each
+region. Overlapping MaterialGrid combinations and tied variables across
+different regions are not supported.
+
+## Cartesian Mirror Symmetry
+
+Pass ordinary Meep objects through
+`SimulationSpec(symmetries=[mp.Mirror(mp.Y, phase=1)])`. Cartesian gradients
+support distinct mirror axes and phases `+1` or `-1`; rotations and cylindrical
+symmetries are not supported. Meep actually reduces the simulation domain.
+In 2D, the mirror axis must be `mp.X` or `mp.Y`; 3D also permits `mp.Z`.
+Mirror gradients require a direct `SimulationSpec` and exact indexed adjoint
+sources. Custom simulation factories and finite-size `PointTarget` sources
+remain available for forward-only evaluation, but gradients reject them.
+`MultiTDAObjective` uses its regular target-history path with mirrors, even
+when `target_history_block_size` requests distributed target histories.
+Automatic adaptive chunk balancing is disabled for mirrors, and explicit
+adaptive balancers are rejected because their moving-cut bounds assume the
+full cell. Fixed layouts remain supported for temporal targets; mirrored
+near-to-far targets require Meep's default partitioning.
+
+Each independent design Block must map onto itself under every mirror. Its
+density array must be reflection symmetric, and its fixed endpoint tensors
+must be invariant under the same reflection. TAMA checks these design
+conditions at evaluation. Mirrors that exchange two independent regions are
+rejected. The user must also ensure that fixed geometry and forward sources
+obey the requested symmetry and phase, as required by Meep.
+
+When both `eps_averaging` and `MaterialGrid.do_averaging` are enabled, the
+design grid must have an even number of samples along each mirror axis
+(a singleton axis is also allowed). Odd sample counts greater than one place
+an interpolation knot on the mirror plane. Meep's one-sided interface normal
+there can produce an averaged tensor that breaks reflection symmetry, so
+TAMA rejects this combination. Without MaterialGrid averaging, odd counts
+remain supported.
+
+The returned full-shaped density gradient is distributed over reflection
+orbits. Its dot product with a symmetry-preserving perturbation is the
+directional derivative. It does not describe perturbations that break the
+imposed symmetry. Filters, initialization, and optimizer updates must preserve
+that symmetry.
 
 ## Supported Components
 
@@ -113,9 +179,8 @@ allows only these components:
 
 For `m=±1`, the axis relations are `Ep = i m Er` and `Hp = i m Hr`.
 Components constrained to zero are rejected when a gradient is requested.
-Meep symmetries are not supported by TDA or MultiTDA objectives in any
-coordinate system. Custom `sim_factory` results must therefore use
-`symmetries=[]`.
+Meep symmetries are not supported for cylindrical gradients. Cylindrical
+custom `sim_factory` results must therefore use `symmetries=[]`.
 The default `AdaptiveAdjointChunkBalancer` supports Meep's native cylindrical
 R-Z topology with zero-size indexed adjoint sources.
 
@@ -165,7 +230,7 @@ describes the isotropic reduction and averaging controls.
 TAMA initializes this tensor operator before creating Meep fields. A custom
 `sim_factory` must return an uninitialized simulation when anisotropic
 MaterialGrid averaging is enabled. Rebuild the Meep native extension together
-with the Python package; this path requires native API 13.
+with the Python package; this path requires native API 14.
 
 In 3D, scalar-isotropic MaterialGrid averaging also uses TAMA's normalized
 volume-averaging kernel and requires an uninitialized simulation from a custom
