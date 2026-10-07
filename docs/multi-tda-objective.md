@@ -4,10 +4,11 @@ This guide describes the Meep backend. See [backend selection](backends.md) and 
 
 ## Example
 
-`MultiTDAObjective` is a multi-band temporal-convolution objective. It
-evaluates several wavelength bands from one broadband time-domain run and
-combines the resulting per-band FoMs through a user-defined scalarization
-function.
+`MultiTDAObjective` combines temporal wavelength-band objectives and
+discrete-frequency near-to-far objectives from one forward run through a
+user-defined scalarization function. The example below uses temporal targets;
+the [mixed-target example](targets.md#near-to-far-targets) also includes a
+`Near2FarTarget`.
 
 Wavelengths use Meep length units with `c=1`, so a band
 `(lambda_min, lambda_max)` maps to frequencies
@@ -178,8 +179,8 @@ floor(1 / (2 * f_max * dt))
 sampling contract and TAMA raises `ValueError`.
 
 For `MultiTDAObjective`, `max_frequency` must be at least
-`max(1 / lambda_min)` over all configured wavelength bands. The constructor
-enforces this necessary lower bound.
+`max(1 / lambda_min)` over all temporal wavelength bands and at least every
+configured near-to-far frequency. These necessary lower bounds are validated.
 
 The public helper `tm.nyquist_sampling_interval(f_max, dt)` returns the same
 interval without constructing an objective.
@@ -187,7 +188,9 @@ interval without constructing an objective.
 `sampling_interval=K` is a dimensionless stride in completed FDTD steps. The
 stored design-history spacing is therefore `K * sim.fields.dt`. Target-field
 histories remain on `sim.fields.dt`, and value-only evaluation creates no
-design history, so this setting affects only gradient evaluations.
+design history. Objectives containing near-to-far targets align both
+value-only and gradient recording endpoints to the same sparse-history step,
+which can extend the run by up to `K-1` Meep steps.
 
 Point, regional, and constituent flux/eigenmode-target fields, and MultiTDA
 temporal filters, remain sampled at every Meep time step; only the stored
@@ -304,12 +307,22 @@ Reuse cannot be enabled for arbitrary `sim_factory` inputs; those inputs use
 separate Simulation instances.
 Enable reuse only when geometry, materials, boundaries, and other relevant
 simulation state are unchanged and restart-safe.
+Objectives containing a `Near2FarTarget` always restart the forward simulation
+for the combined adjoint, even when `reuse_simulation=False`, to preserve
+indexed-source ownership.
 
 ## Inputs
 
 An all-`Near2FarTarget` target list selects discrete-frequency spectral
 objectives and bypasses temporal FIR filtering. Do not supply wavelength bands
-or kernel settings in that mode. See the
+or kernel settings in that mode. A mixed temporal/near-to-far list instead
+requires full-length `wavelength_bands` and `weights`: use `None` and `1.0` for
+each near-to-far entry. Temporal entries retain their existing band and filter
+gain semantics; kernel settings apply only to those entries. Callback
+sequences, scalarization inputs, and `last_band_*` arrays follow the complete
+target order, while `last_far_fields` is a tuple of only the near-to-far arrays
+in target order. All mixed entries share one forward and one combined adjoint
+run. See the
 [near-to-far target guide](targets.md#near-to-far-targets) for callback shapes,
 scalarization, normalization, and simulation-restart requirements.
 
@@ -317,16 +330,16 @@ scalarization, normalization, and simulation-restart requirements.
 | --- | --- |
 | `design` / `designs` | One `DesignGrid`, or an ordered sequence of independent nonoverlapping regions. Supply only one argument. The design vector and gradient concatenate flattened region arrays in that order. Required when computing a gradient; optional for value-only evaluation. |
 | `simulation` | Optional `SimulationSpec`. Fills the simulation factory and resolution. Its direct `make` path enables exact indexed target transposes and is required for regional, flux, eigenmode, and near-to-far gradients. Cartesian tensor/averaging and mirror restrictions are described in the [design guide](design-gradients.md). It is also required for cylindrical gradients and supplies the one forward mode `m` shared by all bands. |
-| `reuse_simulation` | Reuse the forward `Simulation` for the adjoint run when explicitly set to `True`. Default is `False`; enable only for restart-safe, time-invariant media. A cylindrical reuse changes the mode from `m` to `-m`. |
-| `targets` | Optional list containing one `PointTarget`, `FieldRegionTarget`, `FluxTarget`, or `EigenmodeCoefficientTarget` per wavelength band. Exact targets may contain different point counts. Regional output shapes may also differ. Their gradients require direct `SimulationSpec` use. Flux and eigenmode targets combine electric and time-centered magnetic sources in one adjoint run. Cylindrical surface targets use radial or axial normals and explicit `2*pi*r` physical quadrature; cylindrical eigenmode targets additionally require fixed reference fields and a matching `reference_m`. Other targets may mix electric components or mix magnetic components, but not both groups in one adjoint run. |
+| `reuse_simulation` | Reuse the forward `Simulation` for the adjoint run when explicitly set to `True`. Default is `False`; objectives containing near-to-far targets always reuse it. Requires restart-safe, time-invariant media. A cylindrical reuse changes the mode from `m` to `-m`. |
+| `targets` | Optional ordered list of `PointTarget`, `FieldRegionTarget`, `FluxTarget`, `EigenmodeCoefficientTarget`, and/or `Near2FarTarget` entries. Each temporal target has one wavelength band. Exact targets may contain different point counts and regional output shapes. Regional, surface, and near-to-far gradients require direct `SimulationSpec` use. Flux and eigenmode targets combine electric and time-centered magnetic sources in one adjoint run. Cylindrical surface targets use radial or axial normals and explicit `2*pi*r` physical quadrature; cylindrical eigenmode targets additionally require fixed reference fields and a matching `reference_m`. Near-to-far targets require Cartesian geometry. Mixed near-to-far objectives may include both electric and magnetic point/regional targets. Without near-to-far targets, temporal non-surface targets may mix electric components or mix magnetic components, but not both groups in one adjoint run. |
 | `update_design` | Same role as in `TDAObjective`: writes the design vector into the active Meep design object. |
 | `sim_factory` | Same role as in `TDAObjective`: returns forward or adjoint `mp.Simulation` objects. Arbitrary factories use ordinary Cartesian `mp.Source` injection and do not support cylindrical gradient evaluation. |
 | `t_final` | Physical FDTD recording duration. Choose it from source completion and response convergence, independently of filter length. |
 | `monitor_positions` | Point-monitor locations, one per wavelength band. They may override bundled `PointTarget` positions, but cannot be combined with a regional, flux, or eigenmode target. The indexed path injects the exact transpose of the native Yee-grid interpolation. Cylindrical targets use `(r, 0, z)` with `r >= 0`, may lie on or near `r=0`, and include modal axis parity in the transpose. |
 | `component` | Shared Meep monitor/source component. It may override bundled `PointTarget` components, but cannot be combined with a regional, flux, or eigenmode target. Otherwise non-surface targets may independently select components from the same electric or magnetic group. The native path maps 2D TMz to `Ez`, 2D TEz to `Ex`/`Ey`, 3D scalar-isotropic designs to `Ex`/`Ey`/`Ez`, and cylindrical targets according to the [design-gradient component table](design-gradients.md#supported-components). |
-| `wavelength_bands` | List of `(lambda_min, lambda_max)` intervals. Each interval creates one bandpass temporal-convolution kernel. |
-| `weights` | Per-band amplitude weights applied to monitor filtering and the matching adjoint filter. The power-complementary bank requires unit values; use `scalarization_fn` for unequal objective priorities. |
-| `kernel_length` | Number of FIR taps. Larger values generally sharpen the spectral response and increase filtering work and temporary storage, but do not extend FDTD duration. |
+| `wavelength_bands` | One `(lambda_min, lambda_max)` interval per temporal target, creating its bandpass temporal-convolution kernel. In a mixed list, use `None` at each near-to-far target index. |
+| `weights` | Per-target filter-amplitude weights applied to temporal monitor filtering and the matching adjoint filter. Near-to-far entries require `1.0`; the power-complementary bank requires all values to be one. Use `scalarization_fn` for unequal objective priorities. |
+| `kernel_length` | Number of FIR taps for temporal entries only. Larger values generally sharpen the spectral response and increase filtering work and temporary storage, but do not extend FDTD duration. |
 | `kernel_window` | Window used to taper each independent bandpass kernel. Canonical names and accepted aliases are listed above. Default is `hamming`; it is not applied to the power-complementary bank. |
 | `kernel_window_params` | Required as `{"beta": value}` for `kernel_window="kaiser"`; other windows accept no parameters. Applies only to independent filters. |
 | `filter_bank` | `"independent"` (default) creates the existing per-band windowed-sinc FIRs. `"power_complementary"` constructs coordinated complementary target responses and fits each FIR on a shared frequency grid for at least two ordered, contiguous bands; it requires an odd kernel length and unit `weights`. |
@@ -339,16 +352,16 @@ scalarization, normalization, and simulation-restart requirements.
 | `dt` | Legacy expected Meep time step. The initialized simulation's `fields.dt` is authoritative; an explicit value must match it and is otherwise only a fallback for simulation doubles without `fields.dt`. |
 | `resolution` | Used to initialize filter metadata before evaluation when `dt` is omitted. The initialized simulation's `fields.dt` reconfigures the temporal filters and is authoritative. |
 | `sampling_interval` | Dimensionless stride in Meep steps between stored design-grid forward-field samples. Target monitors, filters, and adjoint accumulation remain full rate. Default is `1`. |
-| `max_frequency` | Optional maximum relevant frequency in Meep inverse-time units. It must cover the highest wavelength-band frequency, selects `sampling_interval` from the Nyquist criterion after `dt` is known, and cannot be combined with `sampling_interval > 1`; include a safety margin above all relevant content. |
+| `max_frequency` | Optional maximum relevant frequency in Meep inverse-time units. It must cover the highest temporal band frequency and every near-to-far frequency, selects `sampling_interval` from the Nyquist criterion after `dt` is known, and cannot be combined with `sampling_interval > 1`; include a safety margin above all relevant content. |
 | `reconstruction_window` | Window applied to the finite sinc reconstruction. Canonical names and accepted aliases are listed above. Default is `kaiser`. |
 | `reconstruction_window_params` | Optional reconstruction-window parameters. Only `kaiser` accepts `{"beta": value}`; its default beta is `6`. |
 | `reconstruction_half_width` | Number of sparse samples on each side of the finite sinc support. Default is `64`. |
-| `fom_fn` | Optional scalar FoM applied as `fom_fn(filtered_history, sample_dt)`. Supply one callback for all bands or a band-length sequence of callbacks/`None`; `None` selects that target's default. Point history has shape `(time,)`; regional history uses time as the first axis and `sample_shape` as the remaining axes; flux history is a real `(time - 1,)` power trace; and eigenmode history is a complex `(time - 1,)` coefficient. |
+| `fom_fn` | Optional scalar FoM. Supply one callback for all targets or a full-target-length sequence of callbacks/`None`; `None` selects that target's default. Temporal callbacks receive `(filtered_history, sample_dt)`: point history has shape `(time,)`, regional history uses time followed by `sample_shape`, flux history is a real `(time - 1,)` power trace, and eigenmode history is a complex `(time - 1,)` coefficient. Near-to-far callbacks receive `(far_fields, sample_dt)` with shape `(n_far_points, n_frequencies, 6)`. |
 | `adjoint_signal_fn` | Optional manual continuous-time bilinear covector in the same shared-callback or band-length-sequence form. Every supplied entry requires the matching `fom_fn` and must return the same shape as its callback history. A flux-history covector must be real. |
 | `scalarization_fn` | User-defined scalarization function. An autograd-compatible function may return a scalar directly; its band coefficients are differentiated automatically. The legacy `(total_fom, band_coeffs)` and `(total_fom, band_coeffs, info)` forms provide manual derivatives. Default is the sum of the band objectives. |
 | `history_dtype` | Real or complex floating dtype requested for temporary histories. Default `np.complex128` resolves to `np.float64` when Meep uses real forward fields; complex forward fields require a complex dtype. Native design histories are rank-local disk-backed memory maps, while target histories remain in memory. |
 | `target_history_block_size` | Optional positive number of spatial positions processed per block. `None` (default) keeps the legacy target-history path. A value opts eligible direct Cartesian built-in regional/flux objectives into unique-owner MPI storage and blockwise filter/pullback processing; unsupported target or callback combinations fall back to the legacy path. |
-| `chunk_balancer` | Default `"auto"` creates an `AdaptiveAdjointChunkBalancer` for a direct `SimulationSpec` with `chunk_layout=None`. It automatically protects ordinary forward sources, preserves Meep's Cartesian or cylindrical R-Z topology, and calibrates over three to eight gradient evaluations before freezing the best measured safe layout. Pass `None` to opt out or an instance for custom settings. Each indexed source is excluded from geometric constraints. Regional, flux, eigenmode, and cylindrical indexed sources do not support `source_boundary_mode="finite"`. |
+| `chunk_balancer` | Default `"auto"` creates an `AdaptiveAdjointChunkBalancer` for a direct `SimulationSpec` with `chunk_layout=None`, except with mirrors or any near-to-far target, where it is disabled and explicit balancers are rejected. It automatically protects ordinary forward sources, preserves Meep's Cartesian or cylindrical R-Z topology, and calibrates over three to eight gradient evaluations before freezing the best measured safe layout. Pass `None` to opt out or an instance for custom settings. Each indexed source is excluded from geometric constraints. Regional, flux, eigenmode, and cylindrical indexed sources do not support `source_boundary_mode="finite"`. |
 
 Normalized per-band target settings are available as `target_components`,
 `target_positions`, `target_sample_shapes`, `target_spatial_weights`,

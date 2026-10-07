@@ -597,7 +597,7 @@ class MultiTDAObjective:
         t_final: Optional[float] = None,
         monitor_positions: Optional[Sequence[mp.Vector3]] = None,
         component: Optional[int] = None,
-        wavelength_bands: Optional[Sequence[tuple[float, float]]] = None,
+        wavelength_bands: Optional[Sequence[Optional[tuple[float, float]]]] = None,
         weights: Optional[Sequence[float]] = None,
         kernel_length: Optional[int] = None,
         kernel_window: Optional[str] = "hamming",
@@ -686,11 +686,14 @@ class MultiTDAObjective:
                 eigenmode target.
             wavelength_bands: Wavelength intervals `(lambda_min, lambda_max)`.
                 Each interval defines one bandpass temporal-convolution kernel.
+                Mixed target lists require one entry per target, with `None`
+                for each `Near2FarTarget`.
             weights: One-dimensional finite per-band amplitude weights applied
                 to monitor filtering and the matching adjoint filters. Its
                 length must match `wavelength_bands`. The
                 `power_complementary` filter bank requires unit weights;
                 express unequal objective priorities in `scalarization_fn`.
+                Near-to-far entries require weight `1.0` and have no FIR kernel.
             kernel_length: Positive integer number of time samples in each
                 bandpass kernel.
             kernel_window: NumPy window used to taper each temporal-convolution
@@ -786,6 +789,9 @@ class MultiTDAObjective:
             targets: Optional sequence containing one `PointTarget`,
                 `FieldRegionTarget`, `FluxTarget`, or
                 `EigenmodeCoefficientTarget` per wavelength band.
+                `Near2FarTarget` entries may be interleaved. Their callbacks
+                receive `(points, frequencies, 6)` complex far fields. Callback
+                lists and scalarization inputs follow the full target order.
                 Regional target histories use time as the first axis and the
                 configured `sample_shape` as the remaining axes. Flux
                 targets expose a real signed-power history with one fewer time
@@ -799,6 +805,8 @@ class MultiTDAObjective:
                 balancing for a direct `SimulationSpec` whose `chunk_layout`
                 is unset. `None` opts out, and an
                 `AdaptiveAdjointChunkBalancer` supplies custom settings.
+                Near-to-far targets disable automatic balancing and reject
+                explicit adaptive balancing.
                 Ordinary forward sources are protected automatically.
                 Workload calibration uses three to eight gradient evaluations
                 and freezes the best measured layout after the critical-rank
@@ -838,11 +846,10 @@ class MultiTDAObjective:
                 of the finite sinc support. Default is 64.
         """
         self._near2far_objective = None
+        self._near2far_targets = ()
         if targets is not None:
             targets = tuple(targets)
-        if targets and any(isinstance(target, Near2FarTarget) for target in targets):
-            if not all(isinstance(target, Near2FarTarget) for target in targets):
-                raise ValueError("Near2FarTarget cannot be mixed with temporal targets")
+        if targets and all(isinstance(target, Near2FarTarget) for target in targets):
             if any(value is not None for value in
                    (wavelength_bands, weights, kernel_length, transition_width,
                     kernel_window_params, target_history_block_size)) or (
@@ -889,6 +896,37 @@ class MultiTDAObjective:
             self.last_sampling_interval = None
             self.last_actual_time = None
             return
+
+        if targets and any(isinstance(target, Near2FarTarget) for target in targets):
+            self.targets = targets
+            self._near2far_indices = tuple(i for i, target in enumerate(targets)
+                                          if isinstance(target, Near2FarTarget))
+            self._temporal_indices = tuple(i for i, target in enumerate(targets)
+                                          if not isinstance(target, Near2FarTarget))
+            self._near2far_targets = tuple(targets[i] for i in self._near2far_indices)
+            if (not isinstance(simulation, SimulationSpec)
+                    or (sim_factory is not None
+                        and getattr(sim_factory, "__self__", None) is not simulation)):
+                raise ValueError("Near2FarTarget requires direct simulation=SimulationSpec(...)")
+            if chunk_balancer == "auto":
+                chunk_balancer = None
+            if chunk_balancer is not None:
+                raise ValueError("Near2FarTarget does not support adaptive chunk balancing")
+            if (wavelength_bands is None or len(wavelength_bands) != len(targets)
+                    or any(wavelength_bands[i] is not None for i in self._near2far_indices)):
+                raise ValueError("mixed wavelength_bands must match targets with None for Near2FarTarget")
+            if weights is None or len(weights) != len(targets):
+                raise ValueError("mixed weights must match targets")
+            if any(weights[i] != 1 for i in self._near2far_indices):
+                raise ValueError("Near2FarTarget requires unit filter weights; use scalarization_fn")
+            if any(value is not None for value in (monitor_positions, component,
+                                                  adjoint_source_size, adjoint_source_amplitude)):
+                raise ValueError("mixed near-to-far targets cannot use legacy target arguments")
+            wavelength_bands = [wavelength_bands[i] for i in self._temporal_indices]
+            weights = [weights[i] for i in self._temporal_indices]
+            targets = tuple(targets[i] for i in self._temporal_indices)
+            self.last_far_fields = None
+            self.last_actual_time = None
 
         uses_simulation_spec = simulation is not None and (
             sim_factory is None or getattr(sim_factory, "__self__", None) is simulation
@@ -1203,12 +1241,12 @@ class MultiTDAObjective:
         wavelength_bands = list(wavelength_bands)
         normalized_fom_fns = _normalize_band_callbacks(
             fom_fn,
-            len(wavelength_bands),
+            len(self.targets) if self._near2far_targets else len(wavelength_bands),
             "fom_fn",
         )
         normalized_adjoint_signal_fns = _normalize_band_callbacks(
             adjoint_signal_fn,
-            len(wavelength_bands),
+            len(self.targets) if self._near2far_targets else len(wavelength_bands),
             "adjoint_signal_fn",
         )
         _validate_band_callback_pairs(
@@ -1260,6 +1298,9 @@ class MultiTDAObjective:
                     f"{highest_band_frequency:g} to cover the highest "
                     "wavelength-band frequency"
                 )
+            if (self._near2far_targets and max_frequency < max(
+                    f for target in self._near2far_targets for f in target.frequencies)):
+                raise ValueError("max_frequency must cover every near-to-far target frequency")
         (
             reconstruction_window,
             reconstruction_window_params,
@@ -1513,7 +1554,7 @@ class MultiTDAObjective:
             )
         self.reuse_simulation = reuse_simulation
         self._reuse_simulation_for_adjoint = (
-            self.reuse_simulation and uses_simulation_spec
+            (self.reuse_simulation or bool(self._near2far_targets)) and uses_simulation_spec
         )
         self.last_chunk_balance = None
         self.last_source_boundary_decision = None
@@ -1729,7 +1770,8 @@ class MultiTDAObjective:
         if (
             self.design is not None
             and self._simulation_spec is not None
-            and _uses_material_jacobian(self._simulation_spec, self.design)
+            and (self._near2far_targets
+                 or _uses_material_jacobian(self._simulation_spec, self.design))
         ):
             self.gradient_components = (mp.Ex, mp.Ey, mp.Ez)
 
@@ -2460,8 +2502,8 @@ class MultiTDAObjective:
                     )
         return sources
 
-    def _resolved_band_callbacks(self, *, validate_pairs: bool):
-        band_count = len(self.wavelength_bands)
+    def _resolved_target_callbacks(self, *, validate_pairs: bool):
+        band_count = len(self.targets) if self._near2far_targets else len(self.wavelength_bands)
         fom_fns = _normalize_band_callbacks(
             self.fom_fn,
             band_count,
@@ -2476,12 +2518,19 @@ class MultiTDAObjective:
             _validate_band_callback_pairs(fom_fns, adjoint_signal_fns)
         return fom_fns, adjoint_signal_fns
 
+    def _resolved_band_callbacks(self, *, validate_pairs: bool):
+        fns, signals = self._resolved_target_callbacks(validate_pairs=validate_pairs)
+        if self._near2far_targets:
+            return (tuple(fns[i] for i in self._temporal_indices),
+                    tuple(signals[i] for i in self._temporal_indices))
+        return fns, signals
+
     def _validate_runtime_band_callbacks(self, *, validate_pairs: bool):
         callback_error = None
         fom_fns = None
         adjoint_signal_fns = None
         try:
-            fom_fns, adjoint_signal_fns = self._resolved_band_callbacks(
+            fom_fns, adjoint_signal_fns = self._resolved_target_callbacks(
                 validate_pairs=validate_pairs,
             )
         except Exception as exc:
@@ -3124,7 +3173,7 @@ class MultiTDAObjective:
             _is_magnetic_component(component)
             for component in self._monitor_target_components
         }
-        combine_staggered_sources = len(source_staggering) > 1
+        combine_staggered_sources = len(source_staggering) > 1 or bool(self._near2far_targets)
         t_array = float(actual_time) - np.asarray(monitor_times)[::-1]
         base_functions = {}
         shifted_functions = {}
@@ -3213,7 +3262,7 @@ class MultiTDAObjective:
                         indexed_stencils[global_index],
                     )
                 )
-        return sources, source_staggering == {True}
+        return sources, source_staggering == {True} and not self._near2far_targets
 
     def _band_fom_values_and_adjoint_signals(
         self,
@@ -3632,6 +3681,8 @@ class MultiTDAObjective:
         """
         if self.chunk_balancer is not None and getattr(self._simulation_spec, "symmetries", ()):
             raise ValueError("Mirror simulations do not support adaptive chunk balancing")
+        if self._near2far_targets and self.chunk_balancer is not None:
+            raise ValueError("Near2FarTarget does not support adaptive chunk balancing")
         if self._near2far_objective is not None:
             from .near2far import evaluate_near2far
 
@@ -3680,6 +3731,7 @@ class MultiTDAObjective:
         if (
             need_gradient
             and self._mixed_non_flux_target_time_staggering
+            and not self._near2far_targets
         ):
             raise ValueError(
                 "MultiTDAObjective gradients cannot mix electric and magnetic "
@@ -3817,6 +3869,16 @@ class MultiTDAObjective:
             )
             balance_wall_start = time.perf_counter() if balance_enabled else None
             sim_fwd = self._make_forward_simulation(forward_sources)
+            if self._near2far_targets:
+                from .near2far import (add_near2far_monitors, farfield_values,
+                                      farfield_adjoint_sources)
+
+                near_monitors = add_near2far_monitors(
+                    sim_fwd, self._near2far_targets, self.max_frequency,
+                    chunk_layout=self._simulation_spec.chunk_layout)
+                fns, signals = self._resolved_target_callbacks(validate_pairs=need_gradient)
+                near_fns = tuple(fns[i] for i in self._near2far_indices)
+                near_signals = tuple(signals[i] for i in self._near2far_indices)
             _require_no_meep_symmetries(sim_fwd)
             if (need_gradient and getattr(sim_fwd, "symmetries", ())
                     and (not self._uses_simulation_spec or not all(indexed_source_mask))):
@@ -3937,7 +3999,7 @@ class MultiTDAObjective:
             run_until = _aligned_run_until(
                 self.run_time,
                 dt=dt,
-                sampling_interval=(sampling_interval if need_gradient else 1),
+                sampling_interval=(sampling_interval if need_gradient or self._near2far_targets else 1),
             )
             monitor_times = []
             forward_sampling_interval = (
@@ -4291,6 +4353,11 @@ class MultiTDAObjective:
                             ],
                         )
             fwd_timing = self.chunk_balancer.capture_timing(sim_fwd) if balance_enabled else None
+            if self._near2far_targets:
+                near_fields, near_values = farfield_values(
+                    sim_fwd, near_monitors, self._near2far_targets, near_fns, dt)
+                self.last_far_fields = tuple(f.copy() for f in near_fields)
+                self.last_actual_time = actual_time
             fwd_monitor["groups"] = None
             fwd_monitor["overlaps"] = None
             fwd_monitor["overlap_stencils"] = None
@@ -4332,11 +4399,27 @@ class MultiTDAObjective:
                         need_gradient=need_gradient,
                     )
                 )
+            if self._near2far_targets:
+                combined_values = np.empty(len(self.targets))
+                combined_values[list(self._temporal_indices)] = band_objectives
+                combined_values[list(self._near2far_indices)] = near_values
+                band_objectives = combined_values
             band_losses = -band_objectives
-            total_fom, band_coeffs, scalarization_info = self._evaluate_scalarization(
-                band_objectives,
-                need_gradient=need_gradient,
-            )
+            scalarization_error = None
+            try:
+                total_fom, band_coeffs, scalarization_info = self._evaluate_scalarization(
+                    band_objectives,
+                    need_gradient=need_gradient,
+                )
+                if self._near2far_targets and (not np.isfinite(total_fom)
+                        or (need_gradient and not np.all(np.isfinite(band_coeffs)))):
+                    raise ValueError("mixed scalarization value and coefficients must be finite")
+            except Exception as exc:
+                scalarization_error = exc
+            if self._near2far_targets:
+                self._synchronize_distributed_target_error(scalarization_error, "scalarization")
+            elif scalarization_error is not None:
+                raise scalarization_error
             self.last_band_objectives = band_objectives
             self.last_band_losses = band_losses
             self.last_band_coeffs = band_coeffs
@@ -4347,6 +4430,13 @@ class MultiTDAObjective:
                 else None
             )
             self.last_total_fom = total_fom
+            if self._near2far_targets:
+                if need_gradient:
+                    near_sources = farfield_adjoint_sources(
+                        sim_fwd, near_monitors, self._near2far_targets, near_fields,
+                        near_fns, near_signals, np.asarray(band_coeffs)[list(self._near2far_indices)],
+                        actual_time, dt)
+                    band_coeffs = np.asarray(band_coeffs)[list(self._temporal_indices)]
             if not need_gradient:
                 return total_fom, None
             histories_too_short = any(
@@ -4440,7 +4530,7 @@ class MultiTDAObjective:
                     _is_magnetic_component(component)
                     for component in self._monitor_target_components
                 }
-                combine_staggered_sources = len(source_staggering) > 1
+                combine_staggered_sources = len(source_staggering) > 1 or bool(self._near2far_targets)
                 active_source_indices = [
                     sample_index
                     for sample_index in range(len(self._monitor_target_positions))
@@ -4527,9 +4617,11 @@ class MultiTDAObjective:
                                 indexed_stencil,
                             )
                         )
-                adjoint_midpoint = source_staggering == {True}
+                adjoint_midpoint = source_staggering == {True} and not self._near2far_targets
                 del adj_signals, t_array
 
+            if self._near2far_targets:
+                adjoint_sources.extend(near_sources)
             if self._reuse_simulation_for_adjoint:
                 if is_cylindrical:
                     sim_fwd.change_m(-forward_mode)

@@ -86,9 +86,10 @@ values and symmetry-projected gradients are checked separately.
 - Sparse near-to-far design histories keep full-rate DFT accumulation. Value
   and gradient evaluations use the same stride-aligned final time, which may
   extend by up to `sampling_interval-1` Meep steps. `last_actual_time` exposes it.
-- Spectral MultiTDA targets cannot be mixed with temporal targets or PC-FIR
-  wavelength-band settings. Core and native packages must both be rebuilt;
-  API 14 rejects older native extensions.
+- Mixed temporal/near-to-far MultiTDA targets are supported by the follow-up
+  implementation below. An all-near-to-far list still rejects temporal FIR
+  settings. The original extension requires native API 14; the mixed-target
+  follow-up changes only the Python package.
 
 ## Defects caught by validation
 
@@ -157,3 +158,88 @@ any manual rebuild must follow publication of the branch.
 No speedup or peak-memory claim is inferred from these correctness tests.
 The shared Meep installation, server optimization jobs, earlier validation
 reports, and research-paper results were not modified.
+
+## Mixed temporal and near-to-far targets
+
+2026-10-07, following commit `4a38eca`, on the same branch and environment.
+
+`MultiTDAObjective` now accepts interleaved temporal and `Near2FarTarget`
+entries. One forward simulation records temporal histories and full-rate
+near-to-far DFTs. One combined adjoint simulation applies both source families.
+A regression test counts the real native forward and adjoint loop calls.
+No new public frontend function or native API is required.
+
+For mixed lists, `wavelength_bands` and `weights` follow the complete target
+order. Near-to-far entries require `None` and `1.0`, respectively. Temporal
+entries keep their existing FIR semantics. Callback lists, scalarization
+inputs, and `last_band_*` arrays follow the complete target order;
+`last_far_fields` contains only near-to-far arrays, in their target order.
+Spectral intensity and temporal band energy have different units and scaling;
+users must set any required normalization in `scalarization_fn`.
+
+Direct `SimulationSpec`, restart-safe media, and the existing near-to-far
+physical restrictions still apply. Automatic adaptive balancing is disabled;
+explicit adaptive balancing is rejected. Mirror plus an explicit chunk layout
+remains unsupported. Mixed objectives always restart the forward simulation
+for the adjoint, including when `reuse_simulation=False`.
+
+Validation covers electric and magnetic regional targets, flux, fixed-profile
+eigenmode coefficients, nonlinear scalarization, target ordering, manual
+covectors, sparse recording endpoints, distributed target histories, and
+independent MPI process groups. A combined 3D case uses off-diagonal anisotropy,
+`eps_averaging=True`, `do_averaging=True`, two independent design regions, and
+Mirror symmetry.
+
+Directional-gradient discrepancies against central finite differences were:
+
+| Mixed temporal target or configuration | Relative discrepancy |
+| --- | ---: |
+| Electric regional field | 0.124076% |
+| Magnetic regional field | 0.167694% |
+| Flux | 0.099471% |
+| Fixed-profile eigenmode coefficient | 0.146031% |
+| Distributed magnetic field | 0.207368% |
+| Distributed electric and magnetic fields | 0.166752% |
+| 3D averaged tensor, two regions, Mirror | 0.085796% |
+
+All are below the existing 0.5% relative tolerance. These compare derivatives
+of the same finite-time simulation; they are not physical optical errors.
+The four basic target cases also check central-difference step stability at
+`h=2e-4` and `h=1e-4` and agreement with separately evaluated objectives.
+
+The tests exposed two shared-path defects. Rank-local callback failures now
+propagate to all MPI ranks before near-to-far source collectives. This covers
+mixed and all-near-to-far value, covector, and scalarization callbacks.
+Also, the explicit-layout guard now reads `SimulationSpec.chunk_layout`;
+Meep's automatically populated layout after tensor initialization is allowed.
+
+Final installed-package regression results are recorded below. MPI counts
+are per rank, and overlapping test selections must not be added together.
+
+- Full serial suite: 1,078 passed, 81 skipped, 12 deselected in 327.12 s.
+- New mixed-target file with MPI2: 24 passed, 1 skipped per rank in 9.53 s.
+  The skip requires four ranks.
+- MPI4 mixed/near-to-far independent-group selection: 2 passed per rank in
+  1.92-1.93 s, with 49 tests deselected.
+- Sphinx HTML build with warnings treated as errors: passed. ReadTheDocs has
+  not received these local changes; deployment follows branch publication.
+
+Final Python wheel SHA256:
+
+```text
+tama-0.6.0a1-py3-none-any.whl
+12a769846cbd1efa342e76a513c43aa7dfa8dbdabeb1318a3779921acfb1c99f
+```
+
+The wheel was built from a clean copy of current tracked source files and
+installed in the task environment. Both modified production files match the
+wheel and installed copies byte for byte. An initial in-place build included
+a stale ignored `build/lib` artifact and failed a package-provenance test;
+the clean build excludes that artifact without deleting the local build tree.
+Native API 14 is unchanged.
+
+Tests: `tests/meep/test_mixed_near2far.py`. Logs and the wheel are under
+`/home/smrm/tmp/tama-meep-extensions-20261007/`: `mixed-clean-full.log`,
+`mixed-clean-mpi2.log`, `mixed-clean-mpi4.log`, and `mixed-clean-wheels/`.
+The test verifies shared solver calls; no runtime speedup or peak-memory
+claim is made.

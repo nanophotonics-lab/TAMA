@@ -32,11 +32,11 @@ def farfield_intensity(fields, dt):
     return 0.5 * npa.sum(npa.abs(fields[..., :3]) ** 2)
 
 
-def _validate_simulation(sim):
+def _validate_simulation(sim, chunk_layout):
     if sim._infer_dimensions(sim.k_point) not in (2, 3) or sim.is_cylindrical:
         raise ValueError("Near2FarTarget supports Cartesian 2D and 3D only")
     _require_no_meep_symmetries(sim)
-    if sim.symmetries and sim.chunk_layout is not None:
+    if sim.symmetries and chunk_layout is not None:
         raise ValueError("Near2FarTarget with Mirrors does not support explicit chunk_layout; "
                          "Meep can duplicate near-surface quadrature for this combination")
     if sim.k_point and any(complex(x) != 0 for x in sim.k_point):
@@ -134,6 +134,69 @@ def farfield_sources(sim, monitor, target, covector, actual_time):
     return sources
 
 
+def add_near2far_monitors(sim, targets, max_frequency, *, chunk_layout):
+    # Tensor material setup may already have populated Meep's automatic layout.
+    _validate_simulation(sim, chunk_layout)
+    if (max_frequency is not None
+            and max_frequency < max(f for target in targets for f in target.frequencies)):
+        raise ValueError("max_frequency must cover every near-to-far target frequency")
+    _validate_surfaces(sim, targets)
+    return [sim.add_near2far(np.asarray(target.frequencies), *target.near_regions,
+                            decimation_factor=1, nperiods=1)
+            for target in targets]
+
+
+def _synchronize_callback_error(error):
+    failed = mp.sum_to_all(int(error is not None)) if mp.count_processors() > 1 else error is not None
+    if failed:
+        if error is not None:
+            raise error
+        raise RuntimeError("near-to-far callback failed on another MPI rank")
+
+
+def farfield_values(sim, monitors, targets, fom_fns, dt):
+    fields = [np.asarray([sim.get_farfield(monitor, point)
+                          for point in target.far_points]).reshape(
+                              len(target.far_points), len(target.frequencies), 6)
+              for target, monitor in zip(targets, monitors)]
+    error = None
+    try:
+        if any(not np.all(np.isfinite(f)) for f in fields):
+            raise ValueError("near-to-far fields must be finite; check far points and near surfaces")
+        values = np.asarray([float((fn or farfield_intensity)(f, dt))
+                             for fn, f in zip(fom_fns, fields)])
+        if not np.all(np.isfinite(values)):
+            raise ValueError("near-to-far objective values must be finite")
+    except Exception as exc:
+        error = exc
+    _synchronize_callback_error(error)
+    return fields, values
+
+
+def farfield_adjoint_sources(sim, monitors, targets, fields, fom_fns,
+                             adjoint_signal_fns, coefficients, actual_time, dt):
+    covectors = []
+    error = None
+    try:
+        for f, fn, adjoint_fn in zip(fields, fom_fns, adjoint_signal_fns):
+            covector = (grad(fn or farfield_intensity, 0)(f, dt) if adjoint_fn is None
+                        else np.asarray(adjoint_fn(f, dt)) * dt)
+            if covector.shape != f.shape:
+                raise ValueError("near-to-far adjoint_signal_fn must match far_fields shape")
+            if not np.all(np.isfinite(covector)):
+                raise ValueError("near-to-far adjoint covectors must be finite")
+            covectors.append(covector)
+    except Exception as exc:
+        error = exc
+    # All local callbacks finish before any rank enters near_sourcedata collectives.
+    _synchronize_callback_error(error)
+    sources = []
+    for target, monitor, covector, coefficient in zip(targets, monitors, covectors, coefficients):
+        sources.extend(farfield_sources(sim, monitor, target, coefficient * covector,
+                                        actual_time))
+    return sources
+
+
 def evaluate_near2far(objective, x, need_gradient, forward_sources=(), *,
                      targets=None, fom_fns=None, adjoint_signal_fns=None,
                      scalarize=None):
@@ -143,19 +206,13 @@ def evaluate_near2far(objective, x, need_gradient, forward_sources=(), *,
     history = accumulator = None
     try:
         sim = objective._make_forward_simulation(forward_sources)
-        _validate_simulation(sim)
         multiple = targets is not None
         targets = tuple(targets) if multiple else (objective.objective,)
-        if (objective.max_frequency is not None
-                and objective.max_frequency < max(f for target in targets for f in target.frequencies)):
-            raise ValueError("max_frequency must cover every near-to-far target frequency")
-        _validate_surfaces(sim, targets)
         fom_fns = tuple(fom_fns) if multiple else (objective.fom_fn,)
         adjoint_signal_fns = (tuple(adjoint_signal_fns) if multiple
                               else (objective.adjoint_signal_fn,))
-        monitors = [sim.add_near2far(np.asarray(target.frequencies), *target.near_regions,
-                                     decimation_factor=1, nperiods=1)
-                    for target in targets]
+        monitors = add_near2far_monitors(sim, targets, objective.max_frequency,
+                                       chunk_layout=objective._simulation_spec.chunk_layout)
         sim.init_sim()
         dt = objective.time_step(sim)
         interval = objective._resolve_sampling_interval(dt)
@@ -178,43 +235,31 @@ def evaluate_near2far(objective, x, need_gradient, forward_sources=(), *,
             sim.run(until=run_until)
         actual_time = sim.round_time()
         objective.last_actual_time = actual_time
-        far_fields = [np.asarray([sim.get_farfield(monitor, point)
-                                  for point in target.far_points]).reshape(
-                                      len(target.far_points), len(target.frequencies), 6)
-                      for target, monitor in zip(targets, monitors)]
-        if any(not np.all(np.isfinite(f)) for f in far_fields):
-            raise ValueError("near-to-far fields must be finite; check far points and near surfaces")
+        far_fields, values = farfield_values(sim, monitors, targets, fom_fns, dt)
         objective.last_far_fields = (tuple(f.copy() for f in far_fields) if multiple
                                      else far_fields[0].copy())
-        fom_fns = tuple(fn or farfield_intensity for fn in fom_fns)
-        values = np.asarray([float(fn(f, dt)) for fn, f in zip(fom_fns, far_fields)])
-        if not np.all(np.isfinite(values)):
-            raise ValueError("near-to-far objective values must be finite")
+        error = None
+        try:
+            if multiple:
+                value, coefficients, info = scalarize(values, need_gradient=need_gradient)
+            else:
+                value, coefficients = float(values[0]), (1.,)
+            if not np.isfinite(value) or (need_gradient and not np.all(np.isfinite(coefficients))):
+                raise ValueError("near-to-far scalarization value and coefficients must be finite")
+        except Exception as exc:
+            error = exc
+        _synchronize_callback_error(error)
         if multiple:
-            value, coefficients, info = scalarize(values, need_gradient=need_gradient)
             objective.last_band_objectives = values
             objective.last_band_losses = -values
             objective.last_band_coeffs = coefficients
             objective.last_scalarization_info = info
             objective.last_total_fom = value
             objective.last_smooth_min = info.get("smooth_min") if isinstance(info, dict) else None
-        else:
-            value, coefficients = float(values[0]), (1.,)
-        if not np.isfinite(value) or (need_gradient and not np.all(np.isfinite(coefficients))):
-            raise ValueError("near-to-far scalarization value and coefficients must be finite")
         if not need_gradient:
             return value, None
-        sources = []
-        for target, monitor, f, fn, adjoint_fn, coefficient in zip(
-                targets, monitors, far_fields, fom_fns, adjoint_signal_fns, coefficients):
-            covector = (grad(fn, 0)(f, dt) if adjoint_fn is None
-                        else np.asarray(adjoint_fn(f, dt)) * dt)
-            if covector.shape != f.shape:
-                raise ValueError("near-to-far adjoint_signal_fn must match far_fields shape")
-            if not np.all(np.isfinite(covector)):
-                raise ValueError("near-to-far adjoint covectors must be finite")
-            sources.extend(farfield_sources(sim, monitor, target, coefficient * covector,
-                                            actual_time))
+        sources = farfield_adjoint_sources(sim, monitors, targets, far_fields, fom_fns,
+                                          adjoint_signal_fns, coefficients, actual_time, dt)
         # Keep the exact forward chunk/index ownership used by near_sourcedata.
         sim.restart_fields()
         sim.clear_dft_monitors()
