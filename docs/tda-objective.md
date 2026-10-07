@@ -74,13 +74,19 @@ supplied manually.
 
 ## Inputs
 
+For `Near2FarTarget`, callbacks receive complex
+`(n_far_points, n_frequencies, 6)` spectral fields instead of a time history.
+The default FoM, manual-covector normalization, required simulation restart,
+and supported geometry are specified in the
+[near-to-far target guide](targets.md#near-to-far-targets).
+
 `TDAObjective` follows the same style as Meep objects: users pass ordinary Meep
 objects and explicit physical regions rather than hidden configuration.
 
 | Input | Meaning |
 | --- | --- |
-| `design` | `DesignGrid` describing the optimized MaterialGrid. Required when computing a gradient; optional for value-only evaluation. |
-| `simulation` | Optional `SimulationSpec`. Fills `sim_factory` and `resolution`; its native `DesignGrid` use requires `eps_averaging=False`. Its direct `make` path enables exact indexed target transposes and is required for regional, flux, and eigenmode gradients. It is also required for cylindrical gradients and supplies their forward mode `m`. |
+| `design` / `designs` | One `DesignGrid`, or an ordered sequence of independent nonoverlapping regions. Supply only one argument. The design vector and gradient concatenate flattened region arrays in that order. Required when computing a gradient; optional for value-only evaluation. |
+| `simulation` | Optional `SimulationSpec`. Fills `sim_factory` and `resolution`. Its direct `make` path enables exact indexed target transposes and is required for regional, flux, eigenmode, and near-to-far gradients. Cartesian tensor/averaging and mirror restrictions are described in the [design guide](design-gradients.md). It is also required for cylindrical gradients and supplies their forward mode `m`. |
 | `reuse_simulation` | Reuse the forward `Simulation` for the adjoint run when explicitly set to `True`. Default is `False`; enable only for restart-safe, time-invariant media. A cylindrical reuse changes the mode from `m` to `-m`. |
 | `target` | Optional `PointTarget`, `FieldRegionTarget`, `FluxTarget`, or `EigenmodeCoefficientTarget`. Point targets fill the legacy point/source settings. Regional target histories use time as the first axis and `sample_shape` as the remaining axes. Flux and eigenmode targets expose length-`N-1` signed-power or complex modal histories and combine their electric and time-centered magnetic sources in one adjoint run. Their gradients require direct `SimulationSpec` use. Cylindrical surface targets use radial or axial normals and explicit `2*pi*r` physical quadrature; cylindrical eigenmode targets additionally require fixed reference fields and a matching `reference_m`. |
 | `update_design` | Function that writes the flat design vector into the Meep design object. Usually calls `MaterialGrid.update_weights(...)`. |

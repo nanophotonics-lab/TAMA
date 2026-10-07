@@ -230,7 +230,7 @@ With an MPI Meep build, `MultiTDAObjective` distributes independent band FIR
 work when histories are non-deduplicated or when deduplicated histories use
 the built-in per-band FoMs. Deduplicated histories with custom per-band FoM
 callbacks instead evaluate every band on every rank. For supported
-nonsymmetric 2D Cartesian, 3D Cartesian, and cylindrical simulations, the
+2D Cartesian, 3D Cartesian, and cylindrical simulations, the
 native path records rank-local target-point histories and reduces the complete
 history once per distinct target component after the forward run. Native
 `DesignGrid` histories remain rank-local, and only the completed design
@@ -307,10 +307,16 @@ simulation state are unchanged and restart-safe.
 
 ## Inputs
 
+An all-`Near2FarTarget` target list selects discrete-frequency spectral
+objectives and bypasses temporal FIR filtering. Do not supply wavelength bands
+or kernel settings in that mode. See the
+[near-to-far target guide](targets.md#near-to-far-targets) for callback shapes,
+scalarization, normalization, and simulation-restart requirements.
+
 | Input | Meaning |
 | --- | --- |
-| `design` | `DesignGrid` describing the optimized MaterialGrid. Required when computing a gradient; optional for value-only evaluation. |
-| `simulation` | Optional `SimulationSpec`. Fills the simulation factory and resolution; its native `DesignGrid` use requires `eps_averaging=False`. Its direct `make` path enables exact indexed target transposes and is required for regional, flux, and eigenmode gradients. It is also required for cylindrical gradients and supplies the one forward mode `m` shared by all bands. |
+| `design` / `designs` | One `DesignGrid`, or an ordered sequence of independent nonoverlapping regions. Supply only one argument. The design vector and gradient concatenate flattened region arrays in that order. Required when computing a gradient; optional for value-only evaluation. |
+| `simulation` | Optional `SimulationSpec`. Fills the simulation factory and resolution. Its direct `make` path enables exact indexed target transposes and is required for regional, flux, eigenmode, and near-to-far gradients. Cartesian tensor/averaging and mirror restrictions are described in the [design guide](design-gradients.md). It is also required for cylindrical gradients and supplies the one forward mode `m` shared by all bands. |
 | `reuse_simulation` | Reuse the forward `Simulation` for the adjoint run when explicitly set to `True`. Default is `False`; enable only for restart-safe, time-invariant media. A cylindrical reuse changes the mode from `m` to `-m`. |
 | `targets` | Optional list containing one `PointTarget`, `FieldRegionTarget`, `FluxTarget`, or `EigenmodeCoefficientTarget` per wavelength band. Exact targets may contain different point counts. Regional output shapes may also differ. Their gradients require direct `SimulationSpec` use. Flux and eigenmode targets combine electric and time-centered magnetic sources in one adjoint run. Cylindrical surface targets use radial or axial normals and explicit `2*pi*r` physical quadrature; cylindrical eigenmode targets additionally require fixed reference fields and a matching `reference_m`. Other targets may mix electric components or mix magnetic components, but not both groups in one adjoint run. |
 | `update_design` | Same role as in `TDAObjective`: writes the design vector into the active Meep design object. |

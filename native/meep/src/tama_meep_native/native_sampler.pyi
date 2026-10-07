@@ -1,4 +1,4 @@
-from typing import Any, Sequence, overload
+from typing import Any, Optional, Sequence, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -126,6 +126,7 @@ def run_native_design_adjoint_segment(
     sample_count: int,
     dt: float,
     midpoint: bool,
+    gradient_offsets: Optional[Sequence[int]] = None,
 ) -> float:
     """Run one native adjoint segment and return non-FDTD work seconds.
 
@@ -150,6 +151,7 @@ def run_native_forward_segment(
     start_fine_index: int,
     sample_count: int,
     monitor_times: NDArray[np.float64],
+    fields_addr: int = 0,
 ) -> float:
     """Sample rank-local histories and advance one native forward segment.
 
@@ -673,6 +675,13 @@ def shift_tabulated_bspline(
     time_shift: float,
 ) -> TabulatedRealBSpline:
     """Create a shifted view that evaluates `source(time - time_shift)`."""
+    ...
+
+
+def fold_near2far_sources(
+    fields_addr: int, near2far_addr: int, source_addresses: Sequence[int],
+) -> list[tuple[int, int, NDArray[np.intp], NDArray[np.complex128]]]:
+    """Return chunk-grouped sources for the exact near-to-far transpose."""
     ...
 
 

@@ -454,7 +454,7 @@ def test_multi_tda_rejects_rank_inconsistent_adjoint_callback_state(
         obj._validate_runtime_band_callbacks(validate_pairs=False)
 
 
-def test_multi_tda_objective_rejects_meep_symmetries_before_forward_run():
+def test_multi_tda_objective_rejects_unsupported_symmetries_before_forward_run():
     class SymmetricSimulation:
         symmetries = [object()]
 
@@ -473,14 +473,14 @@ def test_multi_tda_objective_rejects_meep_symmetries_before_forward_run():
         sim_factory=lambda sources=None: simulation,
     )
 
-    with pytest.raises(ValueError, match="does not support Meep symmetries"):
+    with pytest.raises(ValueError, match="supports only mp.Mirror"):
         objective.evaluate(np.zeros(1), need_gradient=False)
 
     assert not simulation.run_called
     assert simulation.reset_called
 
 
-def test_multi_tda_objective_rejects_meep_symmetries_before_adjoint_run():
+def test_multi_tda_objective_rejects_unsupported_symmetries_before_adjoint_run():
     forward = _FakeSimulation(0.05, 8)
     adjoint = _FakeSimulation(0.05, 8)
     adjoint.symmetries = [object()]
@@ -491,7 +491,7 @@ def test_multi_tda_objective_rejects_meep_symmetries_before_adjoint_run():
     )
 
     with _fake_native_path():
-        with pytest.raises(ValueError, match="does not support Meep symmetries"):
+        with pytest.raises(ValueError, match="supports only mp.Mirror"):
             objective.evaluate(np.zeros(1), need_gradient=True)
 
     assert forward.events.count("run") == 1

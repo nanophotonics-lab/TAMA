@@ -1,0 +1,240 @@
+"""Meep near-to-far pullback with TAMA's finite-time source convention.
+
+Mirror runs require Meep's default chunk layout: explicit partitions can
+duplicate near-surface quadrature in Meep 1.34.
+"""
+
+import gc
+
+from autograd import grad
+import autograd.numpy as npa
+import meep as mp
+from meep.simulation import py_v3_to_vec
+import numpy as np
+
+from .native_design import (
+    _NativeDesignAccumulator, _NativeDesignHistorySet,
+    _native_forward_step_count, _run_native_forward_loop, _run_native_adjoint_loop,
+)
+from .sampling_grid import (
+    _require_no_meep_symmetries, history_storage_dtype,
+)
+from .design_collection import (
+    _collection_components as _native_design_components,
+    _collection_gradient_scale as _native_design_gradient_scale,
+)
+from . import native_sampler
+from ...nyquist import _aligned_run_until
+
+
+def farfield_intensity(fields, dt):
+    """Sum electric-field intensity over the requested points and frequencies."""
+    return 0.5 * npa.sum(npa.abs(fields[..., :3]) ** 2)
+
+
+def _validate_simulation(sim):
+    if sim._infer_dimensions(sim.k_point) not in (2, 3) or sim.is_cylindrical:
+        raise ValueError("Near2FarTarget supports Cartesian 2D and 3D only")
+    _require_no_meep_symmetries(sim)
+    if sim.symmetries and sim.chunk_layout is not None:
+        raise ValueError("Near2FarTarget with Mirrors does not support explicit chunk_layout; "
+                         "Meep can duplicate near-surface quadrature for this combination")
+    if sim.k_point and any(complex(x) != 0 for x in sim.k_point):
+        raise ValueError("Near2FarTarget does not support nonzero Bloch wavevectors")
+    if not sim.sources:
+        raise ValueError("Near2FarTarget requires at least one forward source")
+
+
+def _validate_surfaces(sim, targets):
+    dimensions = sim._infer_dimensions(sim.k_point)
+    center = np.asarray(tuple(sim.geometry_center or mp.Vector3()))
+    half_size = np.asarray(tuple(sim.cell_size)) / 2
+    low, high = center - half_size, center + half_size
+    for layer in sim.boundary_layers:
+        for axis in range(dimensions):
+            if layer.direction not in (mp.ALL, axis):
+                continue
+            if layer.side in (mp.ALL, mp.Low):
+                low[axis] += layer.thickness
+            if layer.side in (mp.ALL, mp.High):
+                high[axis] -= layer.thickness
+    clearance = .5 / sim.resolution
+    for target in targets:
+        if dimensions == 2 and any(point.z != 0 for point in target.far_points):
+            raise ValueError("2D far points must lie in the x-y plane")
+        for region in target.near_regions:
+            c, s = np.asarray(tuple(region.center)), np.asarray(tuple(region.size))
+            if (not np.all(np.isfinite(c)) or not np.all(np.isfinite(s))
+                    or np.any(s < 0) or np.count_nonzero(s[:dimensions] == 0) != 1
+                    or (dimensions == 2 and (c[2] != 0 or s[2] != 0))
+                    or not np.isfinite(region.weight)):
+                raise ValueError("near regions must be finite Cartesian surfaces with one zero extent")
+            normal = int(np.flatnonzero(s[:dimensions] == 0)[0])
+            if region.direction not in (mp.AUTOMATIC, normal):
+                raise ValueError("near-region direction must match its zero-extent axis")
+            if (np.any(c[:dimensions] - s[:dimensions]/2 < low[:dimensions] + clearance)
+                    or np.any(c[:dimensions] + s[:dimensions]/2 > high[:dimensions] - clearance)):
+                raise ValueError("near regions require half a grid cell of clearance from PML and cell boundaries")
+            for point in target.far_points:
+                if np.all(np.abs(np.asarray(tuple(point)) - c) <= s/2 + 1e-12):
+                    raise ValueError("far points must not lie on a near surface")
+
+
+def farfield_sources(sim, monitor, target, covector, actual_time):
+    """Transpose the spatial Green transform and finite-time Fourier sum.
+
+    Meep's near_sourcedata includes surface quadrature and flips electric
+    components. TAMA's time reversal flips magnetic components instead, hence
+    the common minus sign. Indexed amplitudes are current densities, so divide
+    by the Cartesian Yee-cell volume. No frequency-domain i*omega scale is used.
+    """
+    frequencies = np.asarray(target.frequencies)
+    points = np.asarray([tuple(p) for p in target.far_points]).reshape(-1)
+    point0 = py_v3_to_vec(sim.dimensions, target.far_points[0], False)
+    raw_data = monitor.swigobj.near_sourcedata(
+        point0, points, len(target.far_points),
+        np.ascontiguousarray(covector, dtype=np.complex128), 1e-3,
+    )
+    # SWIG vector iteration returns temporary owning wrappers; retain them while
+    # the native pullback reads their addresses.
+    data = tuple(raw_data)
+    sources = []
+    scale = -sim.resolution ** sim.dimensions / np.sqrt(2 * np.pi)
+    if sim.symmetries:
+        groups = native_sampler.fold_near2far_sources(
+            int(sim.fields.this), int(monitor.swigobj.this),
+            tuple(int(datum.this) for datum in data))
+        indexed_data = []
+        for component, chunk, indices, amplitudes in groups:
+            singletons = []
+            for index in indices:
+                datum = mp.sourcedata()
+                native_sampler.populate_sourcedata(int(datum.this), component, chunk, int(index))
+                singletons.append(datum)
+            datum = mp.sourcedata()
+            native_sampler.merge_sourcedata(int(datum.this), tuple(int(d.this) for d in singletons))
+            indexed_data.append((datum, np.asarray(amplitudes)))
+    else:
+        indexed_data = [(datum, np.asarray(datum.amp_arr).reshape(-1, frequencies.size))
+                        for datum in data]
+    for datum, amplitudes in indexed_data:
+        if not np.all(np.isfinite(amplitudes)):
+            raise ValueError("near-to-far source amplitudes must be finite")
+        for index, frequency in enumerate(frequencies):
+            if not np.any(amplitudes[:, index]):
+                continue
+            def waveform(t, frequency=frequency):
+                if t < 0 or t > actual_time:
+                    return 0j
+                return np.exp(2j * np.pi * frequency * (actual_time - t))
+            sources.append(mp.IndexedSource(
+                mp.CustomSource(src_func=waveform, start_time=0, end_time=actual_time),
+                datum, np.ascontiguousarray(scale * amplitudes[:, index]),
+            ))
+    return sources
+
+
+def evaluate_near2far(objective, x, need_gradient, forward_sources=(), *,
+                     targets=None, fom_fns=None, adjoint_signal_fns=None,
+                     scalarize=None):
+    """Run the shared native design-history loop with a spectral target."""
+    objective.update_design(x)
+    sim = None
+    history = accumulator = None
+    try:
+        sim = objective._make_forward_simulation(forward_sources)
+        _validate_simulation(sim)
+        multiple = targets is not None
+        targets = tuple(targets) if multiple else (objective.objective,)
+        if (objective.max_frequency is not None
+                and objective.max_frequency < max(f for target in targets for f in target.frequencies)):
+            raise ValueError("max_frequency must cover every near-to-far target frequency")
+        _validate_surfaces(sim, targets)
+        fom_fns = tuple(fom_fns) if multiple else (objective.fom_fn,)
+        adjoint_signal_fns = (tuple(adjoint_signal_fns) if multiple
+                              else (objective.adjoint_signal_fn,))
+        monitors = [sim.add_near2far(np.asarray(target.frequencies), *target.near_regions,
+                                     decimation_factor=1, nperiods=1)
+                    for target in targets]
+        sim.init_sim()
+        dt = objective.time_step(sim)
+        interval = objective._resolve_sampling_interval(dt)
+        objective.last_sampling_interval = interval
+        run_until = _aligned_run_until(objective.t_final, dt=dt,
+                                       sampling_interval=interval)
+        if need_gradient:
+            components = _native_design_components(sim, objective.design,
+                                                     objective.gradient_components)
+            scale = _native_design_gradient_scale(sim, objective.design)
+            dtype = history_storage_dtype(sim, objective.history_dtype)
+            history = _NativeDesignHistorySet(objective.design, components, dtype,
+                lambda shape: objective._make_history_memmap(shape, dtype=dtype))
+            fine_steps = _native_forward_step_count(sim, run_until, interval)
+            _, count, _, _ = _run_native_forward_loop(sim, (), history,
+                run_until=run_until, sampling_interval=interval, fine_step_count=fine_steps)
+            fields = history.finish_forward(count)
+            history.release_forward()
+        else:
+            sim.run(until=run_until)
+        actual_time = sim.round_time()
+        objective.last_actual_time = actual_time
+        far_fields = [np.asarray([sim.get_farfield(monitor, point)
+                                  for point in target.far_points]).reshape(
+                                      len(target.far_points), len(target.frequencies), 6)
+                      for target, monitor in zip(targets, monitors)]
+        if any(not np.all(np.isfinite(f)) for f in far_fields):
+            raise ValueError("near-to-far fields must be finite; check far points and near surfaces")
+        objective.last_far_fields = (tuple(f.copy() for f in far_fields) if multiple
+                                     else far_fields[0].copy())
+        fom_fns = tuple(fn or farfield_intensity for fn in fom_fns)
+        values = np.asarray([float(fn(f, dt)) for fn, f in zip(fom_fns, far_fields)])
+        if not np.all(np.isfinite(values)):
+            raise ValueError("near-to-far objective values must be finite")
+        if multiple:
+            value, coefficients, info = scalarize(values, need_gradient=need_gradient)
+            objective.last_band_objectives = values
+            objective.last_band_losses = -values
+            objective.last_band_coeffs = coefficients
+            objective.last_scalarization_info = info
+            objective.last_total_fom = value
+            objective.last_smooth_min = info.get("smooth_min") if isinstance(info, dict) else None
+        else:
+            value, coefficients = float(values[0]), (1.,)
+        if not np.isfinite(value) or (need_gradient and not np.all(np.isfinite(coefficients))):
+            raise ValueError("near-to-far scalarization value and coefficients must be finite")
+        if not need_gradient:
+            return value, None
+        sources = []
+        for target, monitor, f, fn, adjoint_fn, coefficient in zip(
+                targets, monitors, far_fields, fom_fns, adjoint_signal_fns, coefficients):
+            covector = (grad(fn, 0)(f, dt) if adjoint_fn is None
+                        else np.asarray(adjoint_fn(f, dt)) * dt)
+            if covector.shape != f.shape:
+                raise ValueError("near-to-far adjoint_signal_fn must match far_fields shape")
+            if not np.all(np.isfinite(covector)):
+                raise ValueError("near-to-far adjoint covectors must be finite")
+            sources.extend(farfield_sources(sim, monitor, target, coefficient * covector,
+                                            actual_time))
+        # Keep the exact forward chunk/index ownership used by near_sourcedata.
+        sim.restart_fields()
+        sim.clear_dft_monitors()
+        sim.change_sources(sources)
+        accumulator = _NativeDesignAccumulator(objective.design, components,
+                                               history.signatures, False)
+        _run_native_adjoint_loop(sim, accumulator, fields, fine_step_count=fine_steps,
+            actual_time=actual_time, dt=dt, sampling_interval=interval,
+            reconstruction_half_width=objective.reconstruction_half_width,
+            reconstruction_window=objective.reconstruction_window,
+            reconstruction_window_params=objective.reconstruction_window_params)
+        gradient = accumulator.reduce().real.ravel() * dt * scale
+        return value, gradient
+    finally:
+        if accumulator is not None:
+            accumulator.release()
+        if history is not None:
+            history.release_forward()
+        gc.collect()
+        if sim is not None:
+            sim.reset_meep()
+        if history is not None:
+            history.cleanup_memmaps()
