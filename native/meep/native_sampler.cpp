@@ -1239,7 +1239,7 @@ static void native_material_row_derivatives(
         }
     };
     const bool custom_tensor_average = averaged_branch &&
-        (tama_material_tensor::anisotropic(material->medium_1) ||
+        (voxel.dim == meep::D3 || tama_material_tensor::anisotropic(material->medium_1) ||
          tama_material_tensor::anisotropic(material->medium_2));
     if (contrasting && std::isfinite(material->beta) && material->beta > 0.0 &&
         material->eta != 0.5 && density == material->eta && !custom_tensor_average) {
@@ -2031,7 +2031,8 @@ static PyObject *configure_native_material_operator(PyObject *, PyObject *args) 
             auto *grid = static_cast<meep_geom::material_type>(geps->geometry.items[i].material);
             if (!grid || grid->which_subclass != meep_geom::material_data::MATERIAL_GRID ||
                 !grid->do_averaging ||
-                !(tama_material_tensor::anisotropic(grid->medium_1) ||
+                !(structure->gv.dim == meep::D3 ||
+                  tama_material_tensor::anisotropic(grid->medium_1) ||
                   tama_material_tensor::anisotropic(grid->medium_2) ||
                   !zero_cvector3(grid->medium_1.epsilon_offdiag) ||
                   !zero_cvector3(grid->medium_2.epsilon_offdiag))) {

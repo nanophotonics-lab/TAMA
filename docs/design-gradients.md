@@ -167,6 +167,13 @@ TAMA initializes this tensor operator before creating Meep fields. A custom
 MaterialGrid averaging is enabled. Rebuild the Meep native extension together
 with the Python package; this path requires native API 13.
 
+In 3D, scalar-isotropic MaterialGrid averaging also uses TAMA's normalized
+volume-averaging kernel and requires an uninitialized simulation from a custom
+`sim_factory`. This corrects the averaging-kernel normalization in stock Meep
+1.34.0, so existing 3D averaged MaterialGrid results can change. Geometric
+objects continue to use Meep's own averaging, and zero-normal MaterialGrid
+points retain their pointwise material evaluation.
+
 For active MaterialGrid averaging, TAMA limits `subpixel_tol` to `1e-8`,
 preserving stricter factory settings. Forward initialization and the local
 material Jacobian use that same tolerance. Meep's default `1e-4` produced

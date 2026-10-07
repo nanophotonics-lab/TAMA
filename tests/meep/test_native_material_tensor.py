@@ -22,15 +22,20 @@ def _rotated_medium(eigenvalues, angles):
 
 
 def _make_problem(case, *, sampling_interval=1, split=False, reuse_simulation=False):
-    three_d = case in ("tensor_3d", "tensor_3d_singleton")
+    three_d = case in (
+        "tensor_3d", "tensor_3d_singleton", "smooth_3d", "smooth_3d_singleton",
+    )
     resolution = 10 if three_d else 14
-    shape = (3, 3, 1) if case == "tensor_3d_singleton" else (3, 3, 3) if three_d else (4, 5)
+    # Near-cancelling singleton direction: 1.04% error at 0.25, 0.224% at 0.125.
+    courant = 0.125 if case == "smooth_3d_singleton" else 0.25
+    shape = (3, 3, 1) if case.endswith("3d_singleton") else (3, 3, 3) if three_d else (4, 5)
     center = mp.Vector3(0.027, -0.031, 0.019 if three_d else 0)
     size = mp.Vector3(0.64, 0.58, 0.48 if three_d else 0)
     medium1, medium2 = mp.Medium(epsilon=1.0), mp.Medium(epsilon=4.0)
     component = mp.Hz if case in ("tensor_hz", "smooth_hz") else mp.Ez
     do_averaging = case in (
         "smooth_ez", "smooth_hz", "tensor_3d", "tensor_3d_singleton", "tensor_xz_2d",
+        "smooth_3d", "smooth_3d_singleton",
     )
     beta = 32 if case == "smooth_ez" else 8 if do_averaging else 0
     if case == "tensor_hz":
@@ -41,7 +46,8 @@ def _make_problem(case, *, sampling_interval=1, split=False, reuse_simulation=Fa
         medium2 = _rotated_medium((3.0, 4.2, 5.1), (-0.4, 0.5, -0.2))
     material_grid = mp.MaterialGrid(
         mp.Vector3(*shape), medium1, medium2,
-        do_averaging=do_averaging, beta=beta, eta=0.42 if case == "smooth_ez" else 0.5,
+        do_averaging=do_averaging, beta=beta,
+        eta=0.42 if case in ("smooth_ez", "smooth_3d", "smooth_3d_singleton") else 0.5,
     )
     design = tm.DesignGrid(
         material_grid=material_grid, center=center, size=size, shape=shape,
@@ -63,7 +69,7 @@ def _make_problem(case, *, sampling_interval=1, split=False, reuse_simulation=Fa
             mp.GaussianSource(frequency=0.7, fwidth=0.5), component=component,
             center=mp.Vector3(-0.84, -0.17, 0.09 if three_d else 0),
         )],
-        resolution=resolution, courant=0.25,
+        resolution=resolution, courant=courant,
         dimensions=3 if three_d else 2,
         eps_averaging=case not in ("tensor_hz", "fixed_tensor"),
         chunk_layout=mp.BinaryPartition(data=[(mp.X, 0.0), 0, 1]) if split else None,
@@ -74,7 +80,7 @@ def _make_problem(case, *, sampling_interval=1, split=False, reuse_simulation=Fa
     )
     common = dict(
         design=design, simulation=simulation, t_final=24.0,
-        dt=0.25 / resolution, sampling_interval=sampling_interval,
+        dt=courant / resolution, sampling_interval=sampling_interval,
         chunk_balancer=None, reuse_simulation=reuse_simulation,
     )
     if case == "tensor_hz":
@@ -113,6 +119,7 @@ def _check_directional_derivative(objective):
 @pytest.mark.parametrize("case", [
     "smooth_ez", "smooth_hz", "tensor_hz", "tensor_3d", "tensor_3d_singleton",
     "tensor_xz_2d", "fixed_geometry", "fixed_tensor",
+    "smooth_3d", "smooth_3d_singleton",
 ])
 def test_material_tensor_gradient_matches_two_step_directional_fd(case):
     mp.verbosity(0)
@@ -287,14 +294,15 @@ def test_projection_threshold_rejects_undefined_gradient(beta, eta, message):
         objective.fom_and_grad(np.full(int(np.prod(objective.design.shape)), eta))
 
 
-def test_reused_tensor_simulation_matches_fresh_after_design_update():
+@pytest.mark.parametrize("case", ["tensor_xz_2d", "smooth_3d"])
+def test_reused_tensor_simulation_matches_fresh_after_design_update(case):
     mp.verbosity(0)
-    reused = _make_problem("tensor_xz_2d", reuse_simulation=True)
+    reused = _make_problem(case, reuse_simulation=True)
     weights, direction = _design_and_direction(reused)
     reused.fom_and_grad(weights)
     updated = weights + 0.01 * direction
     reused_value, reused_gradient = reused.fom_and_grad(updated)
-    fresh = _make_problem("tensor_xz_2d")
+    fresh = _make_problem(case)
     fresh_value, fresh_gradient = fresh.fom_and_grad(updated)
     np.testing.assert_allclose(reused_value, fresh_value, rtol=1e-12, atol=1e-12)
     np.testing.assert_allclose(reused_gradient, fresh_gradient, rtol=1e-11, atol=1e-12)
@@ -352,8 +360,9 @@ def test_loose_averaging_tolerance_requires_fresh_simulation(initialize_fields):
 
 
 @pytest.mark.mpi2
-def test_averaged_tensor_design_across_mpi_boundary_matches_fd():
+@pytest.mark.parametrize("case", ["smooth_hz", "smooth_3d"])
+def test_averaged_tensor_design_across_mpi_boundary_matches_fd(case):
     if mp.count_processors() != 2:
         pytest.skip("requires exactly two MPI ranks")
     mp.verbosity(0)
-    _check_directional_derivative(_make_problem("smooth_hz", sampling_interval=2, split=True))
+    _check_directional_derivative(_make_problem(case, sampling_interval=2, split=True))
