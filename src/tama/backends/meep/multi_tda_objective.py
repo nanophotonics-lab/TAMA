@@ -797,7 +797,7 @@ class MultiTDAObjective:
                 targets expose a real signed-power history with one fewer time
                 sample because magnetic fields are centered onto the
                 electric-field time grid. Flux gradients combine electric and
-                causally time-centered magnetic sources in one adjoint run.
+                Yee-aligned magnetic sources in one adjoint run.
                 Eigenmode targets expose a complex time-domain coefficient
                 obtained from a fixed, power-normalized reference mode and use
                 the same combined-adjoint structure.
@@ -2441,7 +2441,8 @@ class MultiTDAObjective:
                 "eigenmode overlap monitors must match the band count"
             )
 
-        t_array = float(actual_time) - times[::-1]
+        # Yee electric updates sample current halfway through each step.
+        t_array = float(actual_time) + 0.5 * dt - times[::-1]
         source_amplitudes = np.asarray(
             effective_source_amplitudes,
             dtype=np.complex128,
@@ -2457,19 +2458,16 @@ class MultiTDAObjective:
                 adjoint_values,
             )
             shifted_magnetic_function = (
-                _shift_tabulated_cubic_source(base_functions[1], dt)
+                _shift_tabulated_cubic_source(base_functions[1], 0.5 * dt)
                 if t_array.size >= 4
                 else _tabulated_cubic_sources(
-                    t_array + dt,
+                    t_array + 0.5 * dt,
                     adjoint_values[:, 1:2],
                 )[0]
             )
             time_sources = (
-                (mp.CustomSource(src_func=base_functions[0]),),
-                (
-                    mp.CustomSource(src_func=base_functions[1]),
-                    mp.CustomSource(src_func=shifted_magnetic_function),
-                ),
+                mp.CustomSource(src_func=base_functions[0]),
+                mp.CustomSource(src_func=shifted_magnetic_function),
             )
 
             for component, projection_weights in (
@@ -2488,18 +2486,15 @@ class MultiTDAObjective:
                     projection_weights * source_amplitudes[monitor_indices]
                 )
                 channel = 1 if _is_magnetic_component(component) else 0
-                if channel == 1:
-                    point_amplitudes = 0.5 * point_amplitudes
                 if not np.any(point_amplitudes != 0.0):
                     continue
-                for time_source in time_sources[channel]:
-                    sources.extend(
-                        _adjoint_indexed_profile_sources(
-                            time_source,
-                            point_amplitudes,
-                            indexed_stencils[component],
-                        )
+                sources.extend(
+                    _adjoint_indexed_profile_sources(
+                        time_sources[channel],
+                        point_amplitudes,
+                        indexed_stencils[component],
                     )
+                )
         return sources
 
     def _resolved_target_callbacks(self, *, validate_pairs: bool):
@@ -3169,12 +3164,7 @@ class MultiTDAObjective:
                 if stencil is not None and len(stencil[0]) != 0:
                     active.append((int(global_index), group_index, column))
 
-        source_staggering = {
-            _is_magnetic_component(component)
-            for component in self._monitor_target_components
-        }
-        combine_staggered_sources = len(source_staggering) > 1 or bool(self._near2far_targets)
-        t_array = float(actual_time) - np.asarray(monitor_times)[::-1]
+        t_array = float(actual_time) + 0.5 * dt - np.asarray(monitor_times)[::-1]
         base_functions = {}
         shifted_functions = {}
         for first in range(
@@ -3216,11 +3206,8 @@ class MultiTDAObjective:
             magnetic_columns = [
                 column
                 for column, (global_index, _, _) in enumerate(active_block)
-                if (
-                    combine_staggered_sources
-                    and _is_magnetic_component(
-                        self._monitor_target_components[global_index]
-                    )
+                if _is_magnetic_component(
+                    self._monitor_target_components[global_index]
                 )
             ]
             if t_array.size >= 4:
@@ -3229,7 +3216,7 @@ class MultiTDAObjective:
                         active_block[column][0],
                         _shift_tabulated_cubic_source(
                             block_functions[column],
-                            dt,
+                            0.5 * dt,
                         ),
                     )
                     for column in magnetic_columns
@@ -3238,7 +3225,7 @@ class MultiTDAObjective:
                 shifted_functions.update(zip(
                     (active_block[column][0] for column in magnetic_columns),
                     _tabulated_cubic_sources(
-                        t_array + dt,
+                        t_array + 0.5 * dt,
                         values[:, magnetic_columns],
                     ),
                 ))
@@ -3246,23 +3233,22 @@ class MultiTDAObjective:
         sources = []
         for global_index, _, _ in active:
             component = self._monitor_target_components[global_index]
-            point_functions = (base_functions[global_index],)
-            source_amplitude = source_amplitudes[global_index]
-            if combine_staggered_sources and _is_magnetic_component(component):
-                point_functions += (shifted_functions[global_index],)
-                source_amplitude *= 0.5
-            for source_function in point_functions:
-                sources.extend(
-                    _adjoint_point_sources(
-                        mp.CustomSource(src_func=source_function),
-                        component,
-                        self._monitor_target_positions[global_index],
-                        source_sizes[global_index],
-                        source_amplitude,
-                        indexed_stencils[global_index],
-                    )
+            source_function = (
+                shifted_functions[global_index]
+                if _is_magnetic_component(component)
+                else base_functions[global_index]
+            )
+            sources.extend(
+                _adjoint_point_sources(
+                    mp.CustomSource(src_func=source_function),
+                    component,
+                    self._monitor_target_positions[global_index],
+                    source_sizes[global_index],
+                    source_amplitudes[global_index],
+                    indexed_stencils[global_index],
                 )
-        return sources, source_staggering == {True} and not self._near2far_targets
+            )
+        return sources, False
 
     def _band_fom_values_and_adjoint_signals(
         self,
@@ -4524,13 +4510,7 @@ class MultiTDAObjective:
                     ]
                 )
                 adj_signals = source_parity[np.newaxis, :] * adj_signals[::-1]
-                t_array = float(actual_time) - monitor_times[::-1]
-
-                source_staggering = {
-                    _is_magnetic_component(component)
-                    for component in self._monitor_target_components
-                }
-                combine_staggered_sources = len(source_staggering) > 1 or bool(self._near2far_targets)
+                t_array = float(actual_time) + 0.5 * dt - monitor_times[::-1]
                 active_source_indices = [
                     sample_index
                     for sample_index in range(len(self._monitor_target_positions))
@@ -4547,30 +4527,27 @@ class MultiTDAObjective:
                         adj_signals[:, active_source_indices],
                     ),
                 ))
-                shifted_magnetic_indices = [
+                magnetic_indices = [
                     sample_index
                     for sample_index in active_source_indices
-                    if (
-                        combine_staggered_sources
-                        and _is_magnetic_component(
-                            self._monitor_target_components[sample_index]
-                        )
+                    if _is_magnetic_component(
+                        self._monitor_target_components[sample_index]
                     )
                 ]
                 if t_array.size >= 4:
                     shifted_source_functions = {
                         sample_index: _shift_tabulated_cubic_source(
                             base_source_functions[sample_index],
-                            dt,
+                            0.5 * dt,
                         )
-                        for sample_index in shifted_magnetic_indices
+                        for sample_index in magnetic_indices
                     }
                 else:
                     shifted_source_functions = dict(zip(
-                        shifted_magnetic_indices,
+                        magnetic_indices,
                         _tabulated_cubic_sources(
-                            t_array + dt,
-                            adj_signals[:, shifted_magnetic_indices],
+                            t_array + 0.5 * dt,
+                            adj_signals[:, magnetic_indices],
                         ),
                     ))
                 adjoint_sources = []
@@ -4595,29 +4572,22 @@ class MultiTDAObjective:
                         and len(indexed_stencil[0]) == 0
                     ):
                         continue
-                    source_functions = (base_source_functions[sample_index],)
-                    if (
-                        combine_staggered_sources
-                        and _is_magnetic_component(target_component)
-                    ):
-                        # Causal two-tap filtering makes ordinary accumulation
-                        # equal the previous midpoint-adjoint accumulation.
-                        source_functions += (
-                            shifted_source_functions[sample_index],
+                    adj_source_func = (
+                        shifted_source_functions[sample_index]
+                        if _is_magnetic_component(target_component)
+                        else base_source_functions[sample_index]
+                    )
+                    adjoint_sources.extend(
+                        _adjoint_point_sources(
+                            mp.CustomSource(src_func=adj_source_func),
+                            target_component,
+                            monitor_position,
+                            source_size,
+                            source_amplitude,
+                            indexed_stencil,
                         )
-                        source_amplitude *= 0.5
-                    for adj_source_func in source_functions:
-                        adjoint_sources.extend(
-                            _adjoint_point_sources(
-                                mp.CustomSource(src_func=adj_source_func),
-                                target_component,
-                                monitor_position,
-                                source_size,
-                                source_amplitude,
-                                indexed_stencil,
-                            )
-                        )
-                adjoint_midpoint = source_staggering == {True} and not self._near2far_targets
+                    )
+                adjoint_midpoint = False
                 del adj_signals, t_array
 
             if self._near2far_targets:

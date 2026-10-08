@@ -100,6 +100,7 @@ def farfield_sources(sim, monitor, target, covector, actual_time):
     data = tuple(raw_data)
     sources = []
     scale = -sim.resolution ** sim.dimensions / np.sqrt(2 * np.pi)
+    source_end_time = actual_time + 0.5 * sim.fields.dt
     if sim.symmetries:
         groups = native_sampler.fold_near2far_sources(
             int(sim.fields.this), int(monitor.swigobj.this),
@@ -124,9 +125,13 @@ def farfield_sources(sim, monitor, target, covector, actual_time):
             if not np.any(amplitudes[:, index]):
                 continue
             def waveform(t, frequency=frequency):
-                if t < 0 or t > actual_time:
+                # DFT recording has no sample beyond its final forward step.
+                # In particular, do not inject an extra magnetic current at 0.
+                if t <= 0 or t > actual_time:
                     return 0j
-                return np.exp(2j * np.pi * frequency * (actual_time - t))
+                # DFT fields include H's half-step phase. Both current types
+                # therefore share the discrete adjoint's half-step delay.
+                return np.exp(2j * np.pi * frequency * (source_end_time - t))
             sources.append(mp.IndexedSource(
                 mp.CustomSource(src_func=waveform, start_time=0, end_time=actual_time),
                 datum, np.ascontiguousarray(scale * amplitudes[:, index]),

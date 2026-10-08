@@ -153,10 +153,10 @@ Flux gradients require the direct `SimulationSpec.make` path. The constituent
 E/H point histories and their adjoint sources use exact indexed Yee-point
 sampler transposes. One gradient evaluation uses one forward run followed by
 one combined electric/magnetic adjoint run. The flux pullback first distributes
-each centered-H covector to its two raw H samples. The resulting magnetic
-adjoint waveform then uses the additional causal two-tap source representation
-`0.5 * q(t) + 0.5 * q(t - dt)` so its adjoint field aligns with electric-source
-design accumulation. MPI, adaptive chunk balancing, sparse Nyquist
+each centered-H covector to its two raw H samples. Electric source profiles
+end at `T+dt/2`, and raw magnetic source profiles end at `T+dt`, where `T` is
+the forward recording end time. These offsets match Meep's staggered current
+updates. No additional magnetic averaging is applied. MPI, adaptive chunk balancing, sparse Nyquist
 design-history reconstruction, and
 `reuse_simulation=True` are supported; flux monitor histories remain full
 rate. A flux target stores four tangential-field histories per surface point;

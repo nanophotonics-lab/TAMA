@@ -211,7 +211,7 @@ class TDAObjective:
                 `SimulationSpec` use for gradient evaluation. A flux target
                 exposes a length-`N-1` signed-power history evaluated from
                 four tangential E/H histories at explicit surface points;
-                its electric and time-centered magnetic gradient sources are
+                its electric and magnetic gradient sources are
                 combined in one adjoint simulation. An eigenmode target
                 exposes the complex time-domain overlap with one fixed,
                 power-normalized reference mode and uses the same
@@ -553,9 +553,6 @@ class TDAObjective:
             and _uses_material_jacobian(simulation, design)
         ):
             self.gradient_components = (mp.Ex, mp.Ey, mp.Ez)
-        self._native_adjoint_midpoint = (
-            False if mixed_surface_target or near2far_target else _is_magnetic_component(component)
-        )
 
     def _make_history_memmap(self, shape, *, dtype=None):
         tmp = tempfile.NamedTemporaryFile(prefix="tama_history_", suffix=".dat", delete=False)
@@ -1190,25 +1187,20 @@ class TDAObjective:
             for component in monitor_components:
                 component_covector = raw_covectors.pop(component)
                 component_amplitudes = amplitudes_by_component[component]
-                source_end_times = (actual_time,)
-                if _is_magnetic_component(component):
-                    # Causal two-tap filtering makes ordinary accumulation
-                    # equal the previous midpoint-adjoint accumulation.
-                    component_amplitudes = tuple(
-                        0.5 * amplitude
-                        for amplitude in component_amplitudes
+                # Meep evaluates electric currents halfway through a step;
+                # raw magnetic monitor samples precede E by half a step.
+                source_end_time = actual_time + dt * (
+                    1.0 if _is_magnetic_component(component) else 0.5
+                )
+                adjoint_sources.extend(
+                    target_adapters[component].adjoint_sources(
+                        component_covector,
+                        monitor_times,
+                        source_end_time,
+                        source_amplitudes=component_amplitudes,
+                        indexed_stencils=indexed_stencils[component],
                     )
-                    source_end_times = (actual_time, actual_time + dt)
-                for source_end_time in source_end_times:
-                    adjoint_sources.extend(
-                        target_adapters[component].adjoint_sources(
-                            component_covector,
-                            monitor_times,
-                            source_end_time,
-                            source_amplitudes=component_amplitudes,
-                            indexed_stencils=indexed_stencils[component],
-                        )
-                    )
+                )
 
             if self._reuse_simulation_for_adjoint:
                 if is_cylindrical:
@@ -1747,11 +1739,14 @@ class TDAObjective:
                         "for cubic adjoint-source interpolation; increase t_final"
                     )
 
+                source_end_time = actual_time + dt * (
+                    1.0 if _is_magnetic_component(self.objective.component) else 0.5
+                )
                 if self._is_regional_target:
                     adjoint_sources = self.objective.adjoint_sources(
                         adjoint_signal,
                         monitor_times,
-                        actual_time,
+                        source_end_time,
                         source_amplitudes=(
                             effective_adjoint_source_amplitudes
                         ),
@@ -1761,7 +1756,7 @@ class TDAObjective:
                     adjoint_sources = self.objective.adjoint_sources(
                         adjoint_signal,
                         monitor_times,
-                        actual_time,
+                        source_end_time,
                         source_size=effective_adjoint_source_sizes[0],
                         source_amplitude=(
                             effective_adjoint_source_amplitudes[0]
@@ -1804,7 +1799,7 @@ class TDAObjective:
                     self.design,
                     gradient_components,
                     native_history.signatures,
-                    self._native_adjoint_midpoint,
+                    False,
                 )
                 balance_timing["extra_seconds"] += _run_native_adjoint_loop(
                     sim_adj,

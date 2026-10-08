@@ -7,7 +7,7 @@ import pytest
 import tama as tm
 import tama.multi_tda_objective as multi_tda_module
 import tama.tda_objective as tda_module
-from tama.native_design import _centered_derivative_into
+from tama.native_design import _forward_derivative_into
 from tama.nyquist import _WindowedSincReconstructor
 from tama.sampling_grid import NativeDesignField
 
@@ -51,7 +51,7 @@ def _python_adjoint_loop_reference(
         fine_index = fine_step_count - state["step"]
         for component in accumulator.components:
             if sampling_interval > 1:
-                forward_derivative = _centered_derivative_into(
+                forward_derivative = _forward_derivative_into(
                     reconstructors[component].sample_into,
                     fine_index,
                     fine_step_count,
@@ -62,14 +62,12 @@ def _python_adjoint_loop_reference(
                 )
             else:
                 history = field_histories[component]
-                if fine_index == 0:
-                    forward_derivative = (history[1] - history[0]) / dt
-                elif fine_index == fine_step_count:
-                    forward_derivative = (history[-1] - history[-2]) / dt
+                if fine_index == fine_step_count:
+                    forward_derivative = np.zeros_like(history[-1])
                 else:
                     forward_derivative = (
-                        history[fine_index + 1] - history[fine_index - 1]
-                    ) / (2.0 * dt)
+                        history[fine_index + 1] - history[fine_index]
+                    ) / dt
             accumulator.accumulate(
                 current_sim,
                 component,
