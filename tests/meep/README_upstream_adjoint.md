@@ -56,11 +56,8 @@ the multi-frequency checks exercise `MultiTDAObjective`.
 The filter/projection backpropagation check uses the second-order forward
 difference `[4(F(p+dp)-F(p))-(F(p+2dp)-F(p))]/2`. The perturbation `dp`, mapping,
 and upstream tolerance are unchanged. The extra positive perturbation remains
-within the design bounds. For the single-frequency fixture, the upstream
-first-order reference has relative truncation error `9.0896e-6`, above its
-`5e-6` tolerance. The second-order reference agrees with a separately converged
-central difference to `1.6e-8`. This is a documented change to the reference
-formula, not a claim that the unmodified upstream assertion passes.
+within the design bounds. This reduces reference truncation error while
+retaining the original `5e-6` tolerance for the single-frequency case.
 
 The port-ratio directions are stored in
 `data/upstream_adjoint_port_ratio_directions.npy`, so Meep tests do not need

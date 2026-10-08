@@ -13,9 +13,9 @@ Fixed reference modes use 91 trapezoidal points across each original port.
 These temporal and spatial conversions are not bitwise Meep equivalence.
 Meep supplies the incident-flux normalization and differentiable input filter;
 TAMA supplies the objective values and design gradients. No Meep adjoint solve
-is used. The mapped-gradient check uses a second-order forward difference:
-the upstream first-order reference has truncation error above its tolerance
-for this TAMA observable. All other finite-difference formulas are unchanged.
+is used. The mapped-gradient check uses a second-order forward difference
+to reduce reference truncation error. All other finite-difference formulas
+are unchanged.
 """
 
 import meep as mp

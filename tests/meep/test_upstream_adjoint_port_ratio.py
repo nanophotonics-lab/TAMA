@@ -20,7 +20,7 @@ does not test JAX tracing, custom VJP plumbing, or distributed DFT pointers.
 
 The data fixture contains the exact upstream expression
 1e-4*jax.random.normal(jax.random.PRNGKey(seed),(20,10)), seeds 0 through 4,
-generated with the already installed JAX 0.11.2 on CPU, jax_enable_x64=True,
+generated with JAX 0.11.2 on CPU, jax_enable_x64=True,
 jax_default_prng_impl='threefry2x32', jax_threefry_partitionable=True.
 Upstream does not pin JAX's version or partitionable setting; these settings
 make this port reproducible without a runtime JAX dependency. Fixture SHA256:
