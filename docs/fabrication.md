@@ -117,7 +117,7 @@ the matching raw, filtered, and projected densities together with the fixed
 incident fluxes and 3-by-3 efficiency metrics. `--dry-run` never writes this
 file.
 
-The example uses coarse detector quadrature and a short run so it is an API and
-regression example, not a publication-quality optimized router. Production
-results require convergence sweeps over the time horizon, FIR length, spatial
-resolution, detector quadrature, filter radius, and optimization schedule.
+The example uses coarse detector quadrature and a short run for API and
+regression tests. Production results require convergence sweeps over the time
+horizon, FIR length, spatial resolution, detector quadrature, filter radius,
+and optimization schedule.

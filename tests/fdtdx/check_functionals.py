@@ -76,8 +76,7 @@ def main():
     for target in (point, region, flux, mode):
         target.validate_shape((4, 4, 3))
         must_reject(lambda: target.validate_shape((2, 4, 3)))
-        # Reassigning configuration after JIT capture must not silently change
-        # Python metadata while the compiled objective retains previous values.
+        # Immutable configuration keeps Python metadata consistent with JIT captures.
         try:
             target.weights = np.ones(len(target.indices))
         except AttributeError:
@@ -176,8 +175,7 @@ def main():
     )
     bank_error = float(np.max(np.abs(np.sum(np.abs(responses) ** 2, axis=1) - 1)))
     assert bank_error < 0.015, bank_error
-    # A three-tap bank cannot resolve these narrow transitions; reject rather
-    # than silently claiming power complementarity for its actual FIR response.
+    # Three taps cannot resolve these transitions within the power-error limit.
     must_reject(
         lambda: power_complementary_kernels([(0.10, 0.25), (0.25, 0.40)], 1.0, 3, 0.05)
     )

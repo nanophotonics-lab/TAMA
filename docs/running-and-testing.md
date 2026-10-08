@@ -38,10 +38,9 @@ requires an actual CUDA device and fails if none is available. CPU tests cannot
 certify offload or GPU execution. Backend tests are selected explicitly in CI;
 do not run Meep tests in a Meep-free environment.
 
-The manual GPU workflow uses a self-hosted CUDA runner. It does not automatically
-execute untrusted pull-request code on that runner. A maintainer must provision
-the runner and execute the GPU release check on the intended revision; a
-workflow definition alone is not evidence that GitHub Actions has run.
+GPU release checks run manually on a maintainer-provisioned CUDA runner.
+The maintainer selects the revision to test. The workflow does not
+automatically run untrusted pull-request code.
 
 ## Release checks
 

@@ -204,8 +204,7 @@ class EigenmodeCoefficientTarget(FluxTarget):
     normalized-H units and the same co-located sampling convention. A supplied
     self-mode has amplitude one. Default objective is dt sum(abs(a)**2), NOT
     SI power and NOT Meep TAMA's power-normalized coefficient. Profiles are
-    fixed and may be complex. Complex simulation fields require separate
-    validation of the backend; these functionals do not establish that support.
+    fixed and may be complex.
     """
 
     def __init__(self, indices, normal, weights, reference_E, reference_H):

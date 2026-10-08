@@ -770,8 +770,8 @@ class MultiTDAObjective:
                 balancing for a direct `SimulationSpec` whose `chunk_layout`
                 is unset. `None` opts out, and an
                 `AdaptiveAdjointChunkBalancer` supplies custom settings.
-                Near-to-far targets disable automatic balancing and reject
-                explicit adaptive balancing.
+                Mirrors and near-to-far targets disable automatic balancing
+                and reject explicit adaptive balancing.
                 Ordinary forward sources are protected automatically.
                 Workload calibration uses three to eight gradient evaluations
                 and freezes the best measured layout after the critical-rank
@@ -788,17 +788,18 @@ class MultiTDAObjective:
                 sparse interval to align its closing sample.
             max_frequency: Optional maximum relevant frequency `f_max` used
                 to choose `sampling_interval` from the Nyquist criterion.
-                It must cover the highest wavelength-band frequency. Also
-                include the source, objective, adjoint response, and any safety
-                margin. This does not verify the remaining band-limit or
-                temporal-boundary assumptions. Cannot be combined with
-                `sampling_interval > 1`.
+                It must cover the highest wavelength-band frequency and every
+                near-to-far frequency. Also include the source, objective,
+                adjoint response, and any safety margin. This does not verify
+                the remaining band-limit or temporal-boundary assumptions.
+                Cannot be combined with `sampling_interval > 1`.
             reuse_simulation: Reuse the initialized forward `Simulation` for
                 the adjoint run. This requires `simulation=SimulationSpec(...)`
                 and should only be enabled when the simulation state can be
                 safely restarted, such as for time-invariant media. Cylindrical
                 reuse changes the mode from `m` to `-m` before the adjoint
-                run.
+                run. Near-to-far targets always reuse the forward simulation,
+                including when `reuse_simulation=False`.
             reconstruction_window: Window applied to the finite sinc used to
                 reconstruct sparse forward fields. Supported values are
                 `rectangular`/`None`, `hamming`, `hann`, `blackman`,

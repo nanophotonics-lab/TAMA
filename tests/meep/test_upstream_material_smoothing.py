@@ -107,12 +107,12 @@ def _circle_frequency(resolution, weights, mode):
 @pytest.mark.parametrize("mode", ["stock", "prepared", "near_isotropic"])
 def test_upstream_circle_subpixel_convergence(circle_weights, mode):
     mp.verbosity(0)
-    # Upstream's reference is a resolution-300 numerical result, not an exact solution.
+    # Upstream computed this numerical reference at resolution 300.
     reference = 0.29826813873225283
     frequencies = [_circle_frequency(r, circle_weights, mode) for r in (25, 50)]
     for frequency in frequencies:
         assert round(abs(frequency - reference), 2) == 0
-    # Preserve the upstream better-than-linear criterion without claiming order two.
+    # Upstream requires better-than-linear convergence.
     assert 2 * abs(frequencies[1] - reference) < abs(frequencies[0] - reference)
 
 

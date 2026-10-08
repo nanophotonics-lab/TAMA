@@ -2,13 +2,20 @@
 
 This guide describes the Meep backend. See [backend selection](backends.md) and [FDTDX](fdtdx.md) for the other engine.
 
-Leave `SimulationSpec.chunk_layout` unset to use the default automatic chunk
-balancer. In MPI, before the first value or gradient evaluation, TAMA performs
+For temporal targets without mirror symmetry, leave
+`SimulationSpec.chunk_layout` unset to use the default automatic chunk
+balancer. In MPI, before the first value or gradient evaluation, this path performs
 one source-free Meep initialization, captures Meep's native
 `BinaryPartition`, and projects only its split positions onto safe Meep grid
-planes. Serial execution skips this probe. The captured topology is kept:
-Cartesian mixed-axis trees and cylindrical R-Z trees are not replaced by
-pure-axis slab decompositions.
+planes. Serial execution skips this probe. TAMA preserves Cartesian mixed-axis
+trees and cylindrical R-Z trees.
+
+Mirror symmetry and near-to-far targets disable `chunk_balancer="auto"` and
+reject explicit adaptive balancers. They keep fixed forward/adjoint ownership.
+Fixed layouts are supported for temporal targets and non-mirrored near-to-far
+targets. Near-to-far targets combined with mirrors require Meep's default
+partitioning; an explicit `chunk_layout` is rejected. See the
+[target guide](targets.md#near-to-far-targets).
 
 ```python
 simulation = tm.SimulationSpec(
@@ -20,17 +27,16 @@ simulation = tm.SimulationSpec(
     resolution=resolution,
 )
 
-# TDAObjective(..., simulation=simulation) uses chunk_balancer="auto".
+# Temporal targets without mirrors use chunk_balancer="auto".
 # Pass chunk_balancer=None only to opt out explicitly.
 ```
 
 The automatic path resolves `SimulationSpec.sources` once per objective
 evaluation and treats every ordinary `mp.Source`, including subclasses such as
 `mp.EigenModeSource`, as a permanent source-boundary constraint.
-`mp.IndexedSource` needs no geometric constraint and is excluded. Use
-`source_volumes` on a custom
-`AdaptiveAdjointChunkBalancer` only for additional source supports that are not
-present in `SimulationSpec.sources`. A callable may return fresh source objects
+`mp.IndexedSource` is excluded from geometric constraints. Use `source_volumes`
+on a custom `AdaptiveAdjointChunkBalancer` only for additional source supports
+that are not present in `SimulationSpec.sources`. A callable may return fresh source objects
 on each evaluation, but their centers and sizes must remain unchanged after the
 layout is prepared.
 
@@ -39,13 +45,12 @@ zero-size Cartesian and cylindrical `PointTarget` entries use the exact
 rank-local transpose of their native point-sampling stencil through
 `mp.IndexedSource`. Every `FieldRegionTarget` sample uses the same exact
 indexed path, as does every constituent E/H sample of a `FluxTarget` or
-`EigenmodeCoefficientTarget`. Indexed targets remain zero size and are
-excluded from geometric source-boundary constraints. Explicit nonzero
+`EigenmodeCoefficientTarget`. Indexed targets remain zero size. Explicit nonzero
 Cartesian point-target sizes,
 `source_boundary_mode="finite"`, and arbitrary `sim_factory` inputs use
 ordinary `mp.Source` objects instead. Do not also list indexed target positions
-in `protected_points` or `source_volumes`; both constructor collections are
-permanent constraints that TAMA does not rewrite.
+in `protected_points` or `source_volumes`; TAMA retains these as permanent
+constraints.
 
 During three to eight successful gradient evaluations, TAMA combines Meep's
 per-rank timing with TAMA's rank-local sampling, reconstruction, and
@@ -55,8 +60,8 @@ TAMA freezes the best measured layout after two consecutive observations are
 within the imbalance threshold or fail to improve the best critical-rank work
 by at least 1%. A trial that is 2% or more slower than the best is rolled back without
 ending calibration; the best measured layout is frozen after eight
-observations at the latest. These are ordinary optimizer evaluations, not
-hidden calibration runs. Value-only evaluations prepare source-safe boundaries
+observations at the latest. Calibration uses ordinary optimizer evaluations.
+Value-only evaluations prepare source-safe boundaries
 but do not advance the workload calibration. Once frozen, the objective stops
 collecting calibration timings and retains that layout for its lifetime.
 
@@ -72,13 +77,11 @@ automatic and layout-first:
 2. If source support is the only reason no safe split remains, expand only the
    conflicting zero-size source axes to one Meep grid cell and renormalize the
    source amplitude to preserve its integrated weight.
-3. Retry the same mixed topology. The fallback never changes the partition
-   tree.
+3. Retry the same partition tree with the expanded source.
 
 For grid spacing `Delta = 1 / resolution`, each changed source axis gains width
 `Delta` and contributes a factor `1 / Delta` to the source amplitude. This
-policy is the same in Cartesian 2D and 3D and has no resolution threshold that
-forces the finite-source path.
+policy applies at every resolution in Cartesian 2D and 3D.
 
 For indexed Cartesian `PointTarget` entries,
 the `auto` and `layout` modes leave the source and native topology

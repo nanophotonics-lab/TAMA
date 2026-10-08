@@ -2,7 +2,7 @@
 
 The independent oracle is geom_epsilon::eff_chi1inv_matrix in Meep v1.34.0:
 https://github.com/NanoComp/meep/blob/v1.34.0/src/meepgeom.cpp
-This is a derived interface regression, not an upstream test copied verbatim.
+This is a derived regression.
 """
 
 import meep as mp
@@ -108,7 +108,7 @@ def test_oblique_tensor_interface_matches_geometric_meep(axis):
     # Meep stores diagonal rows at electric Yee points and off-diagonal rows
     # half a cell behind along the component axis. Center the interface on the
     # corresponding voxel: both geometric box and MaterialGrid sphere fill=1/2.
-    # Off-center fills differ between those kernels and are not an exact oracle.
+    # The box and sphere kernels give different off-center fill fractions.
     expected = _plane_coefficients("geometry", axis)
     actual = _plane_coefficients("tama", axis)
     np.testing.assert_allclose(actual, expected, rtol=1e-10, atol=1e-12)

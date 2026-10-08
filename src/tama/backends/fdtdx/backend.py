@@ -457,7 +457,7 @@ class MultiTDAObjective:
         return value, gradient, info
 
     def evaluate(self, rho, *, cpu_offload=None, return_info=False):
-        """Return the objective and gradient for this rho, without stale material captures."""
+        """Return the objective and gradient for this rho."""
         offload = self.cpu_offload if cpu_offload is None else cpu_offload
         if type(offload) is not bool:
             raise TypeError("cpu_offload must be a Python bool")
@@ -567,7 +567,7 @@ class MultiTDAObjective:
 
 
 class TDAObjective(MultiTDAObjective):
-    """Single-target convenience interface; the same validated execution path."""
+    """Single-target convenience interface for MultiTDAObjective."""
 
     def __init__(
         self,

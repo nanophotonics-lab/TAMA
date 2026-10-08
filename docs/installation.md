@@ -38,8 +38,6 @@ OpenMPI, macOS and native Windows builds are outside the validated native lane.
 
 The `meep` extra depends on `tama-meep-native==0.6.0a1`; it does not install
 PyMeep from PyPI. Build the native distribution locally before using the extra.
-The pure wheel and native wheel have different distribution names, so wheel
-selection no longer ambiguously chooses an engine build of the same package.
 
 ## FDTDX
 

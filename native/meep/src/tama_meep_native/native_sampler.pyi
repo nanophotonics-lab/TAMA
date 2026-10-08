@@ -38,7 +38,7 @@ def configure_native_material_operator(
     subpixel_tol: float,
     subpixel_maxeval: int,
 ) -> None:
-    """Initialize anisotropic MaterialGrid averaging before fields are created."""
+    """Initialize anisotropic or 3D scalar MaterialGrid averaging before field creation."""
     ...
 
 def native_design_plan_local_size(plan: Any) -> int:
@@ -367,8 +367,7 @@ def sample_component_grid_plan_points_support_reduced(
 ) -> NDArray[np.complex128]:
     """Sample selected boundary indices and reduce only support ranks.
 
-    Supporting ranks must call with identical index order. Caller-selected
-    rank-asymmetric subsets are unsupported.
+    Supporting ranks must call with identical index order.
     """
     ...
 
@@ -630,7 +629,7 @@ def sample_ez_grid(
     coords_y: Sequence[float],
     component: int = ...,
 ) -> NDArray[np.complex128]:
-    """Backward-compatible Ez grid sampler.
+    """Compatibility alias for `sample_component_grid`.
 
     Args:
         fields_addr: Integer address of Meep's low-level `fields` object.
@@ -640,6 +639,6 @@ def sample_ez_grid(
             module.
 
     Returns:
-        Complex sampled Ez grid.
+        Complex sampled component grid.
     """
     ...

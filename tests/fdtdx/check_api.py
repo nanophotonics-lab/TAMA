@@ -1,4 +1,4 @@
-"""CPU checks of public API guards and actual custom-derivative rejection."""
+"""CPU checks of public API guards and custom-derivative rejection."""
 
 from dataclasses import replace
 from importlib import import_module
@@ -147,8 +147,8 @@ def main():
         loss = make_loss([target], [Band(0)], spec.dt, scalarization_fn=bad)
         rejected(lambda: loss(history), ValueError, "scalarization must return")
 
-    # Both discrete adjoints agree on this deliberately wrong derivative, so AD
-    # agreement alone must not certify it. Actual centered FDTD differences do.
+    # Both adjoints return the same incorrect derivative.
+    # Centered FDTD differences detect the error.
     def wrong_derivative(history, dt):
         return jax.lax.stop_gradient(dt / 2 * jnp.sum(history[..., 2] ** 2))
 
@@ -163,7 +163,7 @@ def main():
         "Centered finite differences failed",
     )
 
-    # Nonfinite callback derivatives must not escape as valid evaluations.
+    # sqrt(0) is finite, but its derivative is nonfinite.
     nonfinite = MultiTDAObjective(
         spec,
         design,

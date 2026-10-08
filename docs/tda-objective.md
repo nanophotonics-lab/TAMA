@@ -4,7 +4,7 @@ This guide describes the Meep backend. See [backend selection](backends.md) and 
 
 ## Example
 
-Minimal shape of a TAMA time-domain adjoint setup:
+A point-target adjoint setup:
 
 ```python
 design = tm.DesignGrid(
@@ -53,7 +53,7 @@ tda = tm.TDAObjective(
 fom, gradient = tda.fom_and_grad(x)
 ```
 
-`TDAObjective` default objective is:
+The default point-target objective is:
 
 ```text
 0.5 * integral |u_monitor(t)|^2 dt
@@ -64,31 +64,21 @@ Here, `u_monitor` is the selected electric or magnetic field component. A
 squared magnitude of the regional field samples. A `FluxTarget` instead uses
 `integral P(t) dt`, where `P` is the signed power trace defined in the
 [`FluxTarget` section](targets.md#flux-targets). An
-`EigenmodeCoefficientTarget` uses `integral |a(t)|^2 dt`. For a custom scalar
-objective, pass `fom_fn(monitor_history, sample_dt)`. The history is the
-selected field history for point and regional targets, the real length-`N-1`
-power trace for a flux target, or the complex length-`N-1` modal coefficient
-for an eigenmode target. Use autograd-compatible
-operations, or pair it with `adjoint_signal_fn` when its derivative must be
-supplied manually.
+`EigenmodeCoefficientTarget` uses `integral |a(t)|^2 dt`.
+`Near2FarTarget` uses the spectral intensity defined in the
+[near-to-far target guide](targets.md#near-to-far-targets).
+For a custom scalar objective, pass `fom_fn(monitor_history, sample_dt)`.
+Use autograd-compatible operations or supply its derivative through
+`adjoint_signal_fn`. The table below lists the callback shapes.
 
 ## Inputs
-
-For `Near2FarTarget`, callbacks receive complex
-`(n_far_points, n_frequencies, 6)` spectral fields instead of a time history.
-The default FoM, manual-covector normalization, required simulation restart,
-and supported geometry are specified in the
-[near-to-far target guide](targets.md#near-to-far-targets).
-
-`TDAObjective` follows the same style as Meep objects: users pass ordinary Meep
-objects and explicit physical regions rather than hidden configuration.
 
 | Input | Meaning |
 | --- | --- |
 | `design` / `designs` | One `DesignGrid`, or an ordered sequence of independent nonoverlapping regions. Supply only one argument. The design vector and gradient concatenate flattened region arrays in that order. Required when computing a gradient; optional for value-only evaluation. |
 | `simulation` | Optional `SimulationSpec`. Fills `sim_factory` and `resolution`. Its direct `make` path enables exact indexed target transposes and is required for regional, flux, eigenmode, and near-to-far gradients. Cartesian tensor/averaging and mirror restrictions are described in the [design guide](design-gradients.md). It is also required for cylindrical gradients and supplies their forward mode `m`. |
-| `reuse_simulation` | Reuse the forward `Simulation` for the adjoint run when explicitly set to `True`. Default is `False`; enable only for restart-safe, time-invariant media. A cylindrical reuse changes the mode from `m` to `-m`. |
-| `target` | Optional `PointTarget`, `FieldRegionTarget`, `FluxTarget`, or `EigenmodeCoefficientTarget`. Point targets fill the legacy point/source settings. Regional target histories use time as the first axis and `sample_shape` as the remaining axes. Flux and eigenmode targets expose length-`N-1` signed-power or complex modal histories and combine their electric and magnetic sources in one adjoint run. Their gradients require direct `SimulationSpec` use. Cylindrical surface targets use radial or axial normals and explicit `2*pi*r` physical quadrature; cylindrical eigenmode targets additionally require fixed reference fields and a matching `reference_m`. |
+| `reuse_simulation` | Reuse the forward `Simulation` for the adjoint run when explicitly set to `True`. Default is `False`; near-to-far targets always reuse it, including when this option is `False`. Requires restart-safe, time-invariant media. A cylindrical reuse changes the mode from `m` to `-m`. |
+| `target` | Optional `PointTarget`, `FieldRegionTarget`, `FluxTarget`, `EigenmodeCoefficientTarget`, or `Near2FarTarget`. Point targets fill the legacy point/source settings. Flux and eigenmode targets combine electric and magnetic sources in one adjoint run. Cylindrical surface targets require radial or axial normals and explicit `2*pi*r` quadrature; cylindrical eigenmode targets also require fixed reference fields and matching `reference_m`. See the [target guide](targets.md) for geometry and normalization. |
 | `update_design` | Function that writes the flat design vector into the Meep design object. Usually calls `MaterialGrid.update_weights(...)`. |
 | `t_final` | Forward simulation end time. |
 | `sim_factory` | Function returning `mp.Simulation`. Called with no argument for the forward run and with an adjoint source list for the adjoint run. Arbitrary factories use ordinary Cartesian `mp.Source` injection and do not support cylindrical gradient evaluation. |
@@ -96,18 +86,14 @@ objects and explicit physical regions rather than hidden configuration.
 | `component` | Meep monitor/source component. The native path maps 2D TMz to `Ez`, 2D TEz to `Ex`/`Ey`, 3D scalar-isotropic designs to `Ex`/`Ey`/`Ez`, and cylindrical targets according to the [design-gradient component table](design-gradients.md#supported-components). |
 | `adjoint_source_size` | Meep source size for the adjoint source. Defaults to `mp.Vector3()`, which selects exact indexed injection for direct `SimulationSpec` use. An explicit nonzero Cartesian size or `source_boundary_mode="finite"` selects ordinary `mp.Source`; eligible axes may then be regularized if layout-first placement fails. Cylindrical gradients require zero size. |
 | `adjoint_source_amplitude` | Logical adjoint-source amplitude. Gradient evaluation requires `1.0`; Cartesian adaptive finite-source fallback applies its effective density normalization internally. Other finite values are accepted only for value-only evaluation. |
-| `fom_fn` | Optional scalar objective `fom_fn(monitor_history, sample_dt)`. Point history has shape `(time,)`; regional history uses time as the first axis and `sample_shape` as the remaining axes; flux history is a real `(time - 1,)` signed-power trace; and eigenmode history is a complex `(time - 1,)` coefficient. |
-| `adjoint_signal_fn` | Optional manual continuous-time bilinear covector described in the [objective convention](targets.md#objective-conventions-and-weights). Requires `fom_fn` and must return the same shape as the callback history. A flux-history covector must be real. |
+| `fom_fn` | Optional scalar objective `fom_fn(monitor_history, sample_dt)`. Point history has shape `(time,)`; regional history uses time as the first axis and `sample_shape` as the remaining axes; flux history is a real `(time - 1,)` signed-power trace; and eigenmode history is a complex `(time - 1,)` coefficient. For near-to-far targets, the first argument is a complex `(n_far_points, n_frequencies, 6)` spectral array instead of a time history. |
+| `adjoint_signal_fn` | Optional manual bilinear covector described in the [objective convention](targets.md#objective-conventions-and-weights). Requires `fom_fn` and must return the same shape as the callback data. A flux-history covector must be real. Near-to-far spectral covectors retain the `dt` convention described in the [near-to-far target guide](targets.md#near-to-far-targets). |
 | `dt` | Legacy expected Meep time step. The initialized simulation's `fields.dt` is authoritative; an explicit value must match it and is otherwise only a fallback for simulation doubles without `fields.dt`. |
 | `resolution` | Used with the simulation's Courant factor to infer a fallback time step only when the initialized simulation does not expose `fields.dt` and `dt` is omitted. |
-| `sampling_interval` | Dimensionless stride in Meep steps between stored design-grid forward-field samples. Point, regional, and constituent flux/eigenmode field histories remain full rate. Default is `1`. |
+| `sampling_interval` | Dimensionless stride in Meep steps between stored design-grid forward-field samples. Point, regional, and constituent flux/eigenmode field histories remain full rate. Default is `1`. See [sparse Nyquist reconstruction](multi-tda-objective.md#sparse-design-history-reconstruction). |
 | `max_frequency` | Optional maximum relevant frequency in Meep inverse-time units. Computes the design-grid interval from the Nyquist criterion; cannot be combined with `sampling_interval > 1`. |
 | `reconstruction_window` | Window applied to the finite sinc reconstruction. Canonical names and accepted aliases are listed in the [sparse reconstruction section](multi-tda-objective.md#sparse-design-history-reconstruction). Default is `kaiser`. |
 | `reconstruction_window_params` | Optional reconstruction-window parameters. Only `kaiser` accepts `{"beta": value}`; its default beta is `6`. |
 | `reconstruction_half_width` | Number of sparse samples on each side of the finite sinc support. Default is `64`. |
 | `history_dtype` | Real or complex floating dtype requested for temporary histories. Default `np.complex128` resolves to `np.float64` when Meep uses real forward fields; complex forward fields require a complex dtype. Native design histories are rank-local disk-backed memory maps, while target histories remain in memory. |
-| `chunk_balancer` | Default `"auto"` creates an `AdaptiveAdjointChunkBalancer` for a direct `SimulationSpec` with `chunk_layout=None`. It automatically protects ordinary forward sources, preserves Meep's Cartesian or cylindrical R-Z topology, and calibrates over three to eight gradient evaluations before freezing the best measured safe layout. Pass `None` to opt out or an instance for custom settings. Indexed sources are excluded from geometric constraints. Regional, flux, eigenmode, and cylindrical indexed sources do not support `source_boundary_mode="finite"`. |
-
-`TDAObjective` uses the same sparse Nyquist design-history path described in
-the [sparse reconstruction section](multi-tda-objective.md#sparse-design-history-reconstruction); its point, regional, and constituent flux/eigenmode field histories remain full
-rate.
+| `chunk_balancer` | Default `"auto"` creates an `AdaptiveAdjointChunkBalancer` for a direct `SimulationSpec` with `chunk_layout=None`. Mirrors and near-to-far targets disable it and reject explicit balancers. Pass `None` to opt out or an instance for custom settings. See the [MPI guide](mpi.md) for source constraints, topology preservation, and calibration over three to eight gradient evaluations. |

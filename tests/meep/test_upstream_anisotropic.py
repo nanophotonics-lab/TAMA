@@ -9,8 +9,8 @@ conic filter, perturbation, and 0.002 single-frequency tolerance are retained.
 The objective is TDA point-field energy instead of frequency-domain mode
 coefficients; source bandwidth is 0.2*fcen instead of 0.05*fcen, with a fixed
 120-unit recording and stride 2. Central differences at dp and dp/2 also
-check step stability. The averaging-on case adds beta=8 and do_averaging=True;
-it is an extension of the upstream fixture, not an unchanged upstream test.
+check step stability. The averaging-on case extends the upstream fixture
+with beta=8 and do_averaging=True.
 """
 
 import json

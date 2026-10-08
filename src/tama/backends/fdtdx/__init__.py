@@ -128,8 +128,7 @@ class MultiTDAObjective:
 
         Value-only evaluation calls the native forward value path, without an
         adjoint or stored design histories. A valid offload flag has no effect
-        on that path. Native input validation remains active; no alternate
-        solver is selected when an evaluation fails.
+        on that path.
         """
         self._native_objective.last_info = None
         if type(need_gradient) is not bool:
