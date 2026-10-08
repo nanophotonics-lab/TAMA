@@ -12,24 +12,22 @@ permissions:
 
 jobs:
   meep:
+    name: Meep (${{ matrix.config.python-version }}, ${{ matrix.config.numpy_spec }}, ${{ matrix.suite }})
     runs-on: ubuntu-26.04
-    timeout-minutes: 90
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        include:
+        config:
           - python-version: "3.11"
             numpy_spec: numpy
-            run_tests: true
           - python-version: "3.12"
             numpy_spec: numpy
-            run_tests: true
           - python-version: "3.13"
             numpy_spec: numpy
-            run_tests: true
           - python-version: "3.12"
             numpy_spec: "numpy=1.26"
-            run_tests: true
+        suite: [core, single, three_frequencies, multifreq_monitor, mode_source_bandwidth]
     env:
       OMP_NUM_THREADS: "1"
       PYTHONPATH: ""
@@ -50,7 +48,7 @@ jobs:
           cache-environment: true
           post-cleanup: all
           create-args: >-
-            python=${{ matrix.python-version }}
+            python=${{ matrix.config.python-version }}
             pymeep=1.34.0=mpi_mpich_*
             mpi4py=4.1.2
             mpich=4.3.2
@@ -63,7 +61,7 @@ jobs:
             scikit-build-core
             twine
             autograd
-            ${{ matrix.numpy_spec }}
+            ${{ matrix.config.numpy_spec }}
             scipy
             pytest
             pip
@@ -112,28 +110,39 @@ jobs:
           df -hT /tmp "$TMPDIR"
           mpichversion | grep -Eq 'MPICH Version:[[:space:]]+4\.3\.2'
           python -c "import re, sys, meep, mpi4py; from mpi4py import MPI; \
-          expected = tuple(map(int, '${{ matrix.python-version }}'.split('.'))); \
+          expected = tuple(map(int, '${{ matrix.config.python-version }}'.split('.'))); \
           assert sys.version_info[:2] == expected; \
           assert meep.__version__ == '1.34.0'; \
           assert mpi4py.__version__ == '4.1.2'; \
           assert re.search(r'MPICH Version:\s+4\.3\.2\b', MPI.Get_library_version())"
 
       - name: Verify NumPy 1.26 compatibility environment
-        if: matrix.numpy_spec == 'numpy=1.26'
+        if: matrix.config.numpy_spec == 'numpy=1.26'
         shell: micromamba-shell {0}
         run: python -c "import numpy; assert numpy.__version__.startswith('1.26.')"
 
       - name: Run serial tests
-        if: matrix.run_tests
+        if: matrix.suite == 'core'
         shell: micromamba-shell {0}
         run: |
           #!/usr/bin/env bash
           set -euo pipefail
           cd "$TAMA_RELEASE_SOURCE"
-          python -m pytest -v --durations=10 tests/common tests/meep
+          python -m pytest -q --durations=10 tests/common tests/meep \
+            --ignore=tests/meep/test_upstream_adjoint_solver.py
+
+      - name: Run upstream adjoint tests
+        if: matrix.suite != 'core'
+        shell: micromamba-shell {0}
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "$TAMA_RELEASE_SOURCE"
+          python -m pytest -v --durations=10 tests/meep/test_upstream_adjoint_solver.py \
+            -k "${{ matrix.suite }}"
 
       - name: Run mpi2 test group
-        if: matrix.run_tests
+        if: matrix.suite == 'core'
         shell: micromamba-shell {0}
         run: |
           #!/usr/bin/env bash
@@ -142,7 +151,7 @@ jobs:
           mpirun -np 2 python -m pytest -q -p no:cacheprovider tests/meep -m mpi2
 
       - name: Run mpi4 test group
-        if: matrix.run_tests
+        if: matrix.suite == 'core'
         shell: micromamba-shell {0}
         run: |
           #!/usr/bin/env bash
