@@ -39,6 +39,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
+      - name: Set temporary directory
+        # Field histories can exceed the RAM-backed /tmp quota.
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+
       - name: Create Meep environment
         uses: mamba-org/setup-micromamba@ce51e99f4bb8a82ab7158c4dc59ef4634c59c4f9 # v3
         with:
@@ -104,7 +108,81 @@ jobs:
         run: |
           #!/usr/bin/env bash
           set -euo pipefail
-          grep -q '^VERSION_ID="26.04"$' /etc/os-release
+          grep -q '^VERSION_ID="26.04"          mpichversion | grep -Eq 'MPICH Version:[[:space:]]+4\.3\.2'
+          python -c "import re, sys, meep, mpi4py; from mpi4py import MPI; \
+          expected = tuple(map(int, '${{ matrix.python-version }}'.split('.'))); \
+          assert sys.version_info[:2] == expected; \
+          assert meep.__version__ == '1.34.0'; \
+          assert mpi4py.__version__ == '4.1.2'; \
+          assert re.search(r'MPICH Version:\s+4\.3\.2\b', MPI.Get_library_version())"
+
+      - name: Verify NumPy 1.26 compatibility environment
+        if: matrix.numpy_spec == 'numpy=1.26'
+        shell: micromamba-shell {0}
+        run: python -c "import numpy; assert numpy.__version__.startswith('1.26.')"
+
+      - name: Run serial tests
+        if: matrix.run_tests
+        shell: micromamba-shell {0}
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "$TAMA_RELEASE_SOURCE"
+          python -m pytest -q tests/common tests/meep
+
+      - name: Run mpi2 test group
+        if: matrix.run_tests
+        shell: micromamba-shell {0}
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "$TAMA_RELEASE_SOURCE"
+          mpirun -np 2 python -m pytest -q -p no:cacheprovider tests/meep -m mpi2
+
+      - name: Run mpi4 test group
+        if: matrix.run_tests
+        shell: micromamba-shell {0}
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "$TAMA_RELEASE_SOURCE"
+          mpirun -np 4 python -m pytest -q -p no:cacheprovider tests/meep -m mpi4
+
+  fdtdx-cpu:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    env:
+      JAX_PLATFORMS: cpu
+      PYTHONPATH: ""
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Build and install pure release without Meep
+        run: |
+          python -m pip install "setuptools>=77" build twine pytest
+          mkdir -p "$RUNNER_TEMP/dist" "$RUNNER_TEMP/release"
+          python -m build --no-isolation --outdir "$RUNNER_TEMP/dist"
+          python -m twine check "$RUNNER_TEMP"/dist/*
+          wheel=("$RUNNER_TEMP"/dist/tama-*-py3-none-any.whl)
+          python -m pip install "${wheel[0]}[fdtdx]"
+          tar -xzf "$RUNNER_TEMP"/dist/tama-*.tar.gz -C "$RUNNER_TEMP/release"
+          source_dir=$(find "$RUNNER_TEMP/release" -mindepth 1 -maxdepth 1 -type d -name 'tama-*')
+          echo "TAMA_RELEASE_SOURCE=${source_dir}" >> "$GITHUB_ENV"
+          python -c "import importlib.util, pathlib, tama; assert importlib.util.find_spec('meep') is None; assert importlib.util.find_spec('tama_meep_native') is None; assert 'site-packages' in pathlib.Path(tama.__file__).parts"
+      - name: Run installed CPU backend and isolation checks
+        run: |
+          cd "$TAMA_RELEASE_SOURCE"
+          python -m pytest -q tests/common tests/fdtdx -m 'not fdtdx_gpu'
+ /etc/os-release
+          df -hT /tmp "$TMPDIR"
           mpichversion | grep -Eq 'MPICH Version:[[:space:]]+4\.3\.2'
           python -c "import re, sys, meep, mpi4py; from mpi4py import MPI; \
           expected = tuple(map(int, '${{ matrix.python-version }}'.split('.'))); \
