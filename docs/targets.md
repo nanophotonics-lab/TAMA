@@ -326,8 +326,7 @@ the adjoint run.
 The default `chunk_balancer="auto"` is disabled for this target; explicit
 adaptive balancers are rejected. A fixed `SimulationSpec.chunk_layout` is
 supported without mirrors. Combining mirrors with an explicit chunk layout is
-rejected: stock Meep 1.34 duplicated near-to-far surface contributions in the
-tested reduced-domain layouts. Mirrored near-to-far objectives use Meep's
+rejected. Mirrored near-to-far objectives use Meep's
 default partitioning. All ranks retain the same forward/adjoint ownership.
 
 `MultiTDAObjective(targets=[far_target_a, far_target_b], ...)` combines

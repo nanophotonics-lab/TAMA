@@ -215,9 +215,8 @@ adjoint-source approximations of the time-domain method.
 requests MaterialGrid interface averaging when global averaging is enabled.
 Internal `beta` projection also applies when averaging is disabled. For
 anisotropic MaterialGrid endpoints, TAMA supplies interface-normal tensor
-averaging in Meep's fallback material branch, which otherwise ignores interior
-MaterialGrid smoothing in the tested Meep version. It reduces to harmonic
-normal and arithmetic tangential averaging for isotropic endpoints. Forward,
+averaging. It reduces to harmonic normal and arithmetic tangential averaging
+for isotropic endpoints. Forward,
 adjoint, and FoM-only evaluations use the same material operator.
 The tensor mixing rule follows
 [Kottke, Farjadpour, and Johnson](https://arxiv.org/abs/0708.1031);
@@ -238,9 +237,8 @@ points retain their pointwise material evaluation.
 
 For active MaterialGrid averaging, TAMA limits `subpixel_tol` to `1e-8`,
 preserving stricter factory settings. Forward initialization and the local
-material Jacobian use that same tolerance. Meep's default `1e-4` produced
-quadrature noise in high-beta derivative checks; the tighter integration adds
-setup cost. A factory must return an uninitialized simulation if this tolerance
+material Jacobian use that same tolerance. This tighter tolerance increases
+material setup cost. A factory must return an uninitialized simulation if this tolerance
 change is needed.
 
 Gradient evaluation rejects material-derivative stencils that cross Meep's
