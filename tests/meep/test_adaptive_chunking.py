@@ -314,11 +314,7 @@ def test_prepare_initial_layout_uses_and_safely_projects_meep_mixed_topology():
         abs(layout.split_pos - protected_point.x)
         >= balancer.protected_gap_cells / simulation.resolution
     )
-    point_child = (
-        layout.left
-        if protected_point.x <= layout.split_pos
-        else layout.right
-    )
+    point_child = layout.left if protected_point.x <= layout.split_pos else layout.right
     assert (
         abs(point_child.split_pos - protected_point.y)
         >= balancer.protected_gap_cells / simulation.resolution
@@ -328,9 +324,7 @@ def test_prepare_initial_layout_uses_and_safely_projects_meep_mixed_topology():
         >= balancer.protected_gap_cells / simulation.resolution
     )
     source_child = (
-        layout.left
-        if adjoint_source_position.x <= layout.split_pos
-        else layout.right
+        layout.left if adjoint_source_position.x <= layout.split_pos else layout.right
     )
     assert (
         abs(source_child.split_pos - adjoint_source_position.y)
@@ -582,7 +576,9 @@ def test_prepare_initial_layout_uses_per_source_finite_fallback_without_changing
     assert isinstance(decision, tm.AdaptiveSourceBoundaryDecision)
     assert decision.method == "finite"
     assert decision.chunk_layout is simulation.chunk_layout
-    assert _partition_signature(decision.chunk_layout) == _partition_signature(meep_layout)
+    assert _partition_signature(decision.chunk_layout) == _partition_signature(
+        meep_layout
+    )
     assert tuple(_vector_values(size) for size in decision.source_sizes) == (
         (0.0, 0.5, 0.0),
         (0.0, 0.0, 0.5),
@@ -989,7 +985,9 @@ def test_adaptive_balancer_keeps_layout_below_threshold():
 def test_adaptive_balancer_evaluates_third_candidate_on_fourth_call():
     first_layout = mp.BinaryPartition(data=[(mp.X, -1.0), 0, 1])
     sim, balancer, meep_balancer = _sequence_balancer(
-        first_layout, (-0.5, 0.0, 0.5, 1.0), imbalance_threshold=1.01,
+        first_layout,
+        (-0.5, 0.0, 0.5, 1.0),
+        imbalance_threshold=1.01,
     )
     timings = iter(
         (
@@ -1035,7 +1033,8 @@ def test_adaptive_balancer_evaluates_third_candidate_on_fourth_call():
 def test_adaptive_balancer_freezes_after_two_consecutive_balanced_observations():
     initial_layout = mp.BinaryPartition(data=[(mp.X, -1.0), 0, 1])
     sim, balancer, meep_balancer = _sequence_balancer(
-        initial_layout, (0.0, 0.5),
+        initial_layout,
+        (0.0, 0.5),
     )
     timings = iter(
         (
@@ -1073,7 +1072,9 @@ def test_adaptive_balancer_freezes_after_two_consecutive_balanced_observations()
 def test_adaptive_balancer_freezes_after_two_subpercent_best_improvements():
     initial_layout = mp.BinaryPartition(data=[(mp.X, -1.0), 0, 1])
     sim, balancer, meep_balancer = _sequence_balancer(
-        initial_layout, (0.0, 0.5, 1.0, 1.5, 2.0), imbalance_threshold=1.01,
+        initial_layout,
+        (0.0, 0.5, 1.0, 1.5, 2.0),
+        imbalance_threshold=1.01,
     )
     timings = iter(
         (
@@ -1113,7 +1114,9 @@ def test_adaptive_balancer_freezes_after_two_subpercent_best_improvements():
 def test_adaptive_balancer_freezes_after_repeated_no_move_proposals_stall_score():
     initial_layout = mp.BinaryPartition(data=[(mp.X, 0.0), 0, 1])
     sim, balancer, meep_balancer = _sequence_balancer(
-        initial_layout, (0.0, 0.0), imbalance_threshold=1.01,
+        initial_layout,
+        (0.0, 0.0),
+        imbalance_threshold=1.01,
     )
     balancer.capture_timing = lambda _sim: _timing([10.0, 1.0])
 
@@ -1138,7 +1141,8 @@ def test_adaptive_balancer_freezes_after_repeated_no_move_proposals_stall_score(
 def test_adaptive_balancer_freezes_best_layout_after_eight_observations():
     initial_layout = mp.BinaryPartition(data=[(mp.X, -1.0), 0, 1])
     sim, balancer, meep_balancer = _sequence_balancer(
-        initial_layout, (-0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5),
+        initial_layout,
+        (-0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5),
         imbalance_threshold=1.01,
     )
     timings = iter(
@@ -1165,7 +1169,9 @@ def test_adaptive_balancer_freezes_best_layout_after_eight_observations():
 def test_adaptive_balancer_selects_best_by_rank_work_not_wall_time():
     initial_layout = mp.BinaryPartition(data=[(mp.X, -1.0), 0, 1])
     sim, balancer, _ = _sequence_balancer(
-        initial_layout, (0.0, 0.5), imbalance_threshold=1.01,
+        initial_layout,
+        (0.0, 0.5),
+        imbalance_threshold=1.01,
     )
     timings = iter((_timing([10.0, 1.0]), _timing([8.0, 1.0])))
     balancer.capture_timing = lambda _sim: next(timings)
@@ -1191,7 +1197,9 @@ def test_adaptive_balancer_selects_best_by_rank_work_not_wall_time():
 def test_adaptive_balancer_rolls_back_two_percent_regression_immediately():
     initial_layout = mp.BinaryPartition(data=[(mp.X, -1.0), 0, 1])
     sim, balancer, meep_balancer = _sequence_balancer(
-        initial_layout, (0.0, 1.0), imbalance_threshold=1.01,
+        initial_layout,
+        (0.0, 1.0),
+        imbalance_threshold=1.01,
     )
     timings = iter((_timing([5.0, 1.0]), _timing([5.10, 1.0])))
     balancer.capture_timing = lambda _sim: next(timings)
@@ -1218,7 +1226,9 @@ def test_adaptive_balancer_rolls_back_two_percent_regression_immediately():
 def test_adaptive_balancer_rolls_back_regression_before_convergence_freeze():
     initial_layout = mp.BinaryPartition(data=[(mp.X, -1.0), 0, 1])
     sim, balancer, meep_balancer = _sequence_balancer(
-        initial_layout, (0.0, 0.5), imbalance_threshold=1.01,
+        initial_layout,
+        (0.0, 0.5),
+        imbalance_threshold=1.01,
     )
     timings = iter(
         (

@@ -15,7 +15,6 @@ import numpy as np
 
 import tama as tm
 
-
 RESOLUTION = 20
 DESIGN_SHAPE = (8, 8, 8)
 DESIGN_CENTER = mp.Vector3(0.04, -0.03, 0.02)

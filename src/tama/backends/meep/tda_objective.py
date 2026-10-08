@@ -15,7 +15,8 @@ from .sampling_grid import (
     _prepare_native_material,
 )
 from .design_collection import (
-    _resolve_designs, _DesignCollection,
+    _resolve_designs,
+    _DesignCollection,
     _collection_components as _native_design_components,
     _collection_gradient_scale as _native_design_gradient_scale,
     _collection_uses_material_jacobian as _uses_material_jacobian,
@@ -249,12 +250,17 @@ class TDAObjective:
         )
         near2far_target = isinstance(target, Near2FarTarget)
         resolved_designs = _resolve_designs(design, designs)
-        design = (_DesignCollection(resolved_designs) if len(resolved_designs) > 1
-                  else next(iter(resolved_designs), None))
+        design = (
+            _DesignCollection(resolved_designs)
+            if len(resolved_designs) > 1
+            else next(iter(resolved_designs), None)
+        )
         if near2far_target and chunk_balancer == "auto":
             chunk_balancer = None
         if near2far_target and (not uses_simulation_spec or chunk_balancer is not None):
-            raise ValueError("Near2FarTarget requires direct SimulationSpec and fixed chunk layout")
+            raise ValueError(
+                "Near2FarTarget requires direct SimulationSpec and fixed chunk layout"
+            )
         uses_concrete_simulation_spec = uses_simulation_spec and isinstance(
             simulation,
             SimulationSpec,
@@ -270,9 +276,13 @@ class TDAObjective:
                 else None
             )
         if chunk_balancer is not None and getattr(simulation, "symmetries", ()):
-            raise ValueError("Mirror simulations do not support adaptive chunk balancing")
+            raise ValueError(
+                "Mirror simulations do not support adaptive chunk balancing"
+            )
         if design is not None:
-            update_design = update_design if update_design is not None else design.update_weights
+            update_design = (
+                update_design if update_design is not None else design.update_weights
+            )
         if simulation is not None:
             sim_factory = sim_factory if sim_factory is not None else simulation.make
             resolution = resolution if resolution is not None else simulation.resolution
@@ -300,7 +310,9 @@ class TDAObjective:
                 component = target.component
                 adjoint_source_amplitude = target.adjoint_source_amplitude
         elif target is not None:
-            monitor_position = monitor_position if monitor_position is not None else target.position
+            monitor_position = (
+                monitor_position if monitor_position is not None else target.position
+            )
             component = component if component is not None else target.component
             adjoint_source_size = (
                 adjoint_source_size
@@ -316,27 +328,40 @@ class TDAObjective:
             adjoint_source_amplitude = 1.0
 
         missing = [
-            name for name, value in (
+            name
+            for name, value in (
                 ("update_design", update_design),
                 ("t_final", t_final),
                 ("sim_factory", sim_factory),
                 (
                     "monitor_position",
                     (
-                        target.far_points if near2far_target else target.positions
-                        if regional_target or mixed_surface_target or near2far_target
-                        else monitor_position
+                        target.far_points
+                        if near2far_target
+                        else (
+                            target.positions
+                            if regional_target
+                            or mixed_surface_target
+                            or near2far_target
+                            else monitor_position
+                        )
                     ),
                 ),
                 (
                     "component",
-                    mp.Ex if near2far_target else target.normal if mixed_surface_target else component,
+                    (
+                        mp.Ex
+                        if near2far_target
+                        else target.normal if mixed_surface_target else component
+                    ),
                 ),
             )
             if value is None
         ]
         if missing:
-            raise ValueError("TDAObjective missing required inputs: " + ", ".join(missing))
+            raise ValueError(
+                "TDAObjective missing required inputs: " + ", ".join(missing)
+            )
         if adjoint_signal_fn is not None and fom_fn is None:
             raise ValueError(
                 "adjoint_signal_fn requires fom_fn so the objective value "
@@ -375,9 +400,7 @@ class TDAObjective:
             raise ValueError("reuse_simulation=True requires SimulationSpec.make")
         if chunk_balancer is not None and not uses_simulation_spec:
             raise ValueError("adaptive chunk balancing requires SimulationSpec.make")
-        has_coordinate_system_metadata = (
-            simulation is not None or design is not None
-        )
+        has_coordinate_system_metadata = simulation is not None or design is not None
         is_cylindrical = (
             _is_cylindrical_simulation(simulation)
             if simulation is not None
@@ -442,9 +465,10 @@ class TDAObjective:
         self._has_coordinate_system_metadata = has_coordinate_system_metadata
         self._inferred_is_cylindrical = None
         self._is_cylindrical = is_cylindrical
-        if simulation is not None and design is not None and (
-            bool(getattr(design, "is_cylindrical", False))
-            != self._is_cylindrical
+        if (
+            simulation is not None
+            and design is not None
+            and (bool(getattr(design, "is_cylindrical", False)) != self._is_cylindrical)
         ):
             raise ValueError(
                 "DesignGrid coordinate system must match SimulationSpec dimensions"
@@ -471,13 +495,15 @@ class TDAObjective:
                 adjoint_source_amplitude=adjoint_source_amplitude,
             )
             if regional_target
-            else target
-            if mixed_surface_target or near2far_target
-            else _PointTarget(
-                monitor_position=monitor_position,
-                component=component,
-                adjoint_source_size=adjoint_source_size,
-                adjoint_source_amplitude=adjoint_source_amplitude,
+            else (
+                target
+                if mixed_surface_target or near2far_target
+                else _PointTarget(
+                    monitor_position=monitor_position,
+                    component=component,
+                    adjoint_source_size=adjoint_source_size,
+                    adjoint_source_amplitude=adjoint_source_amplitude,
+                )
             )
         )
         self._uses_default_fom = fom_fn is None
@@ -489,18 +515,20 @@ class TDAObjective:
             def fom_fn(monitor_history, sample_dt):
                 return (
                     0.5
-                    * npa.sum(
-                        npa.abs(monitor_history) ** 2
-                        * spatial_weights
-                    )
+                    * npa.sum(npa.abs(monitor_history) ** 2 * spatial_weights)
                     * sample_dt
                 )
+
         elif fom_fn is None and flux_target:
+
             def fom_fn(power, sample_dt):
                 return npa.sum(power) * sample_dt
+
         elif fom_fn is None and eigenmode_target:
+
             def fom_fn(coefficient, sample_dt):
                 return npa.sum(npa.abs(coefficient) ** 2) * sample_dt
+
         self.fom_fn = fom_fn if fom_fn is not None else _default_intensity_fom
         self.adjoint_signal_fn = adjoint_signal_fn
         self.design = design
@@ -555,15 +583,20 @@ class TDAObjective:
             self.gradient_components = (mp.Ex, mp.Ey, mp.Ez)
 
     def _make_history_memmap(self, shape, *, dtype=None):
-        tmp = tempfile.NamedTemporaryFile(prefix="tama_history_", suffix=".dat", delete=False)
+        tmp = tempfile.NamedTemporaryFile(
+            prefix="tama_history_", suffix=".dat", delete=False
+        )
         path = tmp.name
         tmp.close()
-        return np.memmap(
+        return (
+            np.memmap(
+                path,
+                dtype=self.history_dtype if dtype is None else dtype,
+                mode="w+",
+                shape=shape,
+            ),
             path,
-            dtype=self.history_dtype if dtype is None else dtype,
-            mode="w+",
-            shape=shape,
-        ), path
+        )
 
     def time_step(self, sim: mp.Simulation) -> float:
         """Return the time step used by TAMA sampling.
@@ -578,9 +611,15 @@ class TDAObjective:
         sim_dt = _simulation_time_step(sim, self.dt)
         if sim_dt is not None:
             return sim_dt
-        resolution = self.resolution if self.resolution is not None else getattr(sim, "resolution", None)
+        resolution = (
+            self.resolution
+            if self.resolution is not None
+            else getattr(sim, "resolution", None)
+        )
         if resolution is None:
-            raise ValueError("TDAObjective requires dt, resolution, or a Simulation with a resolution attribute")
+            raise ValueError(
+                "TDAObjective requires dt, resolution, or a Simulation with a resolution attribute"
+            )
         courant = float(getattr(sim, "Courant", self._fallback_courant))
         return courant / resolution
 
@@ -590,10 +629,7 @@ class TDAObjective:
         return nyquist_sampling_interval(self.max_frequency, dt)
 
     def _forward_sources_for_evaluation(self):
-        if (
-            self.chunk_balancer is None
-            or not self._uses_concrete_simulation_spec
-        ):
+        if self.chunk_balancer is None or not self._uses_concrete_simulation_spec:
             return ()
         return tuple(self._simulation_spec.resolve_sources())
 
@@ -737,9 +773,7 @@ class TDAObjective:
                 )
             )
             source_positions = tuple(
-                position
-                for _ in monitor_components
-                for position in target_positions
+                position for _ in monitor_components for position in target_positions
             )
             source_amplitudes = tuple(1.0 for _ in source_positions)
             indexed_source_mask = tuple(
@@ -747,17 +781,13 @@ class TDAObjective:
             )
 
             if self.chunk_balancer is not None:
-                source_boundary_decision = (
-                    self.chunk_balancer.prepare_initial_layout(
-                        self._simulation_spec,
-                        forward_sources=forward_sources,
-                        adjoint_source_positions=source_positions,
-                        adjoint_source_sizes=tuple(
-                            mp.Vector3() for _ in source_positions
-                        ),
-                        adjoint_source_amplitudes=source_amplitudes,
-                        indexed_source_mask=indexed_source_mask,
-                    )
+                source_boundary_decision = self.chunk_balancer.prepare_initial_layout(
+                    self._simulation_spec,
+                    forward_sources=forward_sources,
+                    adjoint_source_positions=source_positions,
+                    adjoint_source_sizes=tuple(mp.Vector3() for _ in source_positions),
+                    adjoint_source_amplitudes=source_amplitudes,
+                    indexed_source_mask=indexed_source_mask,
                 )
                 self.last_source_boundary_decision = source_boundary_decision
                 if any(
@@ -768,9 +798,7 @@ class TDAObjective:
                         f"{target_name} indexed adjoint source acquired a "
                         "nonzero effective source size"
                     )
-                source_amplitudes = tuple(
-                    source_boundary_decision.source_amplitudes
-                )
+                source_amplitudes = tuple(source_boundary_decision.source_amplitudes)
 
             amplitudes_by_component = {}
             point_count = len(target_positions)
@@ -789,9 +817,7 @@ class TDAObjective:
                     not getattr(self.chunk_balancer, "is_frozen", False),
                 )
             )
-            balance_wall_start = (
-                time.perf_counter() if balance_enabled else None
-            )
+            balance_wall_start = time.perf_counter() if balance_enabled else None
             balance_timing = {"extra_seconds": 0.0}
             if sim_fwd is None:
                 sim_fwd = self._make_forward_simulation(forward_sources)
@@ -811,8 +837,7 @@ class TDAObjective:
                 and actual_is_cylindrical != self._is_cylindrical
             ):
                 raise ValueError(
-                    "target coordinate system does not match the forward "
-                    "simulation"
+                    "target coordinate system does not match the forward " "simulation"
                 )
             is_cylindrical = actual_is_cylindrical
             forward_mode = getattr(sim_fwd, "m", 0)
@@ -838,9 +863,7 @@ class TDAObjective:
                 _is_cartesian_2d_simulation(sim_fwd)
                 and abs(float(self.objective.normal.z)) > 0.0
             ):
-                raise ValueError(
-                    f"2D {target_name} normals must lie in the x-y plane"
-                )
+                raise ValueError(f"2D {target_name} normals must lie in the x-y plane")
             dt = self.time_step(sim_fwd)
             run_history_dtype = history_storage_dtype(
                 sim_fwd,
@@ -860,10 +883,7 @@ class TDAObjective:
                         dtype=run_history_dtype,
                     ),
                 )
-            if (
-                self._is_eigenmode_target
-                and self._reference_mode_fields is None
-            ):
+            if self._is_eigenmode_target and self._reference_mode_fields is None:
                 self._reference_mode_fields = sample_reference_mode(
                     sim_fwd,
                     self.objective,
@@ -879,9 +899,7 @@ class TDAObjective:
             monitor_times = []
             sample_count = {"count": 0}
             fwd_count = {"value": 0}
-            forward_sampling_interval = (
-                sampling_interval if need_gradient else 1
-            )
+            forward_sampling_interval = sampling_interval if need_gradient else 1
             use_native_forward = hasattr(
                 getattr(sim_fwd, "fields", None),
                 "this",
@@ -892,9 +910,7 @@ class TDAObjective:
                     run_until,
                     forward_sampling_interval,
                 )
-                n_expected = (
-                    native_fine_step_count // forward_sampling_interval + 1
-                )
+                n_expected = native_fine_step_count // forward_sampling_interval + 1
                 n_monitor_expected = native_fine_step_count + 1
             else:
                 n_expected = int(np.ceil(run_until / dt_eff)) + 8
@@ -909,9 +925,7 @@ class TDAObjective:
             )
 
             if use_native_forward:
-                native_setup_start = (
-                    time.perf_counter() if balance_enabled else None
-                )
+                native_setup_start = time.perf_counter() if balance_enabled else None
                 for component in monitor_components:
                     monitor = FastPointMonitor(
                         sim_fwd,
@@ -927,9 +941,7 @@ class TDAObjective:
                     monitor_objects[component] = monitor
                     monitor_stencils[component] = indexed_stencil
                 native_setup_seconds = (
-                    time.perf_counter() - native_setup_start
-                    if balance_enabled
-                    else 0.0
+                    time.perf_counter() - native_setup_start if balance_enabled else 0.0
                 )
                 (
                     sample_count["count"],
@@ -943,9 +955,7 @@ class TDAObjective:
                             monitor_objects[component],
                             monitor_history[:, component_index, :],
                         )
-                        for component_index, component in enumerate(
-                            monitor_components
-                        )
+                        for component_index, component in enumerate(monitor_components)
                     ),
                     native_history if need_gradient else None,
                     run_until=run_until,
@@ -957,6 +967,7 @@ class TDAObjective:
                         native_setup_seconds + native_forward_seconds
                     )
             else:
+
                 def record_fwd_impl(sim):
                     nonlocal monitor_history
                     sample_index = sample_count["count"]
@@ -971,9 +982,7 @@ class TDAObjective:
                         )
                         grown_history[:sample_index] = monitor_history
                         monitor_history = grown_history
-                    for component_index, component in enumerate(
-                        monitor_components
-                    ):
+                    for component_index, component in enumerate(monitor_components):
                         monitor = monitor_objects.get(component)
                         if monitor is None:
                             monitor = FastPointMonitor(
@@ -999,10 +1008,7 @@ class TDAObjective:
                             dt,
                         )
                     )
-                    if (
-                        need_gradient
-                        and sample_index % sampling_interval == 0
-                    ):
+                    if need_gradient and sample_index % sampling_interval == 0:
                         native_history.sample_forward(
                             sim,
                             fwd_count["value"],
@@ -1013,6 +1019,7 @@ class TDAObjective:
 
                 record_fwd = record_fwd_impl
                 if balance_enabled:
+
                     def record_fwd(sim):
                         start = time.perf_counter()
                         try:
@@ -1024,16 +1031,18 @@ class TDAObjective:
 
                 sim_fwd.run(record_fwd, until=run_until)
             actual_time = sim_fwd.round_time()
-            monitor_history = monitor_history[:sample_count["count"]]
+            monitor_history = monitor_history[: sample_count["count"]]
             monitor_history_shape = monitor_history.shape
-            monitor_history = monitor_objects[
-                monitor_components[0]
-            ].reduce_history(
-                monitor_history.reshape(
-                    monitor_history.shape[0],
-                    -1,
+            monitor_history = (
+                monitor_objects[monitor_components[0]]
+                .reduce_history(
+                    monitor_history.reshape(
+                        monitor_history.shape[0],
+                        -1,
+                    )
                 )
-            ).reshape(monitor_history_shape)
+                .reshape(monitor_history_shape)
+            )
             full_monitor_times = np.asarray(monitor_times, dtype=float)
             monitor_stop = _monitor_history_stop(
                 full_monitor_times,
@@ -1041,9 +1050,7 @@ class TDAObjective:
             )
             raw_histories = {}
             indexed_stencils = {}
-            for component_index, component in enumerate(
-                monitor_components
-            ):
+            for component_index, component in enumerate(monitor_components):
                 monitor = monitor_objects[component]
                 raw_histories[component] = np.asarray(
                     monitor_history[
@@ -1078,19 +1085,12 @@ class TDAObjective:
             monitor_stencils.clear()
 
             if need_gradient:
-                field_histories = native_history.finish_forward(
-                    fwd_count["value"]
-                )
+                field_histories = native_history.finish_forward(fwd_count["value"])
                 fine_step_count = sample_count["count"] - 1
-                expected_history_rows = (
-                    fine_step_count // sampling_interval + 1
-                )
-                if (
-                    fine_step_count % sampling_interval != 0
-                    or any(
-                        history.shape[0] != expected_history_rows
-                        for history in field_histories.values()
-                    )
+                expected_history_rows = fine_step_count // sampling_interval + 1
+                if fine_step_count % sampling_interval != 0 or any(
+                    history.shape[0] != expected_history_rows
+                    for history in field_histories.values()
                 ):
                     raise RuntimeError(
                         "forward callback count is not aligned with the "
@@ -1114,9 +1114,7 @@ class TDAObjective:
                     cylindrical=is_cylindrical,
                 )
             fwd_timing = (
-                self.chunk_balancer.capture_timing(sim_fwd)
-                if balance_enabled
-                else None
+                self.chunk_balancer.capture_timing(sim_fwd) if balance_enabled else None
             )
             if not (need_gradient and self._reuse_simulation_for_adjoint):
                 sim_fwd.reset_meep()
@@ -1124,26 +1122,20 @@ class TDAObjective:
             gc.collect()
 
             if need_gradient:
-                objective_value, target_covector = (
-                    self._fom_value_and_adjoint_signal(target_history, dt)
+                objective_value, target_covector = self._fom_value_and_adjoint_signal(
+                    target_history, dt
                 )
             else:
                 objective_value = float(self.fom_fn(target_history, dt))
                 return objective_value, None
 
-            if any(
-                history.shape[0] < 4
-                for history in raw_histories.values()
-            ):
+            if any(history.shape[0] < 4 for history in raw_histories.values()):
                 raise RuntimeError(
                     f"{target_name} gradient requires at least four monitor "
                     "samples for cubic adjoint-source interpolation; "
                     "increase t_final"
                 )
-            if any(
-                history.shape[0] < 2
-                for history in field_histories.values()
-            ):
+            if any(history.shape[0] < 2 for history in field_histories.values()):
                 raise RuntimeError(
                     "TDAObjective gradient requires at least two field "
                     "samples; increase t_final or decrease sampling_interval"
@@ -1237,28 +1229,18 @@ class TDAObjective:
                 sampling_interval=sampling_interval,
                 reconstruction_half_width=self.reconstruction_half_width,
                 reconstruction_window=self.reconstruction_window,
-                reconstruction_window_params=(
-                    self.reconstruction_window_params
-                ),
+                reconstruction_window_params=(self.reconstruction_window_params),
             )
             gradient_grid = native_accumulator.reduce()
             native_accumulator.release()
             native_accumulator = None
 
             if balance_enabled:
-                self._simulation_spec.chunk_layout = (
-                    self.chunk_balancer.rebalance(
-                        sim_adj,
-                        local_extra_work_seconds=(
-                            balance_timing["extra_seconds"]
-                        ),
-                        local_wall_seconds=(
-                            time.perf_counter() - balance_wall_start
-                        ),
-                        previous_measurements=tuple(
-                            previous_measurements
-                        ),
-                    )
+                self._simulation_spec.chunk_layout = self.chunk_balancer.rebalance(
+                    sim_adj,
+                    local_extra_work_seconds=(balance_timing["extra_seconds"]),
+                    local_wall_seconds=(time.perf_counter() - balance_wall_start),
+                    previous_measurements=tuple(previous_measurements),
                 )
                 self.last_chunk_balance = self.chunk_balancer.last_report
             sim_adj.reset_meep()
@@ -1267,11 +1249,7 @@ class TDAObjective:
                 sim_fwd = None
             gc.collect()
 
-            gradient = (
-                gradient_grid.real.flatten()
-                * dt
-                * gradient_scale
-            )
+            gradient = gradient_grid.real.flatten() * dt * gradient_scale
             return objective_value, gradient
         finally:
             if native_accumulator is not None:
@@ -1307,8 +1285,12 @@ class TDAObjective:
             `(objective_value, gradient)`. The gradient is a flat real array
             from the objective model, or `None` for value-only evaluation.
         """
-        if self.chunk_balancer is not None and getattr(self._simulation_spec, "symmetries", ()):
-            raise ValueError("Mirror simulations do not support adaptive chunk balancing")
+        if self.chunk_balancer is not None and getattr(
+            self._simulation_spec, "symmetries", ()
+        ):
+            raise ValueError(
+                "Mirror simulations do not support adaptive chunk balancing"
+            )
         if need_gradient and self.design is None:
             raise ValueError(
                 "TDAObjective gradient evaluation requires design=DesignGrid(...)"
@@ -1322,7 +1304,9 @@ class TDAObjective:
                 "SimulationSpec.m must not change after TDAObjective construction"
             )
         if need_gradient and not (
-            self._is_flux_target or self._is_eigenmode_target or self._is_near2far_target
+            self._is_flux_target
+            or self._is_eigenmode_target
+            or self._is_near2far_target
         ):
             _validate_logical_adjoint_source_amplitudes(
                 (self.objective.adjoint_source_amplitude,)
@@ -1366,17 +1350,13 @@ class TDAObjective:
                 mp.Vector3() for _ in target_positions
             )
             effective_adjoint_source_amplitudes = tuple(
-                self.objective.adjoint_source_amplitude
-                for _ in target_positions
+                self.objective.adjoint_source_amplitude for _ in target_positions
             )
             indexed_source_mask = tuple(
-                bool(self._uses_simulation_spec)
-                for _ in target_positions
+                bool(self._uses_simulation_spec) for _ in target_positions
             )
         else:
-            effective_adjoint_source_sizes = (
-                self.objective.adjoint_source_size,
-            )
+            effective_adjoint_source_sizes = (self.objective.adjoint_source_size,)
             effective_adjoint_source_amplitudes = (
                 self.objective.adjoint_source_amplitude,
             )
@@ -1386,9 +1366,7 @@ class TDAObjective:
                     and (
                         self._is_cylindrical
                         or (
-                            _is_zero_source_size(
-                                self.objective.adjoint_source_size
-                            )
+                            _is_zero_source_size(self.objective.adjoint_source_size)
                             and getattr(
                                 self.chunk_balancer,
                                 "source_boundary_mode",
@@ -1401,41 +1379,30 @@ class TDAObjective:
             )
         if self.chunk_balancer is not None:
             if self._is_regional_target:
-                source_boundary_decision = (
-                    self.chunk_balancer.prepare_initial_layout(
-                        self._simulation_spec,
-                        forward_sources=forward_sources,
-                        adjoint_source_positions=target_positions,
-                        adjoint_source_sizes=effective_adjoint_source_sizes,
-                        adjoint_source_amplitudes=(
-                            effective_adjoint_source_amplitudes
-                        ),
-                        indexed_source_mask=indexed_source_mask,
-                    )
+                source_boundary_decision = self.chunk_balancer.prepare_initial_layout(
+                    self._simulation_spec,
+                    forward_sources=forward_sources,
+                    adjoint_source_positions=target_positions,
+                    adjoint_source_sizes=effective_adjoint_source_sizes,
+                    adjoint_source_amplitudes=(effective_adjoint_source_amplitudes),
+                    indexed_source_mask=indexed_source_mask,
                 )
             else:
-                source_boundary_decision = (
-                    self.chunk_balancer.prepare_initial_layout(
-                        self._simulation_spec,
-                        forward_sources=forward_sources,
-                        adjoint_source_positions=target_positions,
-                        adjoint_source_size=self.objective.adjoint_source_size,
-                        adjoint_source_amplitude=(
-                            self.objective.adjoint_source_amplitude
-                        ),
-                        indexed_source_mask=indexed_source_mask,
-                    )
+                source_boundary_decision = self.chunk_balancer.prepare_initial_layout(
+                    self._simulation_spec,
+                    forward_sources=forward_sources,
+                    adjoint_source_positions=target_positions,
+                    adjoint_source_size=self.objective.adjoint_source_size,
+                    adjoint_source_amplitude=(self.objective.adjoint_source_amplitude),
+                    indexed_source_mask=indexed_source_mask,
                 )
             self.last_source_boundary_decision = source_boundary_decision
-            effective_adjoint_source_sizes = (
-                source_boundary_decision.source_sizes
-            )
+            effective_adjoint_source_sizes = source_boundary_decision.source_sizes
             effective_adjoint_source_amplitudes = (
                 source_boundary_decision.source_amplitudes
             )
         if any(
-            indexed
-            and not _is_zero_source_size(source_size)
+            indexed and not _is_zero_source_size(source_size)
             for indexed, source_size in zip(
                 indexed_source_mask,
                 effective_adjoint_source_sizes,
@@ -1464,8 +1431,11 @@ class TDAObjective:
             balance_wall_start = time.perf_counter() if balance_enabled else None
             sim_fwd = self._make_forward_simulation(forward_sources)
             _require_no_meep_symmetries(sim_fwd)
-            if (need_gradient and getattr(sim_fwd, "symmetries", ())
-                    and (not self._uses_simulation_spec or not all(indexed_source_mask))):
+            if (
+                need_gradient
+                and getattr(sim_fwd, "symmetries", ())
+                and (not self._uses_simulation_spec or not all(indexed_source_mask))
+            ):
                 raise ValueError(
                     "Mirror gradients require direct SimulationSpec and exact indexed adjoint sources"
                 )
@@ -1520,9 +1490,7 @@ class TDAObjective:
                 sampling_interval=(sampling_interval if need_gradient else 1),
             )
             monitor_times = []
-            forward_sampling_interval = (
-                sampling_interval if need_gradient else 1
-            )
+            forward_sampling_interval = sampling_interval if need_gradient else 1
             use_native_forward = hasattr(
                 getattr(sim_fwd, "fields", None),
                 "this",
@@ -1533,9 +1501,7 @@ class TDAObjective:
                     run_until,
                     forward_sampling_interval,
                 )
-                n_expected = (
-                    native_fine_step_count // forward_sampling_interval + 1
-                )
+                n_expected = native_fine_step_count // forward_sampling_interval + 1
                 n_monitor_expected = native_fine_step_count + 1
             else:
                 n_expected = int(np.ceil(run_until / dt_eff)) + 8
@@ -1551,26 +1517,22 @@ class TDAObjective:
             balance_timing = {"extra_seconds": 0.0}
 
             if use_native_forward:
-                native_setup_start = (
-                    time.perf_counter() if balance_enabled else None
-                )
+                native_setup_start = time.perf_counter() if balance_enabled else None
                 fwd_monitor["obj"] = FastPointMonitor(
                     sim_fwd,
                     self.objective.component,
                     target_positions,
                 )
-                fwd_monitor["indexed_stencil"] = (
-                    fwd_monitor["obj"].indexed_transpose_stencil()
-                )
+                fwd_monitor["indexed_stencil"] = fwd_monitor[
+                    "obj"
+                ].indexed_transpose_stencil()
                 _validate_indexed_monitor_support(
                     sim_fwd,
                     (self.objective.component,) * len(target_positions),
                     fwd_monitor["indexed_stencil"][0],
                 )
                 native_setup_seconds = (
-                    time.perf_counter() - native_setup_start
-                    if balance_enabled
-                    else 0.0
+                    time.perf_counter() - native_setup_start if balance_enabled else 0.0
                 )
                 (
                     sample_count["count"],
@@ -1590,6 +1552,7 @@ class TDAObjective:
                         native_setup_seconds + native_forward_seconds
                     )
             else:
+
                 def record_fwd_impl(s):
                     nonlocal monitor_history
                     sample_index = sample_count["count"]
@@ -1609,9 +1572,9 @@ class TDAObjective:
                             self.objective.component,
                             target_positions,
                         )
-                        fwd_monitor["indexed_stencil"] = (
-                            fwd_monitor["obj"].indexed_transpose_stencil()
-                        )
+                        fwd_monitor["indexed_stencil"] = fwd_monitor[
+                            "obj"
+                        ].indexed_transpose_stencil()
                         _validate_indexed_monitor_support(
                             s,
                             (self.objective.component,) * len(target_positions),
@@ -1638,31 +1601,29 @@ class TDAObjective:
 
                 record_fwd = record_fwd_impl
                 if balance_enabled:
+
                     def record_fwd(s):
                         start = time.perf_counter()
                         try:
                             record_fwd_impl(s)
                         finally:
-                            balance_timing["extra_seconds"] += time.perf_counter() - start
+                            balance_timing["extra_seconds"] += (
+                                time.perf_counter() - start
+                            )
 
                 sim_fwd.run(record_fwd, until=run_until)
 
             actual_time = sim_fwd.round_time()
-            monitor_history = monitor_history[:sample_count["count"]]
-            monitor_history = fwd_monitor["obj"].reduce_history(
-                monitor_history
-            )
+            monitor_history = monitor_history[: sample_count["count"]]
+            monitor_history = fwd_monitor["obj"].reduce_history(monitor_history)
             full_monitor_times = np.asarray(monitor_times, dtype=float)
             if need_gradient:
                 field_histories = native_history.finish_forward(fwd_count["value"])
                 fine_step_count = sample_count["count"] - 1
                 expected_history_rows = fine_step_count // sampling_interval + 1
-                if (
-                    fine_step_count % sampling_interval != 0
-                    or any(
-                        history.shape[0] != expected_history_rows
-                        for history in field_histories.values()
-                    )
+                if fine_step_count % sampling_interval != 0 or any(
+                    history.shape[0] != expected_history_rows
+                    for history in field_histories.values()
                 ):
                     raise RuntimeError(
                         "forward callback count is not aligned with the Nyquist "
@@ -1677,9 +1638,7 @@ class TDAObjective:
                 dtype=run_history_dtype,
             )
             if self._is_regional_target:
-                monitor_history = self.objective.reshape_history(
-                    monitor_history
-                )
+                monitor_history = self.objective.reshape_history(monitor_history)
             else:
                 monitor_history = monitor_history[:, 0]
             monitor_times = full_monitor_times[:monitor_stop]
@@ -1691,9 +1650,7 @@ class TDAObjective:
                         "match its target positions"
                     )
                 adjoint_indexed_stencils = []
-                for point_index, indexed in enumerate(
-                    indexed_source_mask
-                ):
+                for point_index, indexed in enumerate(indexed_source_mask):
                     if not indexed:
                         adjoint_indexed_stencils.append(None)
                         continue
@@ -1707,7 +1664,9 @@ class TDAObjective:
                             weights[point_slice],
                         )
                     )
-            fwd_timing = self.chunk_balancer.capture_timing(sim_fwd) if balance_enabled else None
+            fwd_timing = (
+                self.chunk_balancer.capture_timing(sim_fwd) if balance_enabled else None
+            )
             fwd_monitor["obj"] = None
             if native_history is not None:
                 native_history.release_forward()
@@ -1719,7 +1678,9 @@ class TDAObjective:
             objective_value = None
             adjoint_signal = None
             if need_gradient:
-                objective_value, adjoint_signal = self._fom_value_and_adjoint_signal(monitor_history, dt)
+                objective_value, adjoint_signal = self._fom_value_and_adjoint_signal(
+                    monitor_history, dt
+                )
             else:
                 objective_value = float(self.fom_fn(monitor_history, dt))
 
@@ -1747,9 +1708,7 @@ class TDAObjective:
                         adjoint_signal,
                         monitor_times,
                         source_end_time,
-                        source_amplitudes=(
-                            effective_adjoint_source_amplitudes
-                        ),
+                        source_amplitudes=(effective_adjoint_source_amplitudes),
                         indexed_stencils=adjoint_indexed_stencils,
                     )
                 else:
@@ -1758,9 +1717,7 @@ class TDAObjective:
                         monitor_times,
                         source_end_time,
                         source_size=effective_adjoint_source_sizes[0],
-                        source_amplitude=(
-                            effective_adjoint_source_amplitudes[0]
-                        ),
+                        source_amplitude=(effective_adjoint_source_amplitudes[0]),
                         indexed_stencil=(
                             None
                             if adjoint_indexed_stencils is None
@@ -1809,13 +1766,9 @@ class TDAObjective:
                     actual_time=actual_time,
                     dt=dt,
                     sampling_interval=sampling_interval,
-                    reconstruction_half_width=(
-                        self.reconstruction_half_width
-                    ),
+                    reconstruction_half_width=(self.reconstruction_half_width),
                     reconstruction_window=self.reconstruction_window,
-                    reconstruction_window_params=(
-                        self.reconstruction_window_params
-                    ),
+                    reconstruction_window_params=(self.reconstruction_window_params),
                 )
                 grad_grid = native_accumulator.reduce()
                 native_accumulator.release()
@@ -1834,11 +1787,7 @@ class TDAObjective:
                 del field_histories
                 gc.collect()
 
-                gradient = (
-                    grad_grid.real.flatten()
-                    * dt
-                    * gradient_scale
-                )
+                gradient = grad_grid.real.flatten() * dt * gradient_scale
                 del grad_grid
                 gc.collect()
             else:

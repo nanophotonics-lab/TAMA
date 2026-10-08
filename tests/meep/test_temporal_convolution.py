@@ -34,12 +34,21 @@ def test_full_matches_direct_convolution_and_hermitian_adjoint(shape, length, dt
     assert actual.dtype == x.dtype and adjoint.dtype == q.dtype
     np.testing.assert_allclose(actual, expected, rtol=tol, atol=tol)
     np.testing.assert_allclose(adjoint, expected_adjoint, rtol=tol, atol=tol)
-    np.testing.assert_allclose(np.vdot(actual, q), np.vdot(x, adjoint), rtol=tol, atol=tol)
+    np.testing.assert_allclose(
+        np.vdot(actual, q), np.vdot(x, adjoint), rtol=tol, atol=tol
+    )
 
 
 def test_helpers_have_no_output_mode_parameter():
-    for operation in (module.temporal_convolve_signal, module.temporal_convolve_signal_transpose):
-        assert tuple(inspect.signature(operation).parameters) == ("signal", "kernel", "dt")
+    for operation in (
+        module.temporal_convolve_signal,
+        module.temporal_convolve_signal_transpose,
+    ):
+        assert tuple(inspect.signature(operation).parameters) == (
+            "signal",
+            "kernel",
+            "dt",
+        )
 
 
 @pytest.mark.parametrize("dtype", [np.bool_, np.int64])
@@ -52,7 +61,9 @@ def test_full_nonfloating_input_is_promoted_without_integer_roundoff(dtype):
     q = np.array([1, 0, 1, 1], dtype=dtype)
     adjoint = module.temporal_convolve_signal_transpose(q, kernel, 1)
     assert adjoint.dtype == np.float64
-    np.testing.assert_allclose(adjoint, np.convolve(q, kernel[::-1], "valid"), atol=1e-15)
+    np.testing.assert_allclose(
+        adjoint, np.convolve(q, kernel[::-1], "valid"), atol=1e-15
+    )
 
 
 def test_real_signal_complex_kernel():
@@ -73,7 +84,10 @@ def test_zero_width_channels(shape):
 
 
 def test_empty_time_axis_and_invalid_inputs():
-    for operation in (module.temporal_convolve_signal, module.temporal_convolve_signal_transpose):
+    for operation in (
+        module.temporal_convolve_signal,
+        module.temporal_convolve_signal_transpose,
+    ):
         with pytest.raises(ValueError, match="full"):
             operation(np.empty((0, 2)), np.ones(3), 1)
         with pytest.raises(ValueError, match="full"):

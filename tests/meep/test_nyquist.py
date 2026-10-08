@@ -48,11 +48,14 @@ def test_nyquist_run_limit_aligns_completed_steps():
     assert completed_steps == 1008
     assert completed_steps % sampling_interval == 0
     assert completed_steps * dt - requested_time < sampling_interval * dt
-    assert _aligned_run_until(
-        requested_time,
-        dt=dt,
-        sampling_interval=1,
-    ) == requested_time
+    assert (
+        _aligned_run_until(
+            requested_time,
+            dt=dt,
+            sampling_interval=1,
+        )
+        == requested_time
+    )
 
     extended_times = np.arange(completed_steps + 1) * dt
     assert _monitor_history_stop(extended_times, requested_time) == 1002
@@ -284,17 +287,15 @@ def test_windowed_sinc_reconstructs_bandlimited_complex_field_at_all_phases():
         forward[::sampling_interval, None].copy(),
         sampling_interval,
     )
-    reconstructed = np.asarray([
-        reconstructor.sample_at(index)[0]
-        for index in range(fine_step_count + 1)
-    ])
+    reconstructed = np.asarray(
+        [reconstructor.sample_at(index)[0] for index in range(fine_step_count + 1)]
+    )
 
     relative_error = np.linalg.norm(reconstructed - forward) / np.linalg.norm(forward)
     assert relative_error < 1.0e-4
     for phase in range(sampling_interval):
         phase_error = np.linalg.norm(
-            reconstructed[phase::sampling_interval]
-            - forward[phase::sampling_interval]
+            reconstructed[phase::sampling_interval] - forward[phase::sampling_interval]
         ) / np.linalg.norm(forward[phase::sampling_interval])
         assert phase_error < 2.0e-4
 
@@ -304,29 +305,24 @@ def test_windowed_sinc_full_rate_contraction_allows_high_frequency_adjoint():
     fine_step_count = sampling_interval * 400
     fine_index = np.arange(fine_step_count + 1)
     envelope = np.sin(np.pi * fine_index / fine_step_count) ** 8
-    forward = envelope * np.exp(
-        1j * np.pi * 0.55 * fine_index / sampling_interval
-    )
-    adjoint_callback = (
-        np.exp(1j * 0.23 * fine_index)
-        + 0.25 * (-1.0) ** fine_index
-    )
+    forward = envelope * np.exp(1j * np.pi * 0.55 * fine_index / sampling_interval)
+    adjoint_callback = np.exp(1j * 0.23 * fine_index) + 0.25 * (-1.0) ** fine_index
     reconstructor = _WindowedSincReconstructor(
         forward[::sampling_interval, None].copy(),
         sampling_interval,
     )
-    reconstructed_reverse = np.asarray([
-        reconstructor.sample_at(fine_step_count - step)[0]
-        for step in range(fine_step_count + 1)
-    ])
+    reconstructed_reverse = np.asarray(
+        [
+            reconstructor.sample_at(fine_step_count - step)[0]
+            for step in range(fine_step_count + 1)
+        ]
+    )
     exact_reverse = forward[::-1]
     adjoint_difference = np.diff(adjoint_callback)
-    exact = np.sum(
-        0.5 * (exact_reverse[:-1] + exact_reverse[1:])
-        * adjoint_difference
-    )
+    exact = np.sum(0.5 * (exact_reverse[:-1] + exact_reverse[1:]) * adjoint_difference)
     reconstructed = np.sum(
-        0.5 * (reconstructed_reverse[:-1] + reconstructed_reverse[1:])
+        0.5
+        * (reconstructed_reverse[:-1] + reconstructed_reverse[1:])
         * adjoint_difference
     )
 
@@ -343,17 +339,12 @@ def test_trapezoidal_adjoint_difference_preserves_k1_centered_gradient():
     forward_derivative = np.empty_like(forward)
     forward_derivative[0] = (forward[1] - forward[0]) / dt
     forward_derivative[-1] = (forward[-1] - forward[-2]) / dt
-    forward_derivative[1:-1] = (
-        forward[2:] - forward[:-2]
-    ) / (2.0 * dt)
-    centered_gradient = dt * np.sum(
-        adjoint_callback * forward_derivative[::-1]
-    )
+    forward_derivative[1:-1] = (forward[2:] - forward[:-2]) / (2.0 * dt)
+    centered_gradient = dt * np.sum(adjoint_callback * forward_derivative[::-1])
 
     reverse_forward = forward[::-1]
     difference_gradient = np.sum(
-        0.5 * (reverse_forward[:-1] + reverse_forward[1:])
-        * np.diff(adjoint_callback)
+        0.5 * (reverse_forward[:-1] + reverse_forward[1:]) * np.diff(adjoint_callback)
     )
 
     assert np.allclose(

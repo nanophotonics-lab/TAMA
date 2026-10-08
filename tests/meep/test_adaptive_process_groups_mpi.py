@@ -13,9 +13,7 @@ def test_adaptive_timing_gather_stays_within_the_active_meep_process_group():
     group_index = mp.divide_parallel_processes(2)
     try:
         local_seconds = 100.0 * group_index + mp.my_rank() + 1.0
-        gathered = AdaptiveAdjointChunkBalancer._gather_rank_times(
-            local_seconds
-        )
+        gathered = AdaptiveAdjointChunkBalancer._gather_rank_times(local_seconds)
         expected = 100.0 * group_index + np.arange(1.0, 3.0)
 
         assert np.array_equal(gathered, expected)

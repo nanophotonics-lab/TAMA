@@ -23,10 +23,12 @@ def test_band_reduction_stays_within_the_active_meep_process_group():
                 dtype=np.complex128,
             ),
         )
-        expected = np.column_stack([
-            np.full(signals.shape[0], group_value, dtype=np.complex128),
-            np.full(signals.shape[0], 2 * group_value, dtype=np.complex128),
-        ])
+        expected = np.column_stack(
+            [
+                np.full(signals.shape[0], group_value, dtype=np.complex128),
+                np.full(signals.shape[0], 2 * group_value, dtype=np.complex128),
+            ]
+        )
 
         assert np.array_equal(result, expected)
 

@@ -29,7 +29,6 @@ import numpy as np
 
 import tama as tm
 
-
 RESOLUTION = 8
 COURANT = 0.125
 CELL_SIZE = mp.Vector3(1.75, 1.5, 3.0)
@@ -127,9 +126,8 @@ def make_routing_scalarization(incident_band_fluxes):
     incident_band_fluxes = np.asarray(incident_band_fluxes, dtype=float)
     if incident_band_fluxes.shape != (len(WAVELENGTH_BANDS),):
         raise ValueError("incident_band_fluxes must have one value per band")
-    if (
-        not np.all(np.isfinite(incident_band_fluxes))
-        or np.any(incident_band_fluxes <= 0.0)
+    if not np.all(np.isfinite(incident_band_fluxes)) or np.any(
+        incident_band_fluxes <= 0.0
     ):
         raise ValueError("incident_band_fluxes must be finite and positive")
 
@@ -141,9 +139,7 @@ def make_routing_scalarization(incident_band_fluxes):
 
     def scalarization(band_detector_fluxes):
         flux_matrix = np.asarray(band_detector_fluxes).reshape(matrix_shape)
-        efficiency_matrix = (
-            flux_matrix / incident_band_fluxes[:, np.newaxis]
-        )
+        efficiency_matrix = flux_matrix / incident_band_fluxes[:, np.newaxis]
         desired_efficiency = np.diag(efficiency_matrix)
         off_diagonal_efficiency = np.where(
             diagonal,
@@ -151,18 +147,12 @@ def make_routing_scalarization(incident_band_fluxes):
             efficiency_matrix,
         )
         crosstalk_penalty = np.sum(off_diagonal_efficiency**2, axis=1)
-        total = np.mean(
-            desired_efficiency
-            - CROSSTALK_PENALTY * crosstalk_penalty
-        )
+        total = np.mean(desired_efficiency - CROSSTALK_PENALTY * crosstalk_penalty)
         coefficients = (
             -2.0
             * CROSSTALK_PENALTY
             * off_diagonal_efficiency
-            / (
-                len(WAVELENGTH_BANDS)
-                * incident_band_fluxes[:, np.newaxis]
-            )
+            / (len(WAVELENGTH_BANDS) * incident_band_fluxes[:, np.newaxis])
         )
         diagonal_indices = np.diag_indices_from(coefficients)
         coefficients[diagonal_indices] = 1.0 / (
@@ -174,9 +164,7 @@ def make_routing_scalarization(incident_band_fluxes):
             {
                 "efficiency_matrix": efficiency_matrix.copy(),
                 "desired_efficiency": desired_efficiency.copy(),
-                "off_diagonal_efficiency": (
-                    off_diagonal_efficiency.copy()
-                ),
+                "off_diagonal_efficiency": (off_diagonal_efficiency.copy()),
                 "crosstalk_penalty": crosstalk_penalty.copy(),
             },
         )
@@ -226,16 +214,8 @@ def make_device_objective(incident_band_fluxes):
     ]
     # MultiTDA pairs one target with one band, so repeat each wavelength band
     # across all detector patches to evaluate the complete 3 x 3 matrix.
-    repeated_bands = [
-        band
-        for band in WAVELENGTH_BANDS
-        for _ in detector_targets
-    ]
-    repeated_targets = [
-        target
-        for _ in WAVELENGTH_BANDS
-        for target in detector_targets
-    ]
+    repeated_bands = [band for band in WAVELENGTH_BANDS for _ in detector_targets]
+    repeated_targets = [target for _ in WAVELENGTH_BANDS for target in detector_targets]
     objective = tm.MultiTDAObjective(
         design=design,
         simulation=_common_simulation(geometry),
@@ -349,9 +329,7 @@ def main(argv=None):
 
     for iteration in range(1, args.iterations + 1):
         filtered, material_weights = _physical_design(raw_design, design)
-        value, material_gradient = objective.fom_and_grad(
-            material_weights.ravel()
-        )
+        value, material_gradient = objective.fom_and_grad(material_weights.ravel())
         raw_gradient = _raw_design_gradient(
             filtered,
             material_gradient,
@@ -402,9 +380,7 @@ def main(argv=None):
                 incident_band_fluxes=incident_band_fluxes,
                 efficiency_matrix=info["efficiency_matrix"],
                 desired_efficiency=info["desired_efficiency"],
-                off_diagonal_efficiency=info[
-                    "off_diagonal_efficiency"
-                ],
+                off_diagonal_efficiency=info["off_diagonal_efficiency"],
                 crosstalk_penalty=info["crosstalk_penalty"],
                 fom=final_value,
                 wavelength_bands=np.asarray(WAVELENGTH_BANDS),

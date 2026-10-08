@@ -23,17 +23,17 @@ class _LegacyPointMonitor:
         )
 
     def sample(self):
-        return np.asarray([
-            self.sim.get_field_point(self.component, position)
-            for position in self.positions
-        ])
+        return np.asarray(
+            [
+                self.sim.get_field_point(self.component, position)
+                for position in self.positions
+            ]
+        )
 
     def sample_history_into(self, destination):
         values = self.sample()
         destination[:] = (
-            values.real
-            if np.issubdtype(destination.dtype, np.floating)
-            else values
+            values.real if np.issubdtype(destination.dtype, np.floating) else values
         )
 
     @staticmethod
@@ -120,9 +120,7 @@ def _legacy_python_paths():
         multi_tda_module.FastPointMonitor = _LegacyPointMonitor
         multi_tda_module._tabulated_cubic_source = _legacy_cubic_source
         multi_tda_module._tabulated_cubic_sources = _legacy_cubic_sources
-        multi_tda_module._shift_tabulated_cubic_source = (
-            _legacy_shifted_cubic_source
-        )
+        multi_tda_module._shift_tabulated_cubic_source = _legacy_shifted_cubic_source
         multi_tda_module._run_native_forward_loop = _legacy_forward_loop
         yield
     finally:
@@ -164,9 +162,7 @@ def _make_objective(
         else None
     )
     forward_source_components = (
-        (mp.Ez, mp.Hz)
-        if full_vector_sources
-        else (mp.Hz if mixed_targets else mp.Ez,)
+        (mp.Ez, mp.Hz) if full_vector_sources else (mp.Hz if mixed_targets else mp.Ez,)
     )
     forward_sources = [
         mp.Source(
@@ -235,9 +231,7 @@ def _make_objective(
         else {"sim_factory": sim_factory}
     )
     selected_band_indices = (
-        tuple(range(2))
-        if band_indices is None
-        else tuple(band_indices)
+        tuple(range(2)) if band_indices is None else tuple(band_indices)
     )
     flux_target_positions = (
         (
@@ -251,8 +245,7 @@ def _make_objective(
         ((0.75, 1.25), (0.5, 1.0, 1.5))
         if regional_target_positions is None
         else tuple(
-            tuple(1.0 for _ in positions)
-            for positions in regional_target_positions
+            tuple(1.0 for _ in positions) for positions in regional_target_positions
         )
     )
     regional_target_positions = (
@@ -288,68 +281,68 @@ def _make_objective(
             ]
         }
         if eigenmode_targets
-        else {
-            "targets": [
-                tm.FluxTarget(
-                    flux_target_positions[band_index],
-                    normal=(
-                        mp.Vector3(1.0)
-                        if flux_target_normals is None
-                        else flux_target_normals[band_index]
-                    ),
-                )
-                for band_index in selected_band_indices
-            ]
-        }
-        if flux_targets
-        else {
-            "targets": [
-                tm.PointTarget(
-                    monitor_positions[0],
-                    mp.Ex,
-                    adjoint_source_amplitude=1.0,
-                ),
-                tm.PointTarget(
-                    monitor_positions[1],
-                    mp.Ey,
-                    adjoint_source_amplitude=1.0,
-                ),
-            ]
-        }
-        if mixed_targets
         else (
             {
                 "targets": [
-                    tm.FieldRegionTarget(
-                        regional_target_positions[band_index],
-                        mp.Ez,
-                        sample_shape=(
-                            len(regional_target_positions[band_index]),
+                    tm.FluxTarget(
+                        flux_target_positions[band_index],
+                        normal=(
+                            mp.Vector3(1.0)
+                            if flux_target_normals is None
+                            else flux_target_normals[band_index]
                         ),
-                        spatial_weights=regional_spatial_weights[band_index],
                     )
                     for band_index in selected_band_indices
                 ]
             }
-            if regional_targets
-            else {
-                "monitor_positions": monitor_positions,
-                "component": mp.Ez,
-                "adjoint_source_amplitude": adjoint_source_amplitude,
-            }
+            if flux_targets
+            else (
+                {
+                    "targets": [
+                        tm.PointTarget(
+                            monitor_positions[0],
+                            mp.Ex,
+                            adjoint_source_amplitude=1.0,
+                        ),
+                        tm.PointTarget(
+                            monitor_positions[1],
+                            mp.Ey,
+                            adjoint_source_amplitude=1.0,
+                        ),
+                    ]
+                }
+                if mixed_targets
+                else (
+                    {
+                        "targets": [
+                            tm.FieldRegionTarget(
+                                regional_target_positions[band_index],
+                                mp.Ez,
+                                sample_shape=(
+                                    len(regional_target_positions[band_index]),
+                                ),
+                                spatial_weights=regional_spatial_weights[band_index],
+                            )
+                            for band_index in selected_band_indices
+                        ]
+                    }
+                    if regional_targets
+                    else {
+                        "monitor_positions": monitor_positions,
+                        "component": mp.Ez,
+                        "adjoint_source_amplitude": adjoint_source_amplitude,
+                    }
+                )
+            )
         )
     )
     return tm.MultiTDAObjective(
         design=design,
         t_final=t_final,
         wavelength_bands=[
-            ((0.5, 0.7), (0.7, 0.9))[band_index]
-            for band_index in selected_band_indices
+            ((0.5, 0.7), (0.7, 0.9))[band_index] for band_index in selected_band_indices
         ],
-        weights=[
-            (1.0, 0.8)[band_index]
-            for band_index in selected_band_indices
-        ],
+        weights=[(1.0, 0.8)[band_index] for band_index in selected_band_indices],
         kernel_length=5,
         pixel_chunk=2,
         dt=dt,
@@ -363,19 +356,16 @@ def _make_objective(
 
 
 def _use_serial_target_transforms(objective):
-    objective._distributed_filter_monitor_signals = (
-        objective.filter_monitor_signals
-    )
+    objective._distributed_filter_monitor_signals = objective.filter_monitor_signals
 
     def serial_transform(signals, transform, *, output_time_count=None):
         if output_time_count is None:
             output_time_count = signals.shape[0]
         result = np.empty(
-            (output_time_count, signals.shape[1]), dtype=signals.dtype,
+            (output_time_count, signals.shape[1]),
+            dtype=signals.dtype,
         )
-        for target_index, target_slice in enumerate(
-            objective._target_slices
-        ):
+        for target_index, target_slice in enumerate(objective._target_slices):
             transformed = np.asarray(transform(target_index))
             result[:, target_slice] = transformed.reshape(
                 transformed.shape[0],
@@ -437,9 +427,7 @@ def test_custom_regional_callback_keeps_legacy_history_path():
         regional_target_positions=regions,
         target_history_block_size=1,
     )
-    objective.fom_fn = lambda history, dt: (
-        0.5 * dt * np.sum(np.abs(history) ** 2)
-    )
+    objective.fom_fn = lambda history, dt: (0.5 * dt * np.sum(np.abs(history) ** 2))
     objective.adjoint_signal_fn = lambda history, dt: np.conjugate(history)
     value, gradient = objective.evaluate(x, need_gradient=True)
 
@@ -522,15 +510,9 @@ def test_multi_tda_rejects_rank_inconsistent_per_band_callbacks():
     if mp.count_processors() < 2:
         pytest.skip("requires at least two MPI ranks")
 
-    callback = lambda history, dt: 0.5 * dt * np.sum(
-        np.abs(history) ** 2
-    )
+    callback = lambda history, dt: 0.5 * dt * np.sum(np.abs(history) ** 2)
     objective = _make_objective()
-    objective.fom_fn = (
-        (callback, None)
-        if mp.my_rank() == 0
-        else (None, callback)
-    )
+    objective.fom_fn = (callback, None) if mp.my_rank() == 0 else (None, callback)
 
     with pytest.raises(RuntimeError, match="fom_fn.*each band"):
         objective._validate_runtime_band_callbacks(validate_pairs=False)
@@ -951,9 +933,7 @@ def test_distributed_builtin_history_matches_legacy_and_tracks_storage(
     layout = distributed.last_target_history_layout
     assert layout["peak_work_columns"] <= 1
     assert layout["replicated_channels"] > 0
-    total_stored_channels = int(
-        mp.sum_to_all(layout["stored_channels"])
-    )
+    total_stored_channels = int(mp.sum_to_all(layout["stored_channels"]))
     assert (
         int(mp.sum_to_all(layout["local_unique_channels"]))
         + layout["replicated_channels"]
@@ -968,9 +948,7 @@ def test_distributed_builtin_history_matches_legacy_and_tracks_storage(
         * layout["history_itemsize"]
     )
     assert layout["legacy_history_bytes"] == (
-        layout["allocated_rows"]
-        * layout["total_channels"]
-        * layout["history_itemsize"]
+        layout["allocated_rows"] * layout["total_channels"] * layout["history_itemsize"]
     )
     if mp.count_processors() == 2:
         assert total_stored_channels < (
@@ -1118,13 +1096,12 @@ def test_distributed_source_construction_failure_is_synchronized():
         target_history_block_size=1,
     )
     if mp.my_rank() == 1:
+
         def fail_source_construction(*args):
             del args
             raise ValueError("intentional source construction failure")
 
-        objective._build_distributed_adjoint_sources = (
-            fail_source_construction
-        )
+        objective._build_distributed_adjoint_sources = fail_source_construction
 
     with pytest.raises(
         (ValueError, RuntimeError),
@@ -1141,6 +1118,7 @@ def test_distributed_history_configuration_failure_is_synchronized(
         pytest.skip("requires at least two MPI ranks")
 
     if mp.my_rank() == 1:
+
         def fail_history_configuration(self, indices):
             del self, indices
             raise ValueError("intentional history configuration failure")
@@ -1180,13 +1158,12 @@ def test_distributed_reduction_workspace_failure_is_synchronized():
         target_history_block_size=1,
     )
     if mp.my_rank() == 1:
+
         def fail_workspace_allocation(shape, dtype):
             del shape, dtype
             raise MemoryError("intentional reduction workspace failure")
 
-        objective._make_distributed_reduction_scratch = (
-            fail_workspace_allocation
-        )
+        objective._make_distributed_reduction_scratch = fail_workspace_allocation
 
     with pytest.raises(
         (MemoryError, RuntimeError),
@@ -1306,9 +1283,9 @@ def test_multi_tda_nyquist_gradient_matches_full_rate_after_field_decay():
         need_gradient=True,
     )
 
-    relative_error = np.linalg.norm(
-        sparse_gradient - full_gradient
-    ) / np.linalg.norm(full_gradient)
+    relative_error = np.linalg.norm(sparse_gradient - full_gradient) / np.linalg.norm(
+        full_gradient
+    )
     assert relative_error < 1.0e-3
 
 

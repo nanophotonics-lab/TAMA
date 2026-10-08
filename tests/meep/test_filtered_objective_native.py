@@ -19,59 +19,89 @@ def _make_objective(path):
     center, size = mp.Vector3(0.013, -0.017), mp.Vector3(0.237, 0.263)
     material = mp.MaterialGrid(mp.Vector3(5, 5), air, dielectric)
     design = tm.DesignGrid(
-        material_grid=material, center=center, size=size, shape=(5, 5),
-        background=air, design_material=dielectric,
+        material_grid=material,
+        center=center,
+        size=size,
+        shape=(5, 5),
+        background=air,
+        design_material=dielectric,
     )
     simulation = tm.SimulationSpec(
-        cell_size=mp.Vector3(6, 6), boundary_layers=[mp.PML(1)],
+        cell_size=mp.Vector3(6, 6),
+        boundary_layers=[mp.PML(1)],
         geometry=[mp.Block(center=center, size=size, material=material)],
-        sources=[mp.Source(
-            mp.GaussianSource(frequency=0.7, fwidth=0.4), component=mp.Ez,
-            center=mp.Vector3(-1.5, center.y), size=mp.Vector3(0, 3.5),
-        )],
-        resolution=resolution, eps_averaging=False,
+        sources=[
+            mp.Source(
+                mp.GaussianSource(frequency=0.7, fwidth=0.4),
+                component=mp.Ez,
+                center=mp.Vector3(-1.5, center.y),
+                size=mp.Vector3(0, 3.5),
+            )
+        ],
+        resolution=resolution,
+        eps_averaging=False,
         chunk_layout=(
             mp.BinaryPartition(data=[(mp.X, 0.0), 0, 1])
-            if mp.count_processors() == 2 else None
+            if mp.count_processors() == 2
+            else None
         ),
     )
-    positions = (mp.Vector3(1.5, center.y - 0.1),
-                 mp.Vector3(1.5, center.y + 0.1))
+    positions = (mp.Vector3(1.5, center.y - 0.1), mp.Vector3(1.5, center.y + 0.1))
     target_count = 2 if path.endswith(("dedup", "distributed", "multi")) else 1
     targets = []
     for index in range(target_count):
         if path.startswith("field"):
             target = tm.FieldRegionTarget(
-                positions, mp.Ez, sample_shape=(2,), spatial_weights=(0.6, 1.4),
+                positions,
+                mp.Ez,
+                sample_shape=(2,),
+                spatial_weights=(0.6, 1.4),
             )
         elif path.startswith("flux"):
             target = tm.FluxTarget(
-                positions, normal=mp.Vector3(1), spatial_weights=(0.6, 1.4),
+                positions,
+                normal=mp.Vector3(1),
+                spatial_weights=(0.6, 1.4),
             )
         else:
             target = tm.EigenmodeCoefficientTarget(
-                positions=positions, normal=mp.Vector3(1),
-                mode_region=mp.Volume(center=mp.Vector3(1.5, center.y),
-                                      size=mp.Vector3(0, 3.5)),
-                frequency=0.7 + 0.05 * index, spatial_weights=(0.6, 1.4),
+                positions=positions,
+                normal=mp.Vector3(1),
+                mode_region=mp.Volume(
+                    center=mp.Vector3(1.5, center.y), size=mp.Vector3(0, 3.5)
+                ),
+                frequency=0.7 + 0.05 * index,
+                spatial_weights=(0.6, 1.4),
                 eig_parity=mp.ODD_Z,
             )
         targets.append(target)
     return tm.MultiTDAObjective(
-        design=design, simulation=simulation, targets=targets,
-        t_final=100.0, dt=0.5 / resolution, sampling_interval=1,
-        wavelength_bands=[(1.1, 2.0)] if target_count == 1
-        else [(1.1, 1.5), (1.5, 2.0)],
+        design=design,
+        simulation=simulation,
+        targets=targets,
+        t_final=100.0,
+        dt=0.5 / resolution,
+        sampling_interval=1,
+        wavelength_bands=(
+            [(1.1, 2.0)] if target_count == 1 else [(1.1, 1.5), (1.5, 2.0)]
+        ),
         weights=[1.0] if target_count == 1 else [0.7, 1.3],
-        kernel_length=1001, pixel_chunk=5, reuse_simulation=False,
+        kernel_length=1001,
+        pixel_chunk=5,
+        reuse_simulation=False,
         target_history_block_size=1 if path.endswith("distributed") else None,
     )
 
 
 PATHS = (
-    "field", "field_dedup", "field_distributed",
-    "flux", "flux_dedup", "flux_distributed",
-    "eigenmode", "eigenmode_multi",
+    "field",
+    "field_dedup",
+    "field_distributed",
+    "flux",
+    "flux_dedup",
+    "flux_distributed",
+    "eigenmode",
+    "eigenmode_multi",
 )
 
 
@@ -112,22 +142,45 @@ def test_filtered_material_gradient_matches_central_fd(path, monkeypatch):
         fd = float((plus - minus) / (2 * step))
         adjoint = float(gradient @ direction)
         relative = abs(adjoint - fd) / abs(fd)
-        rows.append(dict(direction=index, h=step, adjoint=adjoint,
-                         finite_difference=fd, relative_error=relative))
+        rows.append(
+            dict(
+                direction=index,
+                h=step,
+                adjoint=adjoint,
+                finite_difference=fd,
+                relative_error=relative,
+            )
+        )
         assert abs(fd) > 1e-10
         assert np.sign(adjoint) == np.sign(fd)
     expected_path = (
-        "_distributed_builtin_band_objectives" if path.endswith("distributed")
-        else "_distributed_deduplicated_band_objectives" if path.endswith("dedup")
-        else "_eigenmode_fom_values_and_overlap_covectors" if path.startswith("eigenmode")
-        else "_band_fom_values_and_adjoint_signals"
+        "_distributed_builtin_band_objectives"
+        if path.endswith("distributed")
+        else (
+            "_distributed_deduplicated_band_objectives"
+            if path.endswith("dedup")
+            else (
+                "_eigenmode_fom_values_and_overlap_covectors"
+                if path.startswith("eigenmode")
+                else "_band_fom_values_and_adjoint_signals"
+            )
+        )
     )
     assert calls[expected_path] == 5
     if path.startswith("eigenmode"):
         assert calls["_filter_transpose_eigenmode_overlap_covectors"] == 1
     if mp.am_master():
-        print(json.dumps(dict(path=path, ranks=mp.count_processors(),
-                              value=float(value), results=rows), sort_keys=True))
+        print(
+            json.dumps(
+                dict(
+                    path=path,
+                    ranks=mp.count_processors(),
+                    value=float(value),
+                    results=rows,
+                ),
+                sort_keys=True,
+            )
+        )
     tolerance = 0.006 if path.startswith("field") else 0.01
     assert max(row["relative_error"] for row in rows) < tolerance
 

@@ -9,7 +9,6 @@ from numbers import Real
 
 import numpy as np
 
-
 _DEFAULT_SINC_HALF_WIDTH = 64
 _DEFAULT_KAISER_BETA = 6.0
 _RECONSTRUCTION_WINDOWS = {
@@ -58,9 +57,7 @@ def _reconstruction_blas_threads() -> int:
     return max(1, min(8, available_cpus // local_processes))
 
 
-_OPENBLAS_SET_LOCAL_THREADS, _OPENBLAS_GET_THREADS = (
-    _openblas_thread_controls()
-)
+_OPENBLAS_SET_LOCAL_THREADS, _OPENBLAS_GET_THREADS = _openblas_thread_controls()
 _RECONSTRUCTION_BLAS_THREADS = _reconstruction_blas_threads()
 
 
@@ -68,10 +65,7 @@ _RECONSTRUCTION_BLAS_THREADS = _reconstruction_blas_threads()
 def _limited_reconstruction_blas_threads():
     """Temporarily cap this process's reconstruction BLAS threads."""
     previous_threads = None
-    if (
-        _OPENBLAS_SET_LOCAL_THREADS is not None
-        and _OPENBLAS_GET_THREADS is not None
-    ):
+    if _OPENBLAS_SET_LOCAL_THREADS is not None and _OPENBLAS_GET_THREADS is not None:
         current_threads = _OPENBLAS_GET_THREADS()
         if current_threads > _RECONSTRUCTION_BLAS_THREADS:
             previous_threads = current_threads
@@ -132,7 +126,9 @@ def _validate_reconstruction_settings(
             or not np.isfinite(beta)
             or beta < 0.0
         ):
-            raise ValueError("reconstruction Kaiser beta must be nonnegative and finite")
+            raise ValueError(
+                "reconstruction Kaiser beta must be nonnegative and finite"
+            )
         beta = float(beta)
         with np.errstate(over="ignore", invalid="ignore"):
             beta_normalization = np.i0(beta)
@@ -140,9 +136,7 @@ def _validate_reconstruction_settings(
             raise ValueError("reconstruction Kaiser beta is too large")
         window_params = {"beta": beta}
     elif window_params:
-        raise ValueError(
-            f"{window} reconstruction window does not accept parameters"
-        )
+        raise ValueError(f"{window} reconstruction window does not accept parameters")
 
     if (
         isinstance(half_width, (bool, np.bool_))
@@ -167,11 +161,7 @@ def _reconstruction_window_values(
     if window == "hann":
         return 0.5 * (1.0 + np.cos(np.pi * x))
     if window == "blackman":
-        return (
-            0.42
-            + 0.5 * np.cos(np.pi * x)
-            + 0.08 * np.cos(2.0 * np.pi * x)
-        )
+        return 0.42 + 0.5 * np.cos(np.pi * x) + 0.08 * np.cos(2.0 * np.pi * x)
     if window == "bartlett":
         return 1.0 - np.abs(x)
     beta = window_params["beta"]
@@ -317,9 +307,7 @@ class _WindowedSincReconstructor:
         self.half_width = half_width
         self.window = window
         self.window_params = window_params
-        self.last_fine_index = (
-            history_array.shape[0] - 1
-        ) * self.sampling_interval
+        self.last_fine_index = (history_array.shape[0] - 1) * self.sampling_interval
         self._first_offset, self._weight_matrix = _windowed_sinc_stencils(
             self.sampling_interval,
             self.half_width,
@@ -353,9 +341,8 @@ class _WindowedSincReconstructor:
         self._cached_coarse_index = coarse_index
 
     def _validate_fine_index(self, fine_index: int) -> int:
-        if (
-            isinstance(fine_index, (bool, np.bool_))
-            or not isinstance(fine_index, (int, np.integer))
+        if isinstance(fine_index, (bool, np.bool_)) or not isinstance(
+            fine_index, (int, np.integer)
         ):
             raise ValueError("fine_index must be an integer")
         fine_index = int(fine_index)

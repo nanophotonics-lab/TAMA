@@ -271,7 +271,10 @@ def test_simulation_spec_rejects_noninteger_or_cartesian_nonzero_m():
 
 
 def test_simulation_spec_chunk_layout_annotation_is_parameterized():
-    assert get_type_hints(tm.SimulationSpec)["chunk_layout"] == Optional[mp.BinaryPartition]
+    assert (
+        get_type_hints(tm.SimulationSpec)["chunk_layout"]
+        == Optional[mp.BinaryPartition]
+    )
 
 
 def test_tda_objective_accepts_bundled_design_simulation_and_target():

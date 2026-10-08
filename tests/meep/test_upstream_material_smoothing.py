@@ -40,10 +40,18 @@ def _mode_frequency(sim, component, position, fcen, df, label):
         assert harminv.modes, "No resonant modes found in the upstream frequency window"
         frequency = harminv.modes[0].freq
         assert np.isfinite(frequency)
-        print("upstream_smoothing: " + json.dumps({
-            "case": label, "resolution": sim.resolution,
-            "frequency": frequency, "elapsed_seconds": time.perf_counter() - start,
-        }), flush=True)
+        print(
+            "upstream_smoothing: "
+            + json.dumps(
+                {
+                    "case": label,
+                    "resolution": sim.resolution,
+                    "frequency": frequency,
+                    "elapsed_seconds": time.perf_counter() - start,
+                }
+            ),
+            flush=True,
+        )
         return frequency
     finally:
         sim.reset_meep()
@@ -53,7 +61,9 @@ def _mode_frequency(sim, component, position, fcen, df, label):
 def circle_weights():
     coordinates = np.linspace(-0.5, 0.5, 1200)
     x, y = np.meshgrid(coordinates, coordinates)
-    return gaussian_filter(np.sqrt(x*x + y*y) < 0.301943, sigma=3.0, output=np.double)
+    return gaussian_filter(
+        np.sqrt(x * x + y * y) < 0.301943, sigma=3.0, output=np.double
+    )
 
 
 def _circle_frequency(resolution, weights, mode):
@@ -61,22 +71,36 @@ def _circle_frequency(resolution, weights, mode):
     if mode == "near_isotropic":
         medium.epsilon_offdiag = mp.Vector3(1e-6, 0, 0)
     grid = mp.MaterialGrid(
-        mp.Vector3(1200, 1200), mp.air, medium,
-        weights=weights, do_averaging=True, beta=1000, eta=0.5,
+        mp.Vector3(1200, 1200),
+        mp.air,
+        medium,
+        weights=weights,
+        do_averaging=True,
+        beta=1000,
+        eta=0.5,
     )
     fcen, df = 0.3, 0.06
     sim = mp.Simulation(
-        resolution=resolution, cell_size=mp.Vector3(1, 1),
+        resolution=resolution,
+        cell_size=mp.Vector3(1, 1),
         geometry=[mp.Block(size=mp.Vector3(1, 1), material=grid)],
-        sources=[mp.Source(
-            mp.GaussianSource(fcen, fwidth=df), component=mp.Hz,
-            center=mp.Vector3(-0.1057, 0.2094),
-        )],
+        sources=[
+            mp.Source(
+                mp.GaussianSource(fcen, fwidth=df),
+                component=mp.Hz,
+                center=mp.Vector3(-0.1057, 0.2094),
+            )
+        ],
         k_point=mp.Vector3(0.3892, 0.1597),
     )
     _prepare(sim, grid, mode)
     return _mode_frequency(
-        sim, mp.Hz, mp.Vector3(0.3718, -0.2076), fcen, df, "circle_" + mode,
+        sim,
+        mp.Hz,
+        mp.Vector3(0.3718, -0.2076),
+        fcen,
+        df,
+        "circle_" + mode,
     )
 
 
@@ -104,29 +128,45 @@ def _sphere_frequency(mode):
         coordinates = np.linspace(-0.5, 0.5, 2 * resolution)
         x, y, z = np.meshgrid(coordinates, coordinates, coordinates)
         weights = gaussian_filter(
-            np.sqrt(x*x + y*y + z*z) < radius,
-            sigma=4/resolution, output=np.double,
+            np.sqrt(x * x + y * y + z * z) < radius,
+            sigma=4 / resolution,
+            output=np.double,
         )
         grid = mp.MaterialGrid(
-            mp.Vector3(50, 50, 50), silica, silicon, weights=weights,
-            do_averaging=True, beta=1000, eta=0.5,
+            mp.Vector3(50, 50, 50),
+            silica,
+            silicon,
+            weights=weights,
+            do_averaging=True,
+            beta=1000,
+            eta=0.5,
         )
         geometry = [mp.Block(size=mp.Vector3(1, 1, 1), material=grid)]
-    fcen = 1/1.27
-    df = 0.02*fcen
+    fcen = 1 / 1.27
+    df = 0.02 * fcen
     sim = mp.Simulation(
-        resolution=resolution, cell_size=mp.Vector3(1, 1, 1),
-        geometry=geometry, default_material=silica,
-        sources=[mp.Source(
-            mp.GaussianSource(fcen, fwidth=df), component=mp.Ez,
-            center=mp.Vector3(0.13, 0.25, 0.06),
-        )],
+        resolution=resolution,
+        cell_size=mp.Vector3(1, 1, 1),
+        geometry=geometry,
+        default_material=silica,
+        sources=[
+            mp.Source(
+                mp.GaussianSource(fcen, fwidth=df),
+                component=mp.Ez,
+                center=mp.Vector3(0.13, 0.25, 0.06),
+            )
+        ],
         k_point=mp.Vector3(0.23, -0.17, 0.35),
     )
     if grid is not None:
         _prepare(sim, grid, mode)
     return _mode_frequency(
-        sim, mp.Ez, mp.Vector3(-0.2684, 0.1185, 0.0187), fcen, df, "sphere_" + mode,
+        sim,
+        mp.Ez,
+        mp.Vector3(-0.2684, 0.1185, 0.0187),
+        fcen,
+        df,
+        "sphere_" + mode,
     )
 
 
@@ -147,4 +187,7 @@ def test_upstream_material_grid_sphere_matches_geometry(sphere_frequencies, mode
 
 def test_sphere_tensor_averaging_has_continuous_isotropic_limit(sphere_frequencies):
     # A 1e-6 xy perturbation must not switch to a differently normalized kernel.
-    assert abs(sphere_frequencies["near_isotropic"] - sphere_frequencies["prepared"]) < 1e-7
+    assert (
+        abs(sphere_frequencies["near_isotropic"] - sphere_frequencies["prepared"])
+        < 1e-7
+    )

@@ -112,33 +112,37 @@ def _make_objective(
             )
         }
         if eigenmode_target
-        else {
-            "target": tm.FluxTarget(
-                positions=(
-                    monitor_position + mp.Vector3(0.0, -0.1),
-                    monitor_position + mp.Vector3(0.0, 0.1),
-                ),
-                normal=mp.Vector3(1.0),
-                spatial_weights=(0.75, 1.25),
+        else (
+            {
+                "target": tm.FluxTarget(
+                    positions=(
+                        monitor_position + mp.Vector3(0.0, -0.1),
+                        monitor_position + mp.Vector3(0.0, 0.1),
+                    ),
+                    normal=mp.Vector3(1.0),
+                    spatial_weights=(0.75, 1.25),
+                )
+            }
+            if flux_target
+            else (
+                {
+                    "target": tm.FieldRegionTarget(
+                        positions=(
+                            monitor_position + mp.Vector3(0.0, -0.1),
+                            monitor_position + mp.Vector3(0.0, 0.1),
+                        ),
+                        component=mp.Ez,
+                        sample_shape=(2,),
+                        spatial_weights=(0.75, 1.25),
+                    )
+                }
+                if regional_target
+                else {
+                    "monitor_position": monitor_position,
+                    "component": mp.Ez,
+                }
             )
-        }
-        if flux_target
-        else {
-            "target": tm.FieldRegionTarget(
-                positions=(
-                    monitor_position + mp.Vector3(0.0, -0.1),
-                    monitor_position + mp.Vector3(0.0, 0.1),
-                ),
-                component=mp.Ez,
-                sample_shape=(2,),
-                spatial_weights=(0.75, 1.25),
-            )
-        }
-        if regional_target
-        else {
-            "monitor_position": monitor_position,
-            "component": mp.Ez,
-        }
+        )
     )
     return tm.TDAObjective(
         design=design,
@@ -155,9 +159,7 @@ def _make_objective(
                 "fom_fn": lambda history, sample_dt: float(
                     0.5 * np.sum(np.abs(history) ** 2) * sample_dt
                 ),
-                "adjoint_signal_fn": (
-                    lambda history, sample_dt: np.ones_like(history)
-                ),
+                "adjoint_signal_fn": (lambda history, sample_dt: np.ones_like(history)),
             }
         ),
         **simulation_args,
@@ -285,9 +287,9 @@ def test_tda_nyquist_gradient_matches_full_rate_after_field_decay():
         reconstruction_window="hann",
     ).evaluate(design, need_gradient=True)
 
-    relative_error = np.linalg.norm(
-        sparse_gradient - full_gradient
-    ) / np.linalg.norm(full_gradient)
+    relative_error = np.linalg.norm(sparse_gradient - full_gradient) / np.linalg.norm(
+        full_gradient
+    )
     assert relative_error < 1.0e-3
 
 

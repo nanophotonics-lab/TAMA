@@ -192,9 +192,7 @@ def _directional_derivatives(objective):
     if objective._simulation_spec.m == 0:
         direction = np.array([1, 1, 1, -1, -1, 1, -1, -1, -1]) / 3.0
     else:
-        direction = np.array(
-            [0.31, -0.47, 0.19, 0.53, -0.29, 0.41, -0.23, 0.17, -0.27]
-        )
+        direction = np.array([0.31, -0.47, 0.19, 0.53, -0.29, 0.41, -0.23, 0.17, -0.27])
         direction /= np.linalg.norm(direction)
 
     _, gradient = objective.fom_and_grad(design)
@@ -224,8 +222,8 @@ def test_cylindrical_tda_gradient_matches_directional_finite_difference(
         axis_design=axis_design,
     )
 
-    adjoint_derivative, finite_difference, relative_error = (
-        _directional_derivatives(objective)
+    adjoint_derivative, finite_difference, relative_error = _directional_derivatives(
+        objective
     )
 
     assert np.sign(adjoint_derivative) == np.sign(finite_difference)
@@ -241,8 +239,8 @@ def test_cylindrical_field_region_matches_directional_fd(objective_kind):
         regional_target=True,
     )
 
-    adjoint_derivative, finite_difference, relative_error = (
-        _directional_derivatives(objective)
+    adjoint_derivative, finite_difference, relative_error = _directional_derivatives(
+        objective
     )
 
     assert np.sign(adjoint_derivative) == np.sign(finite_difference)
@@ -281,8 +279,8 @@ def test_cylindrical_surface_targets_match_directional_fd(
         surface_normal=surface_normal,
     )
 
-    adjoint_derivative, finite_difference, relative_error = (
-        _directional_derivatives(objective)
+    adjoint_derivative, finite_difference, relative_error = _directional_derivatives(
+        objective
     )
 
     assert set(objective.gradient_components) == {mp.Er, mp.Ep, mp.Ez}
@@ -330,8 +328,8 @@ def test_cylindrical_eh_targets_match_directional_finite_difference(
         target_component=target_component,
     )
 
-    adjoint_derivative, finite_difference, relative_error = (
-        _directional_derivatives(objective)
+    adjoint_derivative, finite_difference, relative_error = _directional_derivatives(
+        objective
     )
 
     assert np.sign(adjoint_derivative) == np.sign(finite_difference)
@@ -370,8 +368,8 @@ def test_cylindrical_on_axis_targets_match_directional_finite_difference(
         target_radius=0.0,
     )
 
-    adjoint_derivative, finite_difference, relative_error = (
-        _directional_derivatives(objective)
+    adjoint_derivative, finite_difference, relative_error = _directional_derivatives(
+        objective
     )
 
     assert np.sign(adjoint_derivative) == np.sign(finite_difference)
@@ -401,8 +399,8 @@ def test_cylindrical_near_axis_targets_match_directional_finite_difference(
         target_radius=0.02,
     )
 
-    adjoint_derivative, finite_difference, relative_error = (
-        _directional_derivatives(objective)
+    adjoint_derivative, finite_difference, relative_error = _directional_derivatives(
+        objective
     )
 
     assert np.sign(adjoint_derivative) == np.sign(finite_difference)
@@ -512,8 +510,8 @@ def test_cylindrical_nyquist_gradient_matches_directional_finite_difference(
         target_radius=target_radius,
     )
 
-    adjoint_derivative, finite_difference, relative_error = (
-        _directional_derivatives(objective)
+    adjoint_derivative, finite_difference, relative_error = _directional_derivatives(
+        objective
     )
 
     assert np.sign(adjoint_derivative) == np.sign(finite_difference)

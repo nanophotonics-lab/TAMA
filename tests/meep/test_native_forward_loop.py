@@ -6,7 +6,6 @@ import tama as tm
 from tama import native_sampler
 from tama.sampling_grid import FastPointMonitor, NativeDesignField
 
-
 _RUN_UNTIL = 0.35
 _DT = 0.05
 _MONITOR_POSITIONS = (

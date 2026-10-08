@@ -97,20 +97,16 @@ class DesignGrid:
                     "cylindrical DesignGrid sizes in r and z must be positive"
                 )
             if self.center.x - 0.5 * self.size.x < -1.0e-12:
-                raise ValueError(
-                    "cylindrical DesignGrid must not extend below r=0"
-                )
+                raise ValueError("cylindrical DesignGrid must not extend below r=0")
             self.dimensions = 2
             self.spacing = (self.size.x / nr, self.size.z / nz)
             self.coords_r = [
-                self.center.x + (i - (nr - 1) / 2) * self.spacing[0]
-                for i in range(nr)
+                self.center.x + (i - (nr - 1) / 2) * self.spacing[0] for i in range(nr)
             ]
             self.coords_x = self.coords_r
             self.coords_y = None
             self.coords_z = [
-                self.center.z + (k - (nz - 1) / 2) * self.spacing[1]
-                for k in range(nz)
+                self.center.z + (k - (nz - 1) / 2) * self.spacing[1] for k in range(nz)
             ]
         else:
             nx, ny = self.shape[:2]
@@ -121,8 +117,10 @@ class DesignGrid:
                 or int(grid_size.z) != nz
             ):
                 raise ValueError("DesignGrid shape must match MaterialGrid.grid_size")
-            if self.size.x <= 0 or self.size.y <= 0 or (
-                len(self.shape) == 3 and self.size.z <= 0
+            if (
+                self.size.x <= 0
+                or self.size.y <= 0
+                or (len(self.shape) == 3 and self.size.z <= 0)
             ):
                 raise ValueError(
                     "DesignGrid sizes in active dimensions must be positive"
@@ -147,18 +145,17 @@ class DesignGrid:
             self.coords_r = None
         self.cell_area = self.spacing[0] * self.spacing[1]
         self.cell_volume = (
-            self.cell_area * self.spacing[2]
-            if self.dimensions == 3
-            else None
+            self.cell_area * self.spacing[2] if self.dimensions == 3 else None
         )
 
         if self.material_factor is None:
             if self.background is None or self.design_material is None:
-                raise ValueError("DesignGrid requires material_factor or both background and design_material")
-            self.material_factor = (
-                _epsilon_from_medium(self.design_material)
-                - _epsilon_from_medium(self.background)
-            )
+                raise ValueError(
+                    "DesignGrid requires material_factor or both background and design_material"
+                )
+            self.material_factor = _epsilon_from_medium(
+                self.design_material
+            ) - _epsilon_from_medium(self.background)
 
     def update_weights(self, x: np.ndarray) -> None:
         """Write a flat design vector into the bundled Meep MaterialGrid.
@@ -166,11 +163,7 @@ class DesignGrid:
         Args:
             x: Flat design vector with `numpy.prod(shape)` entries.
         """
-        shape = (
-            (self.shape[0], 1, self.shape[1])
-            if self.is_cylindrical
-            else self.shape
-        )
+        shape = (self.shape[0], 1, self.shape[1]) if self.is_cylindrical else self.shape
         self.material_grid.update_weights(np.asarray(x).reshape(shape))
 
 
@@ -236,9 +229,7 @@ class SimulationSpec:
             3,
             mp.CYLINDRICAL,
         ):
-            raise ValueError(
-                "dimensions must be None, 1, 2, 3, or mp.CYLINDRICAL"
-            )
+            raise ValueError("dimensions must be None, 1, 2, 3, or mp.CYLINDRICAL")
         if isinstance(self.courant, (bool, np.bool_)):
             raise ValueError("courant must be a positive finite number")
         self.courant = float(self.courant)
@@ -344,17 +335,24 @@ class Near2FarTarget:
             raise ValueError("frequencies must be real")
         frequencies = np.asarray(self.frequencies, dtype=float)
         if (
-            frequencies.ndim != 1 or not frequencies.size
-            or not np.all(np.isfinite(frequencies)) or np.any(frequencies <= 0)
+            frequencies.ndim != 1
+            or not frequencies.size
+            or not np.all(np.isfinite(frequencies))
+            or np.any(frequencies <= 0)
         ):
-            raise ValueError("frequencies must be a nonempty sequence of positive finite values")
+            raise ValueError(
+                "frequencies must be a nonempty sequence of positive finite values"
+            )
         points = tuple(self.far_points)
         if not points or any(
-            not isinstance(p, mp.Vector3) or not np.isrealobj(tuple(p))
+            not isinstance(p, mp.Vector3)
+            or not np.isrealobj(tuple(p))
             or not np.all(np.isfinite(tuple(p)))
             for p in points
         ):
-            raise ValueError("far_points must contain finite real Meep Vector3 positions")
+            raise ValueError(
+                "far_points must contain finite real Meep Vector3 positions"
+            )
         object.__setattr__(self, "near_regions", regions)
         object.__setattr__(self, "frequencies", tuple(frequencies.tolist()))
         object.__setattr__(self, "far_points", points)
@@ -390,9 +388,7 @@ class PointTarget:
     def __post_init__(self) -> None:
         if not all(hasattr(self.position, axis) for axis in ("x", "y", "z")):
             raise TypeError("PointTarget position must be a Meep Vector3 value")
-        raw_position = np.asarray(
-            (self.position.x, self.position.y, self.position.z)
-        )
+        raw_position = np.asarray((self.position.x, self.position.y, self.position.z))
         if np.iscomplexobj(raw_position):
             raise TypeError("PointTarget position must have real coordinates")
         try:
@@ -406,8 +402,7 @@ class PointTarget:
 
         if self.adjoint_source_size is not None:
             if not all(
-                hasattr(self.adjoint_source_size, axis)
-                for axis in ("x", "y", "z")
+                hasattr(self.adjoint_source_size, axis) for axis in ("x", "y", "z")
             ):
                 raise TypeError(
                     "PointTarget adjoint_source_size must be a Meep Vector3 value"
@@ -441,9 +436,7 @@ class PointTarget:
                 "PointTarget adjoint_source_amplitude must be numeric"
             ) from exc
         if not np.isfinite(amplitude.real) or not np.isfinite(amplitude.imag):
-            raise ValueError(
-                "PointTarget adjoint_source_amplitude must be finite"
-            )
+            raise ValueError("PointTarget adjoint_source_amplitude must be finite")
         object.__setattr__(self, "adjoint_source_amplitude", amplitude)
 
 
@@ -485,9 +478,7 @@ class FieldRegionTarget:
                 "FieldRegionTarget positions must contain Meep Vector3 values"
             )
         for position in positions:
-            raw_coordinates = np.asarray(
-                (position.x, position.y, position.z)
-            )
+            raw_coordinates = np.asarray((position.x, position.y, position.z))
             if np.iscomplexobj(raw_coordinates):
                 raise TypeError(
                     "FieldRegionTarget positions must have real coordinates"
@@ -518,18 +509,14 @@ class FieldRegionTarget:
                     "positive integers"
                 )
             if int(np.prod(sample_shape, dtype=np.int64)) != len(positions):
-                raise ValueError(
-                    "FieldRegionTarget sample_shape must match positions"
-                )
+                raise ValueError("FieldRegionTarget sample_shape must match positions")
 
         if self.spatial_weights is None:
             spatial_weights = np.ones(len(positions), dtype=float)
         else:
             raw_spatial_weights = np.asarray(self.spatial_weights)
             if np.iscomplexobj(raw_spatial_weights):
-                raise TypeError(
-                    "FieldRegionTarget spatial_weights must be real"
-                )
+                raise TypeError("FieldRegionTarget spatial_weights must be real")
             spatial_weights = np.asarray(
                 raw_spatial_weights,
                 dtype=float,
@@ -596,17 +583,11 @@ class FluxTarget:
             not all(hasattr(position, axis) for axis in ("x", "y", "z"))
             for position in positions
         ):
-            raise TypeError(
-                "FluxTarget positions must contain Meep Vector3 values"
-            )
+            raise TypeError("FluxTarget positions must contain Meep Vector3 values")
         for position in positions:
-            raw_coordinates = np.asarray(
-                (position.x, position.y, position.z)
-            )
+            raw_coordinates = np.asarray((position.x, position.y, position.z))
             if np.iscomplexobj(raw_coordinates):
-                raise TypeError(
-                    "FluxTarget positions must have real coordinates"
-                )
+                raise TypeError("FluxTarget positions must have real coordinates")
             try:
                 coordinates = np.asarray(raw_coordinates, dtype=float)
             except (TypeError, ValueError) as exc:
@@ -614,9 +595,7 @@ class FluxTarget:
                     "FluxTarget positions must have numeric coordinates"
                 ) from exc
             if not np.all(np.isfinite(coordinates)):
-                raise ValueError(
-                    "FluxTarget positions must have finite coordinates"
-                )
+                raise ValueError("FluxTarget positions must have finite coordinates")
 
         axis, orientation = _normalize_axis_normal(self.normal)
         normal_coordinates = [0.0, 0.0, 0.0]
@@ -633,9 +612,7 @@ class FluxTarget:
                 dtype=float,
             ).reshape(-1)
             if spatial_weights.size != len(positions):
-                raise ValueError(
-                    "FluxTarget spatial_weights must match positions"
-                )
+                raise ValueError("FluxTarget spatial_weights must match positions")
             if (
                 not np.all(np.isfinite(spatial_weights))
                 or np.any(spatial_weights < 0.0)
@@ -722,10 +699,7 @@ class EigenmodeCoefficientTarget:
         spatial_weights = surface.spatial_weights
         axis, _ = _normalize_axis_normal(normal)
         position_coordinates = np.asarray(
-            [
-                (position.x, position.y, position.z)
-                for position in positions
-            ],
+            [(position.x, position.y, position.z) for position in positions],
             dtype=float,
         )
 
@@ -771,25 +745,18 @@ class EigenmodeCoefficientTarget:
             tolerance = 1.0e-12
             if abs(region_size[axis]) > tolerance:
                 raise ValueError(
-                    "EigenmodeCoefficientTarget mode_region must be normal to "
-                    "normal"
+                    "EigenmodeCoefficientTarget mode_region must be normal to " "normal"
                 )
-            tangential_axes = tuple(
-                index for index in range(3) if index != axis
-            )
-            if not any(
-                region_size[index] > tolerance
-                for index in tangential_axes
-            ):
+            tangential_axes = tuple(index for index in range(3) if index != axis)
+            if not any(region_size[index] > tolerance for index in tangential_axes):
                 raise ValueError(
                     "EigenmodeCoefficientTarget mode_region must have positive "
                     "tangential extent"
                 )
             region_low = region_center - 0.5 * region_size - tolerance
             region_high = region_center + 0.5 * region_size + tolerance
-            if (
-                np.any(position_coordinates < region_low)
-                or np.any(position_coordinates > region_high)
+            if np.any(position_coordinates < region_low) or np.any(
+                position_coordinates > region_high
             ):
                 raise ValueError(
                     "EigenmodeCoefficientTarget positions must lie in mode_region"
@@ -797,9 +764,7 @@ class EigenmodeCoefficientTarget:
 
         def real_solver_setting(name, value, *, allow_zero):
             if np.iscomplexobj(np.asarray(value)):
-                raise TypeError(
-                    f"EigenmodeCoefficientTarget {name} must be real"
-                )
+                raise TypeError(f"EigenmodeCoefficientTarget {name} must be real")
             try:
                 normalized = float(value)
             except (TypeError, ValueError) as exc:
@@ -810,8 +775,7 @@ class EigenmodeCoefficientTarget:
             if not np.isfinite(normalized) or invalid_sign:
                 bound = "nonnegative" if allow_zero else "positive"
                 raise ValueError(
-                    f"EigenmodeCoefficientTarget {name} must be finite and "
-                    f"{bound}"
+                    f"EigenmodeCoefficientTarget {name} must be finite and " f"{bound}"
                 )
             return normalized
 
@@ -839,8 +803,7 @@ class EigenmodeCoefficientTarget:
             or self.eig_parity < 0
         ):
             raise ValueError(
-                "EigenmodeCoefficientTarget eig_parity must be a "
-                "nonnegative integer"
+                "EigenmodeCoefficientTarget eig_parity must be a " "nonnegative integer"
             )
 
         eig_resolution = real_solver_setting(
@@ -868,9 +831,8 @@ class EigenmodeCoefficientTarget:
                 )
             normalized_reference_fields = {}
             for component, values in reference_mode_fields.items():
-                if (
-                    isinstance(component, (bool, np.bool_))
-                    or not isinstance(component, (int, np.integer))
+                if isinstance(component, (bool, np.bool_)) or not isinstance(
+                    component, (int, np.integer)
                 ):
                     raise TypeError(
                         "EigenmodeCoefficientTarget reference_mode_fields "
@@ -899,15 +861,12 @@ class EigenmodeCoefficientTarget:
                 normalized_reference_fields[int(component)] = tuple(
                     complex(value) for value in field_values
                 )
-            normalized_reference_fields = MappingProxyType(
-                normalized_reference_fields
-            )
+            normalized_reference_fields = MappingProxyType(normalized_reference_fields)
 
         reference_m = self.reference_m
         if reference_m is not None:
-            if (
-                isinstance(reference_m, (bool, np.bool_))
-                or not isinstance(reference_m, (int, np.integer))
+            if isinstance(reference_m, (bool, np.bool_)) or not isinstance(
+                reference_m, (int, np.integer)
             ):
                 raise ValueError(
                     "EigenmodeCoefficientTarget reference_m must be an integer"

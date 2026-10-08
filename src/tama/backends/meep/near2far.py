@@ -13,11 +13,15 @@ from meep.simulation import py_v3_to_vec
 import numpy as np
 
 from .native_design import (
-    _NativeDesignAccumulator, _NativeDesignHistorySet,
-    _native_forward_step_count, _run_native_forward_loop, _run_native_adjoint_loop,
+    _NativeDesignAccumulator,
+    _NativeDesignHistorySet,
+    _native_forward_step_count,
+    _run_native_forward_loop,
+    _run_native_adjoint_loop,
 )
 from .sampling_grid import (
-    _require_no_meep_symmetries, history_storage_dtype,
+    _require_no_meep_symmetries,
+    history_storage_dtype,
 )
 from .design_collection import (
     _collection_components as _native_design_components,
@@ -37,8 +41,10 @@ def _validate_simulation(sim, chunk_layout):
         raise ValueError("Near2FarTarget supports Cartesian 2D and 3D only")
     _require_no_meep_symmetries(sim)
     if sim.symmetries and chunk_layout is not None:
-        raise ValueError("Near2FarTarget with Mirrors does not support explicit chunk_layout; "
-                         "Meep can duplicate near-surface quadrature for this combination")
+        raise ValueError(
+            "Near2FarTarget with Mirrors does not support explicit chunk_layout; "
+            "Meep can duplicate near-surface quadrature for this combination"
+        )
     if sim.k_point and any(complex(x) != 0 for x in sim.k_point):
         raise ValueError("Near2FarTarget does not support nonzero Bloch wavevectors")
     if not sim.sources:
@@ -58,25 +64,38 @@ def _validate_surfaces(sim, targets):
                 low[axis] += layer.thickness
             if layer.side in (mp.ALL, mp.High):
                 high[axis] -= layer.thickness
-    clearance = .5 / sim.resolution
+    clearance = 0.5 / sim.resolution
     for target in targets:
         if dimensions == 2 and any(point.z != 0 for point in target.far_points):
             raise ValueError("2D far points must lie in the x-y plane")
         for region in target.near_regions:
             c, s = np.asarray(tuple(region.center)), np.asarray(tuple(region.size))
-            if (not np.all(np.isfinite(c)) or not np.all(np.isfinite(s))
-                    or np.any(s < 0) or np.count_nonzero(s[:dimensions] == 0) != 1
-                    or (dimensions == 2 and (c[2] != 0 or s[2] != 0))
-                    or not np.isfinite(region.weight)):
-                raise ValueError("near regions must be finite Cartesian surfaces with one zero extent")
+            if (
+                not np.all(np.isfinite(c))
+                or not np.all(np.isfinite(s))
+                or np.any(s < 0)
+                or np.count_nonzero(s[:dimensions] == 0) != 1
+                or (dimensions == 2 and (c[2] != 0 or s[2] != 0))
+                or not np.isfinite(region.weight)
+            ):
+                raise ValueError(
+                    "near regions must be finite Cartesian surfaces with one zero extent"
+                )
             normal = int(np.flatnonzero(s[:dimensions] == 0)[0])
             if region.direction not in (mp.AUTOMATIC, normal):
-                raise ValueError("near-region direction must match its zero-extent axis")
-            if (np.any(c[:dimensions] - s[:dimensions]/2 < low[:dimensions] + clearance)
-                    or np.any(c[:dimensions] + s[:dimensions]/2 > high[:dimensions] - clearance)):
-                raise ValueError("near regions require half a grid cell of clearance from PML and cell boundaries")
+                raise ValueError(
+                    "near-region direction must match its zero-extent axis"
+                )
+            if np.any(
+                c[:dimensions] - s[:dimensions] / 2 < low[:dimensions] + clearance
+            ) or np.any(
+                c[:dimensions] + s[:dimensions] / 2 > high[:dimensions] - clearance
+            ):
+                raise ValueError(
+                    "near regions require half a grid cell of clearance from PML and cell boundaries"
+                )
             for point in target.far_points:
-                if np.all(np.abs(np.asarray(tuple(point)) - c) <= s/2 + 1e-12):
+                if np.all(np.abs(np.asarray(tuple(point)) - c) <= s / 2 + 1e-12):
                     raise ValueError("far points must not lie on a near surface")
 
 
@@ -92,38 +111,50 @@ def farfield_sources(sim, monitor, target, covector, actual_time):
     points = np.asarray([tuple(p) for p in target.far_points]).reshape(-1)
     point0 = py_v3_to_vec(sim.dimensions, target.far_points[0], False)
     raw_data = monitor.swigobj.near_sourcedata(
-        point0, points, len(target.far_points),
-        np.ascontiguousarray(covector, dtype=np.complex128), 1e-3,
+        point0,
+        points,
+        len(target.far_points),
+        np.ascontiguousarray(covector, dtype=np.complex128),
+        1e-3,
     )
     # SWIG vector iteration returns temporary owning wrappers; retain them while
     # the native pullback reads their addresses.
     data = tuple(raw_data)
     sources = []
-    scale = -sim.resolution ** sim.dimensions / np.sqrt(2 * np.pi)
+    scale = -sim.resolution**sim.dimensions / np.sqrt(2 * np.pi)
     source_end_time = actual_time + 0.5 * sim.fields.dt
     if sim.symmetries:
         groups = native_sampler.fold_near2far_sources(
-            int(sim.fields.this), int(monitor.swigobj.this),
-            tuple(int(datum.this) for datum in data))
+            int(sim.fields.this),
+            int(monitor.swigobj.this),
+            tuple(int(datum.this) for datum in data),
+        )
         indexed_data = []
         for component, chunk, indices, amplitudes in groups:
             singletons = []
             for index in indices:
                 datum = mp.sourcedata()
-                native_sampler.populate_sourcedata(int(datum.this), component, chunk, int(index))
+                native_sampler.populate_sourcedata(
+                    int(datum.this), component, chunk, int(index)
+                )
                 singletons.append(datum)
             datum = mp.sourcedata()
-            native_sampler.merge_sourcedata(int(datum.this), tuple(int(d.this) for d in singletons))
+            native_sampler.merge_sourcedata(
+                int(datum.this), tuple(int(d.this) for d in singletons)
+            )
             indexed_data.append((datum, np.asarray(amplitudes)))
     else:
-        indexed_data = [(datum, np.asarray(datum.amp_arr).reshape(-1, frequencies.size))
-                        for datum in data]
+        indexed_data = [
+            (datum, np.asarray(datum.amp_arr).reshape(-1, frequencies.size))
+            for datum in data
+        ]
     for datum, amplitudes in indexed_data:
         if not np.all(np.isfinite(amplitudes)):
             raise ValueError("near-to-far source amplitudes must be finite")
         for index, frequency in enumerate(frequencies):
             if not np.any(amplitudes[:, index]):
                 continue
+
             def waveform(t, frequency=frequency):
                 # DFT recording has no sample beyond its final forward step.
                 # In particular, do not inject an extra magnetic current at 0.
@@ -132,27 +163,44 @@ def farfield_sources(sim, monitor, target, covector, actual_time):
                 # DFT fields include H's half-step phase. Both current types
                 # therefore share the discrete adjoint's half-step delay.
                 return np.exp(2j * np.pi * frequency * (source_end_time - t))
-            sources.append(mp.IndexedSource(
-                mp.CustomSource(src_func=waveform, start_time=0, end_time=actual_time),
-                datum, np.ascontiguousarray(scale * amplitudes[:, index]),
-            ))
+
+            sources.append(
+                mp.IndexedSource(
+                    mp.CustomSource(
+                        src_func=waveform, start_time=0, end_time=actual_time
+                    ),
+                    datum,
+                    np.ascontiguousarray(scale * amplitudes[:, index]),
+                )
+            )
     return sources
 
 
 def add_near2far_monitors(sim, targets, max_frequency, *, chunk_layout):
     # Tensor material setup may already have populated Meep's automatic layout.
     _validate_simulation(sim, chunk_layout)
-    if (max_frequency is not None
-            and max_frequency < max(f for target in targets for f in target.frequencies)):
+    if max_frequency is not None and max_frequency < max(
+        f for target in targets for f in target.frequencies
+    ):
         raise ValueError("max_frequency must cover every near-to-far target frequency")
     _validate_surfaces(sim, targets)
-    return [sim.add_near2far(np.asarray(target.frequencies), *target.near_regions,
-                            decimation_factor=1, nperiods=1)
-            for target in targets]
+    return [
+        sim.add_near2far(
+            np.asarray(target.frequencies),
+            *target.near_regions,
+            decimation_factor=1,
+            nperiods=1,
+        )
+        for target in targets
+    ]
 
 
 def _synchronize_callback_error(error):
-    failed = mp.sum_to_all(int(error is not None)) if mp.count_processors() > 1 else error is not None
+    failed = (
+        mp.sum_to_all(int(error is not None))
+        if mp.count_processors() > 1
+        else error is not None
+    )
     if failed:
         if error is not None:
             raise error
@@ -160,16 +208,21 @@ def _synchronize_callback_error(error):
 
 
 def farfield_values(sim, monitors, targets, fom_fns, dt):
-    fields = [np.asarray([sim.get_farfield(monitor, point)
-                          for point in target.far_points]).reshape(
-                              len(target.far_points), len(target.frequencies), 6)
-              for target, monitor in zip(targets, monitors)]
+    fields = [
+        np.asarray(
+            [sim.get_farfield(monitor, point) for point in target.far_points]
+        ).reshape(len(target.far_points), len(target.frequencies), 6)
+        for target, monitor in zip(targets, monitors)
+    ]
     error = None
     try:
         if any(not np.all(np.isfinite(f)) for f in fields):
-            raise ValueError("near-to-far fields must be finite; check far points and near surfaces")
-        values = np.asarray([float((fn or farfield_intensity)(f, dt))
-                             for fn, f in zip(fom_fns, fields)])
+            raise ValueError(
+                "near-to-far fields must be finite; check far points and near surfaces"
+            )
+        values = np.asarray(
+            [float((fn or farfield_intensity)(f, dt)) for fn, f in zip(fom_fns, fields)]
+        )
         if not np.all(np.isfinite(values)):
             raise ValueError("near-to-far objective values must be finite")
     except Exception as exc:
@@ -178,16 +231,30 @@ def farfield_values(sim, monitors, targets, fom_fns, dt):
     return fields, values
 
 
-def farfield_adjoint_sources(sim, monitors, targets, fields, fom_fns,
-                             adjoint_signal_fns, coefficients, actual_time, dt):
+def farfield_adjoint_sources(
+    sim,
+    monitors,
+    targets,
+    fields,
+    fom_fns,
+    adjoint_signal_fns,
+    coefficients,
+    actual_time,
+    dt,
+):
     covectors = []
     error = None
     try:
         for f, fn, adjoint_fn in zip(fields, fom_fns, adjoint_signal_fns):
-            covector = (grad(fn or farfield_intensity, 0)(f, dt) if adjoint_fn is None
-                        else np.asarray(adjoint_fn(f, dt)) * dt)
+            covector = (
+                grad(fn or farfield_intensity, 0)(f, dt)
+                if adjoint_fn is None
+                else np.asarray(adjoint_fn(f, dt)) * dt
+            )
             if covector.shape != f.shape:
-                raise ValueError("near-to-far adjoint_signal_fn must match far_fields shape")
+                raise ValueError(
+                    "near-to-far adjoint_signal_fn must match far_fields shape"
+                )
             if not np.all(np.isfinite(covector)):
                 raise ValueError("near-to-far adjoint covectors must be finite")
             covectors.append(covector)
@@ -196,15 +263,26 @@ def farfield_adjoint_sources(sim, monitors, targets, fields, fom_fns,
     # All local callbacks finish before any rank enters near_sourcedata collectives.
     _synchronize_callback_error(error)
     sources = []
-    for target, monitor, covector, coefficient in zip(targets, monitors, covectors, coefficients):
-        sources.extend(farfield_sources(sim, monitor, target, coefficient * covector,
-                                        actual_time))
+    for target, monitor, covector, coefficient in zip(
+        targets, monitors, covectors, coefficients
+    ):
+        sources.extend(
+            farfield_sources(sim, monitor, target, coefficient * covector, actual_time)
+        )
     return sources
 
 
-def evaluate_near2far(objective, x, need_gradient, forward_sources=(), *,
-                     targets=None, fom_fns=None, adjoint_signal_fns=None,
-                     scalarize=None):
+def evaluate_near2far(
+    objective,
+    x,
+    need_gradient,
+    forward_sources=(),
+    *,
+    targets=None,
+    fom_fns=None,
+    adjoint_signal_fns=None,
+    scalarize=None,
+):
     """Run the shared native design-history loop with a spectral target."""
     objective.update_design(x)
     sim = None
@@ -214,26 +292,43 @@ def evaluate_near2far(objective, x, need_gradient, forward_sources=(), *,
         multiple = targets is not None
         targets = tuple(targets) if multiple else (objective.objective,)
         fom_fns = tuple(fom_fns) if multiple else (objective.fom_fn,)
-        adjoint_signal_fns = (tuple(adjoint_signal_fns) if multiple
-                              else (objective.adjoint_signal_fn,))
-        monitors = add_near2far_monitors(sim, targets, objective.max_frequency,
-                                       chunk_layout=objective._simulation_spec.chunk_layout)
+        adjoint_signal_fns = (
+            tuple(adjoint_signal_fns) if multiple else (objective.adjoint_signal_fn,)
+        )
+        monitors = add_near2far_monitors(
+            sim,
+            targets,
+            objective.max_frequency,
+            chunk_layout=objective._simulation_spec.chunk_layout,
+        )
         sim.init_sim()
         dt = objective.time_step(sim)
         interval = objective._resolve_sampling_interval(dt)
         objective.last_sampling_interval = interval
-        run_until = _aligned_run_until(objective.t_final, dt=dt,
-                                       sampling_interval=interval)
+        run_until = _aligned_run_until(
+            objective.t_final, dt=dt, sampling_interval=interval
+        )
         if need_gradient:
-            components = _native_design_components(sim, objective.design,
-                                                     objective.gradient_components)
+            components = _native_design_components(
+                sim, objective.design, objective.gradient_components
+            )
             scale = _native_design_gradient_scale(sim, objective.design)
             dtype = history_storage_dtype(sim, objective.history_dtype)
-            history = _NativeDesignHistorySet(objective.design, components, dtype,
-                lambda shape: objective._make_history_memmap(shape, dtype=dtype))
+            history = _NativeDesignHistorySet(
+                objective.design,
+                components,
+                dtype,
+                lambda shape: objective._make_history_memmap(shape, dtype=dtype),
+            )
             fine_steps = _native_forward_step_count(sim, run_until, interval)
-            _, count, _, _ = _run_native_forward_loop(sim, (), history,
-                run_until=run_until, sampling_interval=interval, fine_step_count=fine_steps)
+            _, count, _, _ = _run_native_forward_loop(
+                sim,
+                (),
+                history,
+                run_until=run_until,
+                sampling_interval=interval,
+                fine_step_count=fine_steps,
+            )
             fields = history.finish_forward(count)
             history.release_forward()
         else:
@@ -241,16 +336,23 @@ def evaluate_near2far(objective, x, need_gradient, forward_sources=(), *,
         actual_time = sim.round_time()
         objective.last_actual_time = actual_time
         far_fields, values = farfield_values(sim, monitors, targets, fom_fns, dt)
-        objective.last_far_fields = (tuple(f.copy() for f in far_fields) if multiple
-                                     else far_fields[0].copy())
+        objective.last_far_fields = (
+            tuple(f.copy() for f in far_fields) if multiple else far_fields[0].copy()
+        )
         error = None
         try:
             if multiple:
-                value, coefficients, info = scalarize(values, need_gradient=need_gradient)
+                value, coefficients, info = scalarize(
+                    values, need_gradient=need_gradient
+                )
             else:
-                value, coefficients = float(values[0]), (1.,)
-            if not np.isfinite(value) or (need_gradient and not np.all(np.isfinite(coefficients))):
-                raise ValueError("near-to-far scalarization value and coefficients must be finite")
+                value, coefficients = float(values[0]), (1.0,)
+            if not np.isfinite(value) or (
+                need_gradient and not np.all(np.isfinite(coefficients))
+            ):
+                raise ValueError(
+                    "near-to-far scalarization value and coefficients must be finite"
+                )
         except Exception as exc:
             error = exc
         _synchronize_callback_error(error)
@@ -260,22 +362,41 @@ def evaluate_near2far(objective, x, need_gradient, forward_sources=(), *,
             objective.last_band_coeffs = coefficients
             objective.last_scalarization_info = info
             objective.last_total_fom = value
-            objective.last_smooth_min = info.get("smooth_min") if isinstance(info, dict) else None
+            objective.last_smooth_min = (
+                info.get("smooth_min") if isinstance(info, dict) else None
+            )
         if not need_gradient:
             return value, None
-        sources = farfield_adjoint_sources(sim, monitors, targets, far_fields, fom_fns,
-                                          adjoint_signal_fns, coefficients, actual_time, dt)
+        sources = farfield_adjoint_sources(
+            sim,
+            monitors,
+            targets,
+            far_fields,
+            fom_fns,
+            adjoint_signal_fns,
+            coefficients,
+            actual_time,
+            dt,
+        )
         # Keep the exact forward chunk/index ownership used by near_sourcedata.
         sim.restart_fields()
         sim.clear_dft_monitors()
         sim.change_sources(sources)
-        accumulator = _NativeDesignAccumulator(objective.design, components,
-                                               history.signatures, False)
-        _run_native_adjoint_loop(sim, accumulator, fields, fine_step_count=fine_steps,
-            actual_time=actual_time, dt=dt, sampling_interval=interval,
+        accumulator = _NativeDesignAccumulator(
+            objective.design, components, history.signatures, False
+        )
+        _run_native_adjoint_loop(
+            sim,
+            accumulator,
+            fields,
+            fine_step_count=fine_steps,
+            actual_time=actual_time,
+            dt=dt,
+            sampling_interval=interval,
             reconstruction_half_width=objective.reconstruction_half_width,
             reconstruction_window=objective.reconstruction_window,
-            reconstruction_window_params=objective.reconstruction_window_params)
+            reconstruction_window_params=objective.reconstruction_window_params,
+        )
         gradient = accumulator.reduce().real.ravel() * dt * scale
         return value, gradient
     finally:

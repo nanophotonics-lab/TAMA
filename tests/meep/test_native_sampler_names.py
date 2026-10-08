@@ -2,7 +2,6 @@ from pathlib import Path
 import importlib
 from unittest.mock import patch
 
-
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src" / "tama" / "backends" / "meep"
 NATIVE = ROOT / "native" / "meep"
@@ -20,7 +19,9 @@ def test_native_sampler_import_guard_raises_clear_missing_extension_error():
         except ImportError as exc:
             message = str(exc)
         else:
-            raise AssertionError("expected native sampler import guard to raise ImportError")
+            raise AssertionError(
+                "expected native sampler import guard to raise ImportError"
+            )
 
     assert "native sampler extension is not built" in message
     assert "fastmeep_sample" not in message

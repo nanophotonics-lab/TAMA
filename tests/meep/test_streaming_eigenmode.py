@@ -18,10 +18,7 @@ from tama.sampling_grid import FastPointMonitor
 def _complex_positive_power_mode(normal, rng, n_points):
     mode_fields = {}
     for electric, magnetic, sign in flux_component_pairs(normal):
-        values = (
-            rng.standard_normal(n_points)
-            + 1j * rng.standard_normal(n_points)
-        )
+        values = rng.standard_normal(n_points) + 1j * rng.standard_normal(n_points)
         mode_fields[electric] = values
         mode_fields[magnetic] = sign * values
     return mode_fields
@@ -43,15 +40,11 @@ def _dense_coefficient_reference(
     normal,
     spatial_weights,
 ):
-    normalization = 1.0 / np.sqrt(
-        abs(mode_power(mode_fields, normal, spatial_weights))
-    )
+    normalization = 1.0 / np.sqrt(abs(mode_power(mode_fields, normal, spatial_weights)))
     n_samples = next(iter(histories.values())).shape[0]
     coefficient = np.zeros(n_samples - 1, dtype=np.complex128)
     for electric, magnetic, sign in flux_component_pairs(normal):
-        centered_magnetic = 0.5 * (
-            histories[magnetic][:-1] + histories[magnetic][1:]
-        )
+        centered_magnetic = 0.5 * (histories[magnetic][:-1] + histories[magnetic][1:])
         coefficient += (
             0.5
             * normalization
@@ -59,10 +52,8 @@ def _dense_coefficient_reference(
             * np.sum(
                 spatial_weights
                 * (
-                    histories[electric][:-1]
-                    * np.conjugate(mode_fields[magnetic])
-                    + np.conjugate(mode_fields[electric])
-                    * centered_magnetic
+                    histories[electric][:-1] * np.conjugate(mode_fields[magnetic])
+                    + np.conjugate(mode_fields[electric]) * centered_magnetic
                 ),
                 axis=1,
             )
@@ -77,9 +68,7 @@ def _dense_pullback_reference(
     coefficient_covector,
     sample_count,
 ):
-    normalization = 1.0 / np.sqrt(
-        abs(mode_power(mode_fields, normal, spatial_weights))
-    )
+    normalization = 1.0 / np.sqrt(abs(mode_power(mode_fields, normal, spatial_weights)))
     n_points = len(spatial_weights)
     pulled_back = {
         component: np.zeros(
@@ -90,16 +79,8 @@ def _dense_pullback_reference(
     }
     time_covector = coefficient_covector[:, np.newaxis]
     for electric, magnetic, sign in flux_component_pairs(normal):
-        common = (
-            0.5
-            * normalization
-            * sign
-            * time_covector
-            * spatial_weights
-        )
-        pulled_back[electric][:-1] += common * np.conjugate(
-            mode_fields[magnetic]
-        )
+        common = 0.5 * normalization * sign * time_covector * spatial_weights
+        pulled_back[electric][:-1] += common * np.conjugate(mode_fields[magnetic])
         centered_magnetic = common * np.conjugate(mode_fields[electric])
         pulled_back[magnetic][:-1] += 0.5 * centered_magnetic
         pulled_back[magnetic][1:] += 0.5 * centered_magnetic
@@ -197,10 +178,9 @@ def test_contracted_pullback_matches_dense_projection_pullback():
         component: rng.standard_normal((n_samples, n_points))
         for component in mode_fields
     }
-    coefficient_covector = (
-        rng.standard_normal(n_samples - 1)
-        + 1j * rng.standard_normal(n_samples - 1)
-    )
+    coefficient_covector = rng.standard_normal(
+        n_samples - 1
+    ) + 1j * rng.standard_normal(n_samples - 1)
     electric_weights, magnetic_weights = _coefficient_projection_weights(
         mode_fields,
         normal,
@@ -347,9 +327,7 @@ def test_native_overlap_monitor_matches_real_raw_history_with_complex_mode():
         assert local_overlaps.shape[0] >= 2
         overlap_history = overlap_monitor.reduce_history(local_overlaps)
         histories = {
-            component: monitor.reduce_history(
-                np.asarray(local_history_rows[component])
-            )
+            component: monitor.reduce_history(np.asarray(local_history_rows[component]))
             for component, monitor in raw_monitors.items()
         }
 

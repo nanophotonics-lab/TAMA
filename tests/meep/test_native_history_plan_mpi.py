@@ -38,16 +38,18 @@ def test_configured_history_path_matches_legacy_native_path_exactly():
         mp.Vector3(0.47, -0.33),
         mp.Vector3(-0.19, 0.51),
     ]
-    legacy_monitors = np.asarray([
-        sim.get_field_point(mp.Ez, position) for position in monitor_positions
-    ])
+    legacy_monitors = np.asarray(
+        [sim.get_field_point(mp.Ez, position) for position in monitor_positions]
+    )
     packed_monitors = FastPointMonitor(sim, mp.Ez, monitor_positions).sample()
     assert np.array_equal(packed_monitors, legacy_monitors)
 
     call_counts = {"local": 0, "reduced": 0, "immediate": 0}
     original_local = sampling_grid.native_sampler.sample_component_point_plan_local_into
     original_reduce = sampling_grid.native_sampler.reduce_complex_grid_sum_inplace
-    original_immediate = sampling_grid.native_sampler.sample_component_point_plan_allreduced
+    original_immediate = (
+        sampling_grid.native_sampler.sample_component_point_plan_allreduced
+    )
 
     def counted_local(plan, destination):
         call_counts["local"] += 1
@@ -62,18 +64,28 @@ def test_configured_history_path_matches_legacy_native_path_exactly():
         return original_immediate(plan)
 
     try:
-        sampling_grid.native_sampler.sample_component_point_plan_local_into = counted_local
+        sampling_grid.native_sampler.sample_component_point_plan_local_into = (
+            counted_local
+        )
         sampling_grid.native_sampler.reduce_complex_grid_sum_inplace = counted_reduce
-        sampling_grid.native_sampler.sample_component_point_plan_allreduced = counted_immediate
+        sampling_grid.native_sampler.sample_component_point_plan_allreduced = (
+            counted_immediate
+        )
         deferred_monitor = FastPointMonitor(sim, mp.Ez, monitor_positions)
-        local_monitor_history = np.empty((3, len(monitor_positions)), dtype=np.complex128)
+        local_monitor_history = np.empty(
+            (3, len(monitor_positions)), dtype=np.complex128
+        )
         for row in local_monitor_history:
             deferred_monitor.sample_history_into(row)
         reduced_monitor_history = deferred_monitor.reduce_history(local_monitor_history)
     finally:
-        sampling_grid.native_sampler.sample_component_point_plan_local_into = original_local
+        sampling_grid.native_sampler.sample_component_point_plan_local_into = (
+            original_local
+        )
         sampling_grid.native_sampler.reduce_complex_grid_sum_inplace = original_reduce
-        sampling_grid.native_sampler.sample_component_point_plan_allreduced = original_immediate
+        sampling_grid.native_sampler.sample_component_point_plan_allreduced = (
+            original_immediate
+        )
 
     assert deferred_monitor.ensure_plan() is not None
     assert call_counts == {"local": 3, "reduced": 1, "immediate": 0}

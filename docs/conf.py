@@ -2,7 +2,6 @@ import os
 from pathlib import Path
 import tomllib
 
-
 ROOT = Path(__file__).resolve().parents[1]
 METADATA = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
     "project"

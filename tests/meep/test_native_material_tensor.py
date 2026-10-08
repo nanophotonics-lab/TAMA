@@ -23,19 +23,29 @@ def _rotated_medium(eigenvalues, angles):
 
 def _make_problem(case, *, sampling_interval=1, split=False, reuse_simulation=False):
     three_d = case in (
-        "tensor_3d", "tensor_3d_singleton", "smooth_3d", "smooth_3d_singleton",
+        "tensor_3d",
+        "tensor_3d_singleton",
+        "smooth_3d",
+        "smooth_3d_singleton",
     )
     resolution = 10 if three_d else 14
     # Near-cancelling singleton direction: 1.04% error at 0.25, 0.224% at 0.125.
     courant = 0.125 if case == "smooth_3d_singleton" else 0.25
-    shape = (3, 3, 1) if case.endswith("3d_singleton") else (3, 3, 3) if three_d else (4, 5)
+    shape = (
+        (3, 3, 1) if case.endswith("3d_singleton") else (3, 3, 3) if three_d else (4, 5)
+    )
     center = mp.Vector3(0.027, -0.031, 0.019 if three_d else 0)
     size = mp.Vector3(0.64, 0.58, 0.48 if three_d else 0)
     medium1, medium2 = mp.Medium(epsilon=1.0), mp.Medium(epsilon=4.0)
     component = mp.Hz if case in ("tensor_hz", "smooth_hz") else mp.Ez
     do_averaging = case in (
-        "smooth_ez", "smooth_hz", "tensor_3d", "tensor_3d_singleton", "tensor_xz_2d",
-        "smooth_3d", "smooth_3d_singleton",
+        "smooth_ez",
+        "smooth_hz",
+        "tensor_3d",
+        "tensor_3d_singleton",
+        "tensor_xz_2d",
+        "smooth_3d",
+        "smooth_3d_singleton",
     )
     beta = 32 if case == "smooth_ez" else 8 if do_averaging else 0
     if case == "tensor_hz":
@@ -45,31 +55,47 @@ def _make_problem(case, *, sampling_interval=1, split=False, reuse_simulation=Fa
         medium1 = _rotated_medium((1.3, 1.7, 2.1), (0.2, -0.3, 0.4))
         medium2 = _rotated_medium((3.0, 4.2, 5.1), (-0.4, 0.5, -0.2))
     material_grid = mp.MaterialGrid(
-        mp.Vector3(*shape), medium1, medium2,
-        do_averaging=do_averaging, beta=beta,
+        mp.Vector3(*shape),
+        medium1,
+        medium2,
+        do_averaging=do_averaging,
+        beta=beta,
         eta=0.42 if case in ("smooth_ez", "smooth_3d", "smooth_3d_singleton") else 0.5,
     )
     design = tm.DesignGrid(
-        material_grid=material_grid, center=center, size=size, shape=shape,
-        background=medium1, design_material=medium2,
+        material_grid=material_grid,
+        center=center,
+        size=size,
+        shape=shape,
+        background=medium1,
+        design_material=medium2,
     )
     geometry = [mp.Block(center=center, size=size, material=material_grid)]
     if case in ("fixed_geometry", "fixed_tensor"):
-        geometry.append(mp.Cylinder(
-            radius=0.19, center=mp.Vector3(0.58, -0.36),
-            material=(
-                _rotated_medium((2.0, 3.0, 4.0), (0.3, -0.4, 0.2))
-                if case == "fixed_tensor" else mp.Medium(epsilon=3.0)
-            ),
-        ))
+        geometry.append(
+            mp.Cylinder(
+                radius=0.19,
+                center=mp.Vector3(0.58, -0.36),
+                material=(
+                    _rotated_medium((2.0, 3.0, 4.0), (0.3, -0.4, 0.2))
+                    if case == "fixed_tensor"
+                    else mp.Medium(epsilon=3.0)
+                ),
+            )
+        )
     simulation = tm.SimulationSpec(
         cell_size=mp.Vector3(2.6, 2.4, 2.0 if three_d else 0),
-        boundary_layers=[mp.PML(0.35)], geometry=geometry,
-        sources=[mp.Source(
-            mp.GaussianSource(frequency=0.7, fwidth=0.5), component=component,
-            center=mp.Vector3(-0.84, -0.17, 0.09 if three_d else 0),
-        )],
-        resolution=resolution, courant=courant,
+        boundary_layers=[mp.PML(0.35)],
+        geometry=geometry,
+        sources=[
+            mp.Source(
+                mp.GaussianSource(frequency=0.7, fwidth=0.5),
+                component=component,
+                center=mp.Vector3(-0.84, -0.17, 0.09 if three_d else 0),
+            )
+        ],
+        resolution=resolution,
+        courant=courant,
         dimensions=3 if three_d else 2,
         eps_averaging=case not in ("tensor_hz", "fixed_tensor"),
         chunk_layout=mp.BinaryPartition(data=[(mp.X, 0.0), 0, 1]) if split else None,
@@ -79,14 +105,22 @@ def _make_problem(case, *, sampling_interval=1, split=False, reuse_simulation=Fa
         component=component,
     )
     common = dict(
-        design=design, simulation=simulation, t_final=24.0,
-        dt=courant / resolution, sampling_interval=sampling_interval,
-        chunk_balancer=None, reuse_simulation=reuse_simulation,
+        design=design,
+        simulation=simulation,
+        t_final=24.0,
+        dt=courant / resolution,
+        sampling_interval=sampling_interval,
+        chunk_balancer=None,
+        reuse_simulation=reuse_simulation,
     )
     if case == "tensor_hz":
         return tm.MultiTDAObjective(
-            targets=[target], wavelength_bands=[(1.1, 2.0)],
-            weights=[1.0], kernel_length=31, pixel_chunk="auto", **common,
+            targets=[target],
+            wavelength_bands=[(1.1, 2.0)],
+            weights=[1.0],
+            kernel_length=31,
+            pixel_chunk="auto",
+            **common,
         )
     return tm.TDAObjective(target=target, **common)
 
@@ -104,7 +138,10 @@ def _check_directional_derivative(objective):
     value, gradient = objective.fom_and_grad(weights)
     adjoint = float(np.asarray(gradient).ravel() @ direction)
     differences = [
-        (objective.fom(weights + h * direction) - objective.fom(weights - h * direction))
+        (
+            objective.fom(weights + h * direction)
+            - objective.fom(weights - h * direction)
+        )
         / (2 * h)
         for h in (2e-4, 1e-4)
     ]
@@ -116,11 +153,21 @@ def _check_directional_derivative(objective):
     np.testing.assert_allclose(adjoint, differences[-1], rtol=0.005, atol=1e-10)
 
 
-@pytest.mark.parametrize("case", [
-    "smooth_ez", "smooth_hz", "tensor_hz", "tensor_3d", "tensor_3d_singleton",
-    "tensor_xz_2d", "fixed_geometry", "fixed_tensor",
-    "smooth_3d", "smooth_3d_singleton",
-])
+@pytest.mark.parametrize(
+    "case",
+    [
+        "smooth_ez",
+        "smooth_hz",
+        "tensor_hz",
+        "tensor_3d",
+        "tensor_3d_singleton",
+        "tensor_xz_2d",
+        "fixed_geometry",
+        "fixed_tensor",
+        "smooth_3d",
+        "smooth_3d_singleton",
+    ],
+)
 def test_material_tensor_gradient_matches_two_step_directional_fd(case):
     mp.verbosity(0)
     objective = _make_problem(case)
@@ -145,30 +192,50 @@ def test_averaged_tensor_sparse_history_matches_dense():
     weights, _ = _design_and_direction(dense)
     dense_value, dense_gradient = dense.fom_and_grad(weights)
     sparse_value, sparse_gradient = sparse.fom_and_grad(weights)
-    print("sparse/dense relative gradient error:",
-          np.linalg.norm(sparse_gradient - dense_gradient) / np.linalg.norm(dense_gradient))
+    print(
+        "sparse/dense relative gradient error:",
+        np.linalg.norm(sparse_gradient - dense_gradient)
+        / np.linalg.norm(dense_gradient),
+    )
     assert sparse.last_sampling_interval == 2
     np.testing.assert_allclose(sparse_value, dense_value, rtol=1e-12, atol=1e-12)
     np.testing.assert_allclose(sparse_gradient, dense_gradient, rtol=0.005, atol=1e-8)
 
 
 def _inverse_tensor_field(
-    medium1, medium2, *, do_averaging=True, eps_averaging=True, mode="tama", weights=None,
-    beta=16, eta=0.5,
+    medium1,
+    medium2,
+    *,
+    do_averaging=True,
+    eps_averaging=True,
+    mode="tama",
+    weights=None,
+    beta=16,
+    eta=0.5,
 ):
     if weights is None:
         weights = np.linspace(0.1, 0.9, 9).reshape(3, 3)
     grid = mp.MaterialGrid(
-        mp.Vector3(3, 3), medium1, medium2, weights=weights,
-        do_averaging=do_averaging, beta=beta, eta=eta,
+        mp.Vector3(3, 3),
+        medium1,
+        medium2,
+        weights=weights,
+        do_averaging=do_averaging,
+        beta=beta,
+        eta=eta,
     )
     design = tm.DesignGrid(
-        material_grid=grid, center=mp.Vector3(0.027, -0.031),
-        size=mp.Vector3(1.2, 1.2), shape=(3, 3),
-        background=medium1, design_material=medium2,
+        material_grid=grid,
+        center=mp.Vector3(0.027, -0.031),
+        size=mp.Vector3(1.2, 1.2),
+        shape=(3, 3),
+        background=medium1,
+        design_material=medium2,
     )
     sim = mp.Simulation(
-        cell_size=mp.Vector3(2, 2), resolution=20, force_all_components=True,
+        cell_size=mp.Vector3(2, 2),
+        resolution=20,
+        force_all_components=True,
         geometry=[mp.Block(center=design.center, size=design.size, material=grid)],
         eps_averaging=eps_averaging,
     )
@@ -182,16 +249,26 @@ def _inverse_tensor_field(
 
             sim._init_structure(sim.k_point)
             native_sampler.configure_native_material_operator(
-                int(sim.structure.this), int(sim.geps.this), eps_averaging,
-                sim.subpixel_tol, sim.subpixel_maxeval,
+                int(sim.structure.this),
+                int(sim.geps.this),
+                eps_averaging,
+                sim.subpixel_tol,
+                sim.subpixel_maxeval,
             )
         sim.init_sim()
-        return np.asarray([
-            [[sim.fields.get_chi1inv(c, d, mp.vec(x, y))
-              for d in (mp.X, mp.Y, mp.Z)] for c in (mp.Ex, mp.Ey, mp.Ez)]
-            for x in np.linspace(-0.2, 0.2, 5)
-            for y in np.linspace(-0.2, 0.2, 5)
-        ])
+        return np.asarray(
+            [
+                [
+                    [
+                        sim.fields.get_chi1inv(c, d, mp.vec(x, y))
+                        for d in (mp.X, mp.Y, mp.Z)
+                    ]
+                    for c in (mp.Ex, mp.Ey, mp.Ez)
+                ]
+                for x in np.linspace(-0.2, 0.2, 5)
+                for y in np.linspace(-0.2, 0.2, 5)
+            ]
+        )
     finally:
         sim.reset_meep()
 
@@ -221,7 +298,10 @@ def test_global_eps_averaging_disables_material_grid_tensor_averaging():
     medium2 = _rotated_medium((3.0, 4.2, 5.1), (-0.4, 0.5, -0.2))
     globally_disabled = _inverse_tensor_field(medium1, medium2, eps_averaging=False)
     both_disabled = _inverse_tensor_field(
-        medium1, medium2, do_averaging=False, eps_averaging=False,
+        medium1,
+        medium2,
+        do_averaging=False,
+        eps_averaging=False,
     )
     np.testing.assert_allclose(globally_disabled, both_disabled, rtol=1e-12, atol=1e-12)
 
@@ -232,7 +312,9 @@ def test_anisotropic_averaging_preserves_constant_weights():
     medium2 = _rotated_medium((3.0, 4.2, 5.1), (-0.4, 0.5, -0.2))
     weights = np.full((3, 3), 0.37)
     averaged = _inverse_tensor_field(medium1, medium2, weights=weights)
-    unaveraged = _inverse_tensor_field(medium1, medium2, do_averaging=False, weights=weights)
+    unaveraged = _inverse_tensor_field(
+        medium1, medium2, do_averaging=False, weights=weights
+    )
     np.testing.assert_allclose(averaged, unaveraged, rtol=1e-12, atol=1e-12)
 
 
@@ -250,9 +332,15 @@ def test_anisotropic_projection_at_noncentral_eta_is_continuous_and_normalized()
         )
         expected = np.linalg.inv((1 - projected) * tensors[0] + projected * tensors[1])
         actual = _inverse_tensor_field(
-            medium1, medium2, weights=np.full((3, 3), value), beta=2, eta=0.3,
+            medium1,
+            medium2,
+            weights=np.full((3, 3), value),
+            beta=2,
+            eta=0.3,
         )
-        np.testing.assert_allclose(actual, np.broadcast_to(expected, actual.shape), rtol=1e-11)
+        np.testing.assert_allclose(
+            actual, np.broadcast_to(expected, actual.shape), rtol=1e-11
+        )
 
 
 def test_tensor_averaging_reduces_to_meep_isotropic_operator():
@@ -276,15 +364,20 @@ def test_hard_projection_away_from_threshold_has_zero_gradient():
     mp.verbosity(0)
     objective = _make_problem("fixed_geometry")
     objective.design.material_grid.beta = np.inf
-    value, gradient = objective.fom_and_grad(np.full(int(np.prod(objective.design.shape)), 0.2))
+    value, gradient = objective.fom_and_grad(
+        np.full(int(np.prod(objective.design.shape)), 0.2)
+    )
     assert np.isfinite(value)
     np.testing.assert_array_equal(gradient, np.zeros_like(gradient))
 
 
-@pytest.mark.parametrize("beta, eta, message", [
-    (np.inf, 0.5, "beta=inf projection threshold"),
-    (2.0, 0.3, "asymmetric projection threshold"),
-])
+@pytest.mark.parametrize(
+    "beta, eta, message",
+    [
+        (np.inf, 0.5, "beta=inf projection threshold"),
+        (2.0, 0.3, "asymmetric projection threshold"),
+    ],
+)
 def test_projection_threshold_rejects_undefined_gradient(beta, eta, message):
     mp.verbosity(0)
     objective = _make_problem("fixed_geometry")
@@ -317,14 +410,20 @@ def test_tensor_gradient_requires_half_cell_clearance_from_pml():
         objective.fom_and_grad(weights)
 
 
-@pytest.mark.parametrize("eps_averaging, do_averaging, requested, expected", [
-    (True, True, 1e-4, 1e-8),
-    (True, True, 1e-10, 1e-10),
-    (True, False, 1e-4, 1e-4),
-    (False, True, 1e-4, 1e-4),
-])
+@pytest.mark.parametrize(
+    "eps_averaging, do_averaging, requested, expected",
+    [
+        (True, True, 1e-4, 1e-8),
+        (True, True, 1e-10, 1e-10),
+        (True, False, 1e-4, 1e-4),
+        (False, True, 1e-4, 1e-4),
+    ],
+)
 def test_averaging_quadrature_tolerance_cap_preserves_stricter_values(
-    eps_averaging, do_averaging, requested, expected,
+    eps_averaging,
+    do_averaging,
+    requested,
+    expected,
 ):
     from tama.backends.meep.sampling_grid import _prepare_native_material
 

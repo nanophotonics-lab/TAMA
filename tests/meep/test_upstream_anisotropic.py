@@ -31,33 +31,50 @@ def _problem(averaging):
         epsilon_offdiag=(-0.825, -0.55 * np.sqrt(1.5), 0.55 * np.sqrt(1.5)),
     )
     grid = mp.MaterialGrid(
-        mp.Vector3(91, 91), mp.air, sapphire,
-        weights=np.ones((91, 91)), do_averaging=averaging,
+        mp.Vector3(91, 91),
+        mp.air,
+        sapphire,
+        weights=np.ones((91, 91)),
+        do_averaging=averaging,
         beta=8 if averaging else 0,
     )
     design = tm.DesignGrid(
-        material_grid=grid, center=mp.Vector3(), size=mp.Vector3(1.5, 1.5),
-        shape=(91, 91), background=mp.air, design_material=sapphire,
+        material_grid=grid,
+        center=mp.Vector3(),
+        size=mp.Vector3(1.5, 1.5),
+        shape=(91, 91),
+        background=mp.air,
+        design_material=sapphire,
     )
     fcen = 1 / 1.55
     simulation = tm.SimulationSpec(
-        cell_size=mp.Vector3(5, 5), boundary_layers=[mp.PML(1)],
+        cell_size=mp.Vector3(5, 5),
+        boundary_layers=[mp.PML(1)],
         geometry=[
-            mp.Block(size=mp.Vector3(mp.inf, 1, mp.inf),
-                     material=mp.Medium(epsilon=12)),
+            mp.Block(
+                size=mp.Vector3(mp.inf, 1, mp.inf), material=mp.Medium(epsilon=12)
+            ),
             mp.Block(center=design.center, size=design.size, material=grid),
         ],
-        sources=[mp.EigenModeSource(
-            src=mp.GaussianSource(fcen, fwidth=0.2 * fcen),
-            center=mp.Vector3(-1.5, 0), size=mp.Vector3(0, 3),
-            eig_parity=mp.EVEN_Y + mp.ODD_Z,
-        )],
-        resolution=30, courant=0.5, eps_averaging=True,
+        sources=[
+            mp.EigenModeSource(
+                src=mp.GaussianSource(fcen, fwidth=0.2 * fcen),
+                center=mp.Vector3(-1.5, 0),
+                size=mp.Vector3(0, 3),
+                eig_parity=mp.EVEN_Y + mp.ODD_Z,
+            )
+        ],
+        resolution=30,
+        courant=0.5,
+        eps_averaging=True,
     )
     return tm.TDAObjective(
-        design=design, simulation=simulation,
+        design=design,
+        simulation=simulation,
         target=tm.PointTarget(position=mp.Vector3(1.5, 0), component=mp.Ez),
-        t_final=120, dt=0.5 / 30, sampling_interval=2,
+        t_final=120,
+        dt=0.5 / 30,
+        sampling_interval=2,
         chunk_balancer=None,
     )
 
@@ -87,26 +104,40 @@ def test_upstream_offdiagonal_fixture_tama_gradient(averaging, monkeypatch):
     raw_gradient = tensor_jacobian_product(_filter, 0)(density, gradient)
     adjoint = float(perturbation @ raw_gradient)
     finite_differences = [
-        (objective.fom(_filter(density + scale * perturbation))
-         - objective.fom(_filter(density - scale * perturbation))) / (2 * scale)
+        (
+            objective.fom(_filter(density + scale * perturbation))
+            - objective.fom(_filter(density - scale * perturbation))
+        )
+        / (2 * scale)
         for scale in (1.0, 0.5)
     ]
     denominator = max(abs(adjoint), abs(finite_differences[-1]))
     error = abs(adjoint - finite_differences[-1]) / denominator
     if mp.am_master():
-        print(json.dumps(dict(
-            fixture="meep-1.34-offdiagonal", averaging=averaging,
-            value=float(value), adjoint=adjoint, central_fd=finite_differences,
-            relative_error=error, material_operator_installations=len(configured),
-        ), sort_keys=True))
+        print(
+            json.dumps(
+                dict(
+                    fixture="meep-1.34-offdiagonal",
+                    averaging=averaging,
+                    value=float(value),
+                    adjoint=adjoint,
+                    central_fd=finite_differences,
+                    relative_error=error,
+                    material_operator_installations=len(configured),
+                ),
+                sort_keys=True,
+            )
+        )
     assert np.isfinite(value) and np.all(np.isfinite(gradient))
     assert denominator > 1e-10
     if averaging:
         assert configured, "test must exercise TAMA's tensor averaging operator"
-        assert all(enabled and tolerance <= 1e-8
-                   for enabled, tolerance, _ in configured)
+        assert all(
+            enabled and tolerance <= 1e-8 for enabled, tolerance, _ in configured
+        )
     else:
         assert not configured
-    np.testing.assert_allclose(finite_differences[0], finite_differences[1],
-                               rtol=0.001, atol=1e-12)
+    np.testing.assert_allclose(
+        finite_differences[0], finite_differences[1], rtol=0.001, atol=1e-12
+    )
     assert error <= 0.002

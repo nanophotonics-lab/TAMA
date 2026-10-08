@@ -67,9 +67,7 @@ def _make_3d_problem(
     adjoint_source_size = mp.Vector3()
     adjoint_source_amplitude = 1.0
     resolved_target_position = (
-        mp.Vector3(0.71, 0.23, -0.13)
-        if target_position is None
-        else target_position
+        mp.Vector3(0.71, 0.23, -0.13) if target_position is None else target_position
     )
     target_positions = (
         resolved_target_position + mp.Vector3(0.0, -0.11, 0.07),
@@ -87,26 +85,29 @@ def _make_3d_problem(
             spatial_weights=(0.8, 1.2),
         )
         if eigenmode_target
-        else
-        tm.FluxTarget(
-            positions=target_positions,
-            normal=mp.Vector3(1.0),
-            spatial_weights=(0.8, 1.2),
-        )
-        if flux_target
-        else tm.FieldRegionTarget(
-            positions=target_positions,
-            component=component,
-            sample_shape=(2,),
-            spatial_weights=(0.8, 1.2),
-            adjoint_source_amplitude=adjoint_source_amplitude,
-        )
-        if regional_target
-        else tm.PointTarget(
-            position=resolved_target_position,
-            component=component,
-            adjoint_source_size=adjoint_source_size,
-            adjoint_source_amplitude=adjoint_source_amplitude,
+        else (
+            tm.FluxTarget(
+                positions=target_positions,
+                normal=mp.Vector3(1.0),
+                spatial_weights=(0.8, 1.2),
+            )
+            if flux_target
+            else (
+                tm.FieldRegionTarget(
+                    positions=target_positions,
+                    component=component,
+                    sample_shape=(2,),
+                    spatial_weights=(0.8, 1.2),
+                    adjoint_source_amplitude=adjoint_source_amplitude,
+                )
+                if regional_target
+                else tm.PointTarget(
+                    position=resolved_target_position,
+                    component=component,
+                    adjoint_source_size=adjoint_source_size,
+                    adjoint_source_amplitude=adjoint_source_amplitude,
+                )
+            )
         )
     )
     common = dict(
@@ -164,9 +165,7 @@ def _make_3d_gamma_periodic_multi_problem(
     simulation = tm.SimulationSpec(
         cell_size=cell_size,
         boundary_layers=[mp.PML(0.3, direction=mp.Z)],
-        geometry=[
-            mp.Block(center=center, size=size, material=material_grid)
-        ],
+        geometry=[mp.Block(center=center, size=size, material=material_grid)],
         sources=[
             mp.Source(
                 mp.GaussianSource(frequency=0.7, fwidth=0.5),
@@ -448,7 +447,8 @@ def test_native_3d_gamma_periodic_full_cell_rgb_flux_matches_directional_fd():
             (
                 objective.fom(design + step * direction)
                 - objective.fom(design - step * direction)
-            ) / (2.0 * step)
+            )
+            / (2.0 * step)
         )
     finite_difference = finite_differences[-1]
     relative_error = abs(adjoint_derivative - finite_difference) / max(
@@ -508,7 +508,9 @@ def test_native_3d_full_vector_gradient_matches_directional_finite_difference(
         - objective.fom(design - step * direction)
     ) / (2.0 * step)
     adjoint_derivative = float(gradient @ direction)
-    relative_error = abs(adjoint_derivative - finite_difference) / abs(finite_difference)
+    relative_error = abs(adjoint_derivative - finite_difference) / abs(
+        finite_difference
+    )
 
     assert objective.gradient_components == (mp.Ex, mp.Ey, mp.Ez)
     assert np.sign(adjoint_derivative) == np.sign(finite_difference)

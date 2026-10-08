@@ -39,7 +39,11 @@ from tama.backends.meep.sampling_grid import (
     ],
 )
 def test_material_endpoints_rejected_before_meep_initialization(
-    monkeypatch, endpoint, attribute, value, message,
+    monkeypatch,
+    endpoint,
+    attribute,
+    value,
+    message,
 ):
     grid = mp.MaterialGrid(
         mp.Vector3(2, 2),
@@ -110,14 +114,17 @@ def test_native_method_boundary_translates_cpp_allocation_failure():
 
 
 def test_native_design_flat_index_uses_checked_size_t_arithmetic():
-    assert native_sampler._native_design_flat_index_for_testing(
-        50_000,
-        50_000,
-        2,
-        49_999,
-        49_999,
-        1,
-    ) == 4_999_999_999
+    assert (
+        native_sampler._native_design_flat_index_for_testing(
+            50_000,
+            50_000,
+            2,
+            49_999,
+            49_999,
+            1,
+        )
+        == 4_999_999_999
+    )
 
     with pytest.raises(OverflowError, match="out of range or overflows"):
         native_sampler._native_design_flat_index_for_testing(
@@ -132,13 +139,11 @@ def test_native_design_flat_index_uses_checked_size_t_arithmetic():
 
 def test_complex_mpi_double_count_checks_the_expanded_count():
     int_max = np.iinfo(np.int32).max
-    assert native_sampler._complex_mpi_double_count_for_testing(
+    assert native_sampler._complex_mpi_double_count_for_testing(int_max // 2) == 2 * (
         int_max // 2
-    ) == 2 * (int_max // 2)
+    )
     with pytest.raises(OverflowError, match="MPI_DOUBLE"):
-        native_sampler._complex_mpi_double_count_for_testing(
-            int_max // 2 + 1
-        )
+        native_sampler._complex_mpi_double_count_for_testing(int_max // 2 + 1)
 
 
 def test_native_plan_capsules_use_tama_qualified_names():
@@ -251,9 +256,7 @@ def test_tabulated_cubic_types_require_factory_construction():
         breaks,
         real_coefficients,
     )
-    assert tuple(source(0.5) for source in real_sources) == pytest.approx(
-        (1.5, -2.0)
-    )
+    assert tuple(source(0.5) for source in real_sources) == pytest.approx((1.5, -2.0))
 
 
 @pytest.mark.parametrize("complex_values", [False, True])
@@ -270,13 +273,15 @@ def test_tabulated_bspline_bank_matches_scipy_and_shift(complex_values):
         else native_sampler.create_tabulated_real_bspline_bank
     )
     sources = factory(spline.t, spline.c)
-    query = np.unique(np.concatenate((
-        times,
-        np.linspace(times[0], times[-1], 1001),
-    )))
-    actual = np.column_stack(
-        [[source(time) for time in query] for source in sources]
+    query = np.unique(
+        np.concatenate(
+            (
+                times,
+                np.linspace(times[0], times[-1], 1001),
+            )
+        )
     )
+    actual = np.column_stack([[source(time) for time in query] for source in sources])
     reference = spi.CubicSpline(
         times,
         values,
@@ -314,13 +319,17 @@ def test_tabulated_bspline_bank_matches_scipy_and_shift(complex_values):
 @pytest.mark.parametrize("compact", [False, True])
 @pytest.mark.parametrize("magnetic", [False, True])
 def test_tabulated_source_preserves_rounded_yee_endpoint(
-    complex_values, compact, magnetic,
+    complex_values,
+    compact,
+    magnetic,
 ):
     dt = 1.0 / 24.0
     final_time = 12.0
     shift = 0.5 * dt if magnetic else 0.0
     times = (final_time + 0.5 * dt) - np.linspace(
-        0.0, final_time, 5 if compact else 3,
+        0.0,
+        final_time,
+        5 if compact else 3,
     )[::-1]
     values = np.arange(1.0, times.size + 1.0)
     if complex_values:
@@ -340,7 +349,8 @@ def test_tabulated_source_preserves_rounded_yee_endpoint(
             native_sampler.create_tabulated_cubic(spline.x, spline.c)
             if complex_values
             else native_sampler.create_tabulated_real_cubic_bank(
-                spline.x, spline.c[:, :, None],
+                spline.x,
+                spline.c[:, :, None],
             )[0]
         )
 
@@ -385,12 +395,14 @@ def test_tabulated_bspline_shift_retains_shared_arrays():
 def test_tabulated_bspline_composed_shift_preserves_exact_endpoints(
     complex_values,
 ):
-    times = np.array([
-        0.13372910821753037,
-        0.17461611,
-        0.24417265,
-        0.24853221264216468,
-    ])
+    times = np.array(
+        [
+            0.13372910821753037,
+            0.17461611,
+            0.24417265,
+            0.24853221264216468,
+        ]
+    )
     values = np.array([2.0, 3.0, 4.0, 5.0])[:, np.newaxis]
     if complex_values:
         values = values.astype(np.complex128) * (1.0 + 0.25j)
@@ -459,11 +471,9 @@ def test_tabulated_cubic_factories_release_heap_type_references():
             bspline_knots,
             complex_bspline_coefficients,
         )
-        real_bspline_sources = (
-            native_sampler.create_tabulated_real_bspline_bank(
-                bspline_knots,
-                real_bspline_coefficients,
-            )
+        real_bspline_sources = native_sampler.create_tabulated_real_bspline_bank(
+            bspline_knots,
+            real_bspline_coefficients,
         )
         del complex_source, real_sources, bspline_sources, real_bspline_sources
     gc.collect()

@@ -57,12 +57,8 @@ def test_periodic_point_monitor_matches_meep_across_cell_boundary(
     monitor.sample_history_into(local)
     history = monitor.reduce_history(local[np.newaxis, :])[0]
 
-    np.testing.assert_allclose(
-        monitor.sample(), expected, rtol=2e-13, atol=1e-15
-    )
-    np.testing.assert_allclose(
-        history, expected, rtol=2e-13, atol=1e-15
-    )
+    np.testing.assert_allclose(monitor.sample(), expected, rtol=2e-13, atol=1e-15)
+    np.testing.assert_allclose(history, expected, rtol=2e-13, atol=1e-15)
 
 
 @pytest.mark.mpi2
@@ -78,18 +74,14 @@ def test_periodic_point_monitor_indexed_transpose_includes_bloch_phase(
 
     offsets, source_data, amplitudes = monitor.indexed_transpose_stencil()
     raw_offsets, components, chunks, local_indices, raw_amplitudes = (
-        native_sampler.component_point_plan_indexed_stencil(
-            monitor.ensure_plan()
-        )
+        native_sampler.component_point_plan_indexed_stencil(monitor.ensure_plan())
     )
     assert np.array_equal(offsets, raw_offsets)
     np.testing.assert_allclose(amplitudes, raw_amplitudes)
     assert len(source_data) == amplitudes.size
 
     def stencil_map(point_index):
-        point_slice = slice(
-            int(offsets[point_index]), int(offsets[point_index + 1])
-        )
+        point_slice = slice(int(offsets[point_index]), int(offsets[point_index + 1]))
         keys = [
             (int(component), int(chunk), int(local_index))
             for component, chunk, local_index in zip(
@@ -105,9 +97,7 @@ def test_periodic_point_monitor_indexed_transpose_includes_bloch_phase(
     upper = stencil_map(1)
     lower_phase = np.exp(-2j * np.pi * k_point.x * simulation.cell_size.x)
     global_entry_count = int(mp.sum_to_all(len(upper)))
-    local_norm_squared = float(
-        sum(abs(amplitude) ** 2 for amplitude in upper.values())
-    )
+    local_norm_squared = float(sum(abs(amplitude) ** 2 for amplitude in upper.values()))
     global_norm_squared = float(mp.sum_to_all(local_norm_squared))
 
     assert lower.keys() == upper.keys()
@@ -131,10 +121,7 @@ def test_periodic_field_grid_matches_meep_across_cell_boundary(
     coords_y = (-1.0, -0.97, 0.17, 1.0)
     expected = np.asarray(
         [
-            [
-                simulation.get_field_point(mp.Ez, mp.Vector3(x, y))
-                for y in coords_y
-            ]
+            [simulation.get_field_point(mp.Ez, mp.Vector3(x, y)) for y in coords_y]
             for x in coords_x
         ]
     )
@@ -145,20 +132,12 @@ def test_periodic_field_grid_matches_meep_across_cell_boundary(
 
     local_indices, boundary_indices = field.history_sampling_indices()
     history_indices = np.concatenate((local_indices, boundary_indices))
-    history_values = field.sample_history_values(
-        local_indices, boundary_indices
-    )
+    history_values = field.sample_history_values(local_indices, boundary_indices)
 
     if mp.count_processors() == 1:
-        assert np.array_equal(
-            np.sort(history_indices), np.arange(expected.size)
-        )
-    np.testing.assert_allclose(
-        field.sample(), expected, rtol=2e-13, atol=1e-15
-    )
-    np.testing.assert_allclose(
-        raw_sampled, expected, rtol=2e-13, atol=1e-15
-    )
+        assert np.array_equal(np.sort(history_indices), np.arange(expected.size))
+    np.testing.assert_allclose(field.sample(), expected, rtol=2e-13, atol=1e-15)
+    np.testing.assert_allclose(raw_sampled, expected, rtol=2e-13, atol=1e-15)
     np.testing.assert_allclose(
         history_values,
         expected.reshape(-1)[history_indices],
@@ -194,21 +173,15 @@ def test_cartesian_3d_point_monitor_matches_bloch_periodic_boundaries():
             mp.Vector3(-0.49, -0.61, -0.37),
         )
         expected = np.asarray(
-            [
-                simulation.get_field_point(mp.Ex, position)
-                for position in positions
-            ]
+            [simulation.get_field_point(mp.Ex, position) for position in positions]
         )
         sampled = FastPointMonitor(simulation, mp.Ex, positions).sample()
 
         assert np.linalg.norm(expected) > 1e-12
-        np.testing.assert_allclose(
-            sampled, expected, rtol=2e-13, atol=1e-15
-        )
+        np.testing.assert_allclose(sampled, expected, rtol=2e-13, atol=1e-15)
         np.testing.assert_allclose(
             expected[0],
-            np.exp(-2j * np.pi * k_point.z * simulation.cell_size.z)
-            * expected[1],
+            np.exp(-2j * np.pi * k_point.z * simulation.cell_size.z) * expected[1],
             rtol=2e-13,
             atol=1e-15,
         )
@@ -246,20 +219,13 @@ def test_cylindrical_point_monitor_matches_bloch_periodic_z_boundary():
             mp.Vector3(0.02, 0.0, 0.7),
         )
         expected = np.asarray(
-            [
-                simulation.get_field_point(mp.Ep, position)
-                for position in positions
-            ]
+            [simulation.get_field_point(mp.Ep, position) for position in positions]
         )
         sampled = FastPointMonitor(simulation, mp.Ep, positions).sample()
-        lower_phase = np.exp(
-            -2j * np.pi * k_point.z * simulation.cell_size.z
-        )
+        lower_phase = np.exp(-2j * np.pi * k_point.z * simulation.cell_size.z)
 
         assert np.linalg.norm(expected) > 1e-12
-        np.testing.assert_allclose(
-            sampled, expected, rtol=2e-13, atol=1e-15
-        )
+        np.testing.assert_allclose(sampled, expected, rtol=2e-13, atol=1e-15)
         np.testing.assert_allclose(
             expected[[0, 2]],
             lower_phase * expected[[1, 3]],

@@ -8,9 +8,19 @@ import tama
 def test_legacy_module_aliases_and_backend_exports(monkeypatch):
     backend = tama.get_backend("meep")
     for name in (
-        "adaptive_chunking", "chunking", "coords", "eigenmode", "fabrication",
-        "fastmeep_grid", "flux", "multi_tda_objective", "native_design",
-        "objectives", "sampling_grid", "specs", "tda_objective",
+        "adaptive_chunking",
+        "chunking",
+        "coords",
+        "eigenmode",
+        "fabrication",
+        "fastmeep_grid",
+        "flux",
+        "multi_tda_objective",
+        "native_design",
+        "objectives",
+        "sampling_grid",
+        "specs",
+        "tda_objective",
     ):
         legacy = importlib.import_module(f"tama.{name}")
         relocated = importlib.import_module(f"tama.backends.meep.{name}")
