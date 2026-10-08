@@ -218,7 +218,7 @@ def add_near2far_monitors(sim, targets, max_frequency, *, chunk_layout):
     ]
 
 
-def _synchronize_callback_error(error):
+def _synchronize_callback_error(error, operation="near-to-far callback"):
     failed = (
         mp.sum_to_all(int(error is not None))
         if mp.count_processors() > 1
@@ -227,7 +227,7 @@ def _synchronize_callback_error(error):
     if failed:
         if error is not None:
             raise error
-        raise RuntimeError("near-to-far callback failed on another MPI rank")
+        raise RuntimeError(f"{operation} failed on another MPI rank")
 
 
 def farfield_values(sim, monitors, targets, fom_fns, dt):

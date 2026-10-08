@@ -4194,11 +4194,18 @@ class MultiTDAObjective:
                     distributed_history_layout
                 )
             elif streaming_eigenmode_overlap:
-                band_objectives, filtered_adjoint_signals = (
-                    self._eigenmode_fom_values_and_overlap_covectors(
-                        monitor_history,
-                        need_gradient=need_gradient,
+                callback_error = None
+                try:
+                    band_objectives, filtered_adjoint_signals = (
+                        self._eigenmode_fom_values_and_overlap_covectors(
+                            monitor_history,
+                            need_gradient=need_gradient,
+                        )
                     )
+                except Exception as exc:
+                    callback_error = exc
+                self._synchronize_distributed_target_error(
+                    callback_error, "modal callback"
                 )
             elif self._uses_deduplicated_monitors:
                 band_objectives = self._distributed_deduplicated_band_objectives(
@@ -4208,11 +4215,18 @@ class MultiTDAObjective:
                 filtered_monitors = self._distributed_filter_monitor_signals(
                     monitor_history
                 )
-                band_objectives, filtered_adjoint_signals = (
-                    self._band_fom_values_and_adjoint_signals(
-                        filtered_monitors,
-                        need_gradient=need_gradient,
+                callback_error = None
+                try:
+                    band_objectives, filtered_adjoint_signals = (
+                        self._band_fom_values_and_adjoint_signals(
+                            filtered_monitors,
+                            need_gradient=need_gradient,
+                        )
                     )
+                except Exception as exc:
+                    callback_error = exc
+                self._synchronize_distributed_target_error(
+                    callback_error, "band callback"
                 )
             if self._near2far_targets:
                 combined_values = np.empty(len(self.targets))
@@ -4237,12 +4251,9 @@ class MultiTDAObjective:
                     )
             except Exception as exc:
                 scalarization_error = exc
-            if self._near2far_targets:
-                self._synchronize_distributed_target_error(
-                    scalarization_error, "scalarization"
-                )
-            elif scalarization_error is not None:
-                raise scalarization_error
+            self._synchronize_distributed_target_error(
+                scalarization_error, "scalarization"
+            )
             self.last_band_objectives = band_objectives
             self.last_band_losses = band_losses
             self.last_band_coeffs = band_coeffs

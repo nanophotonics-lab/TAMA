@@ -476,6 +476,85 @@ def test_distributed_target_failure_cleans_native_history_memmaps():
 
 
 @pytest.mark.mpi2
+@pytest.mark.parametrize("eigenmode_targets", (False, True), ids=("band", "modal"))
+@pytest.mark.parametrize("failure_stage", ("fom", "adjoint"))
+def test_multi_tda_rank_local_callback_failure_is_synchronized(
+    eigenmode_targets, failure_stage
+):
+    if mp.count_processors() < 2:
+        pytest.skip("requires at least two MPI ranks")
+
+    objective = _make_objective(
+        use_simulation_spec=True,
+        eigenmode_targets=eigenmode_targets,
+    )
+
+    def fom_fn(history, dt):
+        if failure_stage == "fom" and mp.my_rank() == 1:
+            raise ValueError("intentional FoM callback failure")
+        return float(0.5 * np.sum(np.abs(history) ** 2) * dt)
+
+    def adjoint_signal_fn(history, dt):
+        if failure_stage == "adjoint" and mp.my_rank() == 1:
+            raise ValueError("intentional adjoint callback failure")
+        return np.conjugate(history)
+
+    objective.fom_fn = fom_fn
+    objective.adjoint_signal_fn = adjoint_signal_fn
+    expected_error = ValueError if mp.my_rank() == 1 else RuntimeError
+    message = "intentional.*callback failure" if mp.my_rank() == 1 else "another.*rank"
+    with pytest.raises(expected_error, match=message):
+        objective.fom_and_grad(np.full(4, 0.5))
+
+
+@pytest.mark.mpi2
+@pytest.mark.parametrize("need_gradient", (False, True))
+def test_multi_tda_rank_local_scalarization_failure_is_synchronized(need_gradient):
+    if mp.count_processors() < 2:
+        pytest.skip("requires at least two MPI ranks")
+
+    def scalarization(values):
+        if mp.my_rank() == 1:
+            raise ValueError("intentional scalarization callback failure")
+        return float(np.sum(values)), np.ones_like(values)
+
+    objective = _make_objective(use_simulation_spec=True)
+    objective.scalarization_fn = scalarization
+    expected_error = ValueError if mp.my_rank() == 1 else RuntimeError
+    message = "intentional.*callback failure" if mp.my_rank() == 1 else "another.*rank"
+    with pytest.raises(expected_error, match=message):
+        objective.evaluate(np.full(4, 0.5), need_gradient=need_gradient)
+
+
+@pytest.mark.mpi4
+@pytest.mark.mpi8
+def test_multi_tda_scalarization_failure_stays_within_active_process_group():
+    if mp.comm.Get_size() not in (4, 8):
+        pytest.skip("requires four or eight MPI ranks")
+
+    group_index = mp.divide_parallel_processes(2)
+    try:
+
+        def scalarization(values):
+            if group_index == 0 and mp.my_rank() == 1:
+                raise ValueError("intentional subgroup callback failure")
+            return float(np.sum(values)), np.ones_like(values)
+
+        objective = _make_objective(use_simulation_spec=True)
+        objective.scalarization_fn = scalarization
+        if group_index == 0:
+            expected_error = ValueError if mp.my_rank() == 1 else RuntimeError
+            with pytest.raises(expected_error, match="callback|another.*rank"):
+                objective.fom_and_grad(np.full(4, 0.5))
+        else:
+            value, gradient = objective.fom_and_grad(np.full(4, 0.5))
+            assert np.isfinite(value)
+            assert np.all(np.isfinite(gradient))
+    finally:
+        mp.end_divide_parallel()
+
+
+@pytest.mark.mpi2
 def test_native_multi_tda_per_band_callbacks_match_defaults():
     if mp.count_processors() < 2:
         pytest.skip("requires at least two MPI ranks")

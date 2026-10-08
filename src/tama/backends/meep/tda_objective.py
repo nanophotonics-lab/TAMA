@@ -65,7 +65,11 @@ from .specs import (
     SimulationSpec,
 )
 from .adaptive_chunking import AdaptiveAdjointChunkBalancer
-from .near2far import evaluate_near2far, farfield_intensity
+from .near2far import (
+    _synchronize_callback_error,
+    evaluate_near2far,
+    farfield_intensity,
+)
 from ...nyquist import (
     _aligned_run_until,
     _monitor_history_stop,
@@ -696,35 +700,46 @@ class TDAObjective:
         self,
         monitor_history: np.ndarray,
         sample_dt: float,
-    ) -> Tuple[float, np.ndarray]:
+        *,
+        need_gradient: bool = True,
+    ) -> Tuple[float, Optional[np.ndarray]]:
         """Compute the FoM and its continuous-time bilinear covector.
 
         Args:
             monitor_history: Forward point or regional field samples.
             sample_dt: Time step between adjacent monitor samples.
+            need_gradient: Whether to compute the adjoint signal.
 
         Returns:
             Scalar FoM and sampled continuous-time bilinear covector `q`, with
             `delta FoM = sample_dt * Re(sum(q * delta monitor_history))`.
+            The covector is `None` when `need_gradient=False`.
         """
-        monitor_history = np.asarray(monitor_history)
-        objective_value = self.fom_fn(monitor_history, sample_dt)
+        callback_error = None
+        adjoint_signal = None
+        try:
+            monitor_history = np.asarray(monitor_history)
+            objective_value = float(self.fom_fn(monitor_history, sample_dt))
 
-        if self.adjoint_signal_fn is not None:
-            adjoint_signal = np.asarray(
-                self.adjoint_signal_fn(monitor_history, sample_dt)
-            )
-            if adjoint_signal.shape != monitor_history.shape:
-                raise ValueError(
-                    "adjoint_signal_fn must match the monitor history shape"
-                )
-        else:
-            # Autograd differentiates the Riemann-sum objective with respect to
-            # sampled values; divide by dt to recover the continuous covector.
-            d_fom_d_samples = grad(self.fom_fn, 0)(monitor_history, sample_dt)
-            adjoint_signal = d_fom_d_samples / sample_dt
+            if need_gradient:
+                if self.adjoint_signal_fn is not None:
+                    adjoint_signal = np.asarray(
+                        self.adjoint_signal_fn(monitor_history, sample_dt)
+                    )
+                    if adjoint_signal.shape != monitor_history.shape:
+                        raise ValueError(
+                            "adjoint_signal_fn must match the monitor history shape"
+                        )
+                else:
+                    # Divide the sampled Riemann-sum derivative by dt to recover
+                    # the continuous-time bilinear covector.
+                    d_fom_d_samples = grad(self.fom_fn, 0)(monitor_history, sample_dt)
+                    adjoint_signal = np.asarray(d_fom_d_samples / sample_dt)
+        except Exception as exc:
+            callback_error = exc
+        _synchronize_callback_error(callback_error, "objective callback")
 
-        return float(objective_value), np.asarray(adjoint_signal)
+        return objective_value, adjoint_signal
 
     def _evaluate_mixed_surface(
         self,
@@ -1126,12 +1141,10 @@ class TDAObjective:
                 sim_fwd = None
             gc.collect()
 
-            if need_gradient:
-                objective_value, target_covector = self._fom_value_and_adjoint_signal(
-                    target_history, dt
-                )
-            else:
-                objective_value = float(self.fom_fn(target_history, dt))
+            objective_value, target_covector = self._fom_value_and_adjoint_signal(
+                target_history, dt, need_gradient=need_gradient
+            )
+            if not need_gradient:
                 return objective_value, None
 
             if any(history.shape[0] < 4 for history in raw_histories.values()):
@@ -1680,14 +1693,9 @@ class TDAObjective:
                 sim_fwd = None
             gc.collect()
 
-            objective_value = None
-            adjoint_signal = None
-            if need_gradient:
-                objective_value, adjoint_signal = self._fom_value_and_adjoint_signal(
-                    monitor_history, dt
-                )
-            else:
-                objective_value = float(self.fom_fn(monitor_history, dt))
+            objective_value, adjoint_signal = self._fom_value_and_adjoint_signal(
+                monitor_history, dt, need_gradient=need_gradient
+            )
 
             gradient = None
             if need_gradient:
