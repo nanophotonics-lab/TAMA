@@ -16,6 +16,8 @@ This alpha introduces the combined backend package following TAMA 0.5.0a3.
   version and source-hash checks.
 - Run sparse-history gradients only at the requested stride; remove automatic
   per-design dense comparisons.
+- Synchronize temporal objective and scalarization callback failures within the
+  active Meep MPI group before entering adjoint collectives.
 - Separate common, Meep and FDTDX tests and provide installed-artifact CPU,
   MPI and manual CUDA workflow paths.
 - License the integrated TAMA distribution under GPL-3.0-or-later, retain

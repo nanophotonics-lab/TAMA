@@ -17,6 +17,7 @@ def _make_objective(
     max_frequency=None,
     t_final=1.0,
     reconstruction_window="kaiser",
+    callbacks=None,
 ):
     resolution = 8
     dt = 0.5 / resolution
@@ -153,18 +154,111 @@ def _make_objective(
         reconstruction_window=reconstruction_window,
         reuse_simulation=reuse_simulation,
         **(
-            {}
-            if flux_target or eigenmode_target
-            else {
-                "fom_fn": lambda history, sample_dt: float(
-                    0.5 * np.sum(np.abs(history) ** 2) * sample_dt
-                ),
-                "adjoint_signal_fn": (lambda history, sample_dt: np.ones_like(history)),
-            }
+            callbacks
+            if callbacks is not None
+            else (
+                {}
+                if flux_target or eigenmode_target
+                else {
+                    "fom_fn": lambda history, sample_dt: float(
+                        0.5 * np.sum(np.abs(history) ** 2) * sample_dt
+                    ),
+                    "adjoint_signal_fn": (
+                        lambda history, sample_dt: np.ones_like(history)
+                    ),
+                }
+            )
         ),
         **simulation_args,
         **target_args,
     )
+
+
+@pytest.mark.mpi2
+@pytest.mark.parametrize("flux_target", (False, True), ids=("point", "flux"))
+@pytest.mark.parametrize(
+    "failure_stage,need_gradient", (("fom", True), ("adjoint", True), ("fom", False))
+)
+def test_tda_rank_local_callback_failure_is_synchronized(
+    flux_target, failure_stage, need_gradient
+):
+    if mp.count_processors() < 2:
+        pytest.skip("requires at least two MPI ranks")
+
+    def fom_fn(history, dt):
+        if failure_stage == "fom" and mp.my_rank() == 1:
+            raise ValueError("intentional FoM callback failure")
+        return float(0.5 * np.sum(np.abs(history) ** 2) * dt)
+
+    def adjoint_signal_fn(history, dt):
+        if failure_stage == "adjoint" and mp.my_rank() == 1:
+            raise ValueError("intentional adjoint callback failure")
+        return np.conjugate(history)
+
+    objective = _make_objective(
+        use_simulation_spec=True,
+        flux_target=flux_target,
+        callbacks={"fom_fn": fom_fn, "adjoint_signal_fn": adjoint_signal_fn},
+    )
+    expected_error = ValueError if mp.my_rank() == 1 else RuntimeError
+    message = "intentional.*callback failure" if mp.my_rank() == 1 else "another.*rank"
+    with pytest.raises(expected_error, match=message):
+        objective.evaluate(np.full(4, 0.5), need_gradient=need_gradient)
+
+
+@pytest.mark.mpi2
+def test_tda_rank_local_adjoint_shape_failure_is_synchronized():
+    if mp.count_processors() < 2:
+        pytest.skip("requires at least two MPI ranks")
+
+    objective = _make_objective(
+        use_simulation_spec=True,
+        callbacks={
+            "fom_fn": lambda history, dt: float(
+                0.5 * np.sum(np.abs(history) ** 2) * dt
+            ),
+            "adjoint_signal_fn": lambda history, dt: np.conjugate(
+                history[:-1] if mp.my_rank() == 1 else history
+            ),
+        },
+    )
+    expected_error = ValueError if mp.my_rank() == 1 else RuntimeError
+    message = "monitor history shape" if mp.my_rank() == 1 else "another.*rank"
+    with pytest.raises(expected_error, match=message):
+        objective.fom_and_grad(np.full(4, 0.5))
+
+
+@pytest.mark.mpi4
+@pytest.mark.mpi8
+def test_tda_callback_failure_stays_within_active_process_group():
+    if mp.comm.Get_size() not in (4, 8):
+        pytest.skip("requires four or eight MPI ranks")
+
+    group_index = mp.divide_parallel_processes(2)
+    try:
+
+        def fom_fn(history, dt):
+            if group_index == 0 and mp.my_rank() == 1:
+                raise ValueError("intentional subgroup callback failure")
+            return float(0.5 * np.sum(np.abs(history) ** 2) * dt)
+
+        objective = _make_objective(
+            use_simulation_spec=True,
+            callbacks={
+                "fom_fn": fom_fn,
+                "adjoint_signal_fn": lambda history, dt: np.conjugate(history),
+            },
+        )
+        if group_index == 0:
+            expected_error = ValueError if mp.my_rank() == 1 else RuntimeError
+            with pytest.raises(expected_error, match="callback|another.*rank"):
+                objective.fom_and_grad(np.full(4, 0.5))
+        else:
+            value, gradient = objective.fom_and_grad(np.full(4, 0.5))
+            assert np.isfinite(value)
+            assert np.all(np.isfinite(gradient))
+    finally:
+        mp.end_divide_parallel()
 
 
 @pytest.mark.mpi2
