@@ -134,8 +134,7 @@ def test_filtered_projection_vjp_matches_directional_finite_difference():
 
     step = 1e-6
     finite_difference = (
-        objective(weights + step * direction)
-        - objective(weights - step * direction)
+        objective(weights + step * direction) - objective(weights - step * direction)
     ) / (2.0 * step)
 
     assert float(np.sum(gradient * direction)) == pytest.approx(
@@ -164,15 +163,11 @@ def test_zero_or_numerically_tiny_beta_projection_and_vjp_are_identity(beta):
     "call, message",
     [
         (
-            lambda: tm.periodic_conic_filter(
-                np.zeros(4), radius=1.0, spacing=1.0
-            ),
+            lambda: tm.periodic_conic_filter(np.zeros(4), radius=1.0, spacing=1.0),
             "2D or 3D",
         ),
         (
-            lambda: tm.periodic_conic_filter(
-                np.zeros((2, 2)), radius=0.0, spacing=1.0
-            ),
+            lambda: tm.periodic_conic_filter(np.zeros((2, 2)), radius=0.0, spacing=1.0),
             "radius",
         ),
         (
@@ -184,9 +179,7 @@ def test_zero_or_numerically_tiny_beta_projection_and_vjp_are_identity(beta):
             "one entry per array axis",
         ),
         (
-            lambda: tm.tanh_projection(
-                np.zeros((2, 2)), beta=-1.0
-            ),
+            lambda: tm.tanh_projection(np.zeros((2, 2)), beta=-1.0),
             "beta",
         ),
         (

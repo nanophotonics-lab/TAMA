@@ -41,7 +41,8 @@ def __getattr__(name):
     if name not in _EXPORTS:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     module = (
-        ".nyquist" if _EXPORTS[name] == "nyquist"
+        ".nyquist"
+        if _EXPORTS[name] == "nyquist"
         else f".backends.meep.{_EXPORTS[name]}"
     )
     try:
@@ -60,6 +61,7 @@ def __getattr__(name):
 
 def __dir__():
     return sorted(set(globals()) | set(__all__))
+
 
 __all__ = [
     "__version__",

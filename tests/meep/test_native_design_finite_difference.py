@@ -101,17 +101,11 @@ def _make_problem(
     dielectric = mp.Medium(epsilon=4.0)
     center = mp.Vector3() if touch_pml else mp.Vector3(0.013, -0.017)
     size = mp.Vector3(4.0, 0.4) if touch_pml else mp.Vector3(0.237, 0.263)
-    source_center = (
-        mp.Vector3(0.0, -1.5)
-        if touch_pml
-        else mp.Vector3(-1.5, center.y)
-    )
+    source_center = mp.Vector3(0.0, -1.5) if touch_pml else mp.Vector3(-1.5, center.y)
     source_size = mp.Vector3(4.0, 0.0) if touch_pml else mp.Vector3(0, 3.5)
     if target_position is None:
         target_position = (
-            mp.Vector3(0.0, 1.5)
-            if touch_pml
-            else mp.Vector3(1.5, center.y)
+            mp.Vector3(0.0, 1.5) if touch_pml else mp.Vector3(1.5, center.y)
         )
     material_grid = mp.MaterialGrid(mp.Vector3(*shape), air, dielectric)
     design = tm.DesignGrid(
@@ -270,9 +264,7 @@ def _make_flux_problem(
     simulation = tm.SimulationSpec(
         cell_size=mp.Vector3(6, 6),
         boundary_layers=[mp.PML(1.0)],
-        geometry=[
-            mp.Block(center=center, size=size, material=material_grid)
-        ],
+        geometry=[mp.Block(center=center, size=size, material=material_grid)],
         sources=[
             mp.Source(
                 mp.GaussianSource(frequency=0.7, fwidth=0.4),
@@ -281,9 +273,7 @@ def _make_flux_problem(
                 size=mp.Vector3(0, 3.5),
             )
             for component in (
-                (mp.Hz, mp.Ez)
-                if full_vector_sources
-                else (source_component,)
+                (mp.Hz, mp.Ez) if full_vector_sources else (source_component,)
             )
         ],
         resolution=resolution,
@@ -303,9 +293,7 @@ def _make_flux_problem(
             ),
             frequency=0.7,
             spatial_weights=(0.6, 1.4),
-            eig_parity=(
-                mp.EVEN_Z if source_component == mp.Hz else mp.ODD_Z
-            ),
+            eig_parity=(mp.EVEN_Z if source_component == mp.Hz else mp.ODD_Z),
         )
         if eigenmode_target
         else tm.FluxTarget(
@@ -434,9 +422,7 @@ def test_full_native_adjoint_loop_matches_python_reference(
         t_final=10.0,
     ).fom_and_grad(design)
 
-    objective_module = (
-        tda_module if objective_kind == "tda" else multi_tda_module
-    )
+    objective_module = tda_module if objective_kind == "tda" else multi_tda_module
     monkeypatch.setattr(
         objective_module,
         "_run_native_adjoint_loop",
@@ -663,13 +649,12 @@ def test_distributed_target_history_matches_directional_fd(target_kind):
     assert objective.last_target_history_mode == "distributed"
     assert all(abs(value) > 1.0e-3 for value in finite_differences)
     relative_errors = [
-        abs(adjoint_derivative - value)
-        / max(abs(adjoint_derivative), abs(value))
+        abs(adjoint_derivative - value) / max(abs(adjoint_derivative), abs(value))
         for value in finite_differences
     ]
-    plateau_error = abs(
-        finite_differences[0] - finite_differences[1]
-    ) / max(abs(value) for value in finite_differences)
+    plateau_error = abs(finite_differences[0] - finite_differences[1]) / max(
+        abs(value) for value in finite_differences
+    )
     assert max(relative_errors) < 0.02
     assert plateau_error < 1.0e-4
 
@@ -735,7 +720,9 @@ def test_native_2d_gradient_matches_directional_finite_difference(
         - objective.fom(design - step * direction)
     ) / (2.0 * step)
     adjoint_derivative = float(gradient @ direction)
-    relative_error = abs(adjoint_derivative - finite_difference) / abs(finite_difference)
+    relative_error = abs(adjoint_derivative - finite_difference) / abs(
+        finite_difference
+    )
 
     assert objective.gradient_components == expected_gradient_components
     assert np.sign(adjoint_derivative) == np.sign(finite_difference)
@@ -868,7 +855,9 @@ def test_native_tez_nyquist_gradient_matches_directional_finite_difference():
         - objective.fom(design - step * direction)
     ) / (2.0 * step)
     adjoint_derivative = float(gradient @ direction)
-    relative_error = abs(adjoint_derivative - finite_difference) / abs(finite_difference)
+    relative_error = abs(adjoint_derivative - finite_difference) / abs(
+        finite_difference
+    )
 
     assert objective.last_sampling_interval == 2
     assert relative_error < 0.006
@@ -890,7 +879,9 @@ def test_native_gradient_matches_fd_when_design_touches_pml_inner_edge():
         - objective.fom(design - step * direction)
     ) / (2.0 * step)
     adjoint_derivative = float(gradient @ direction)
-    relative_error = abs(adjoint_derivative - finite_difference) / abs(finite_difference)
+    relative_error = abs(adjoint_derivative - finite_difference) / abs(
+        finite_difference
+    )
 
     assert relative_error < 0.006
 
@@ -953,17 +944,13 @@ def test_full_native_loop_accepts_rank_without_owned_design_points():
             mp.Ez,
             objective.design,
         )
-        zero_rank_count = int(
-            mp.sum_to_all(int(native_field.local_size == 0))
-        )
+        zero_rank_count = int(mp.sum_to_all(int(native_field.local_size == 0)))
     finally:
         if native_field is not None:
             native_field.release()
         simulation.reset_meep()
 
-    value, gradient = objective.fom_and_grad(
-        np.linspace(0.2, 0.8, 25)
-    )
+    value, gradient = objective.fom_and_grad(np.linspace(0.2, 0.8, 25))
 
     assert zero_rank_count >= 1
     assert np.isfinite(value)

@@ -194,14 +194,12 @@ def test_power_history_pullback_matches_complex_directional_fd(normal):
     histories = {}
     for electric, magnetic, _ in flux_component_pairs(normal):
         for component in (electric, magnetic):
-            histories[component] = (
-                rng.standard_normal((n_samples, n_points))
-                + 1j * rng.standard_normal((n_samples, n_points))
-            )
+            histories[component] = rng.standard_normal(
+                (n_samples, n_points)
+            ) + 1j * rng.standard_normal((n_samples, n_points))
     directions = {
         component: (
-            rng.standard_normal(history.shape)
-            + 1j * rng.standard_normal(history.shape)
+            rng.standard_normal(history.shape) + 1j * rng.standard_normal(history.shape)
         )
         for component, history in histories.items()
     }
@@ -257,14 +255,12 @@ def test_cylindrical_power_pullback_matches_complex_directional_fd(normal):
         cylindrical=True,
     ):
         for component in (electric, magnetic):
-            histories[component] = (
-                rng.standard_normal((n_samples, n_points))
-                + 1j * rng.standard_normal((n_samples, n_points))
-            )
+            histories[component] = rng.standard_normal(
+                (n_samples, n_points)
+            ) + 1j * rng.standard_normal((n_samples, n_points))
     directions = {
         component: (
-            rng.standard_normal(history.shape)
-            + 1j * rng.standard_normal(history.shape)
+            rng.standard_normal(history.shape) + 1j * rng.standard_normal(history.shape)
         )
         for component, history in histories.items()
     }
@@ -331,23 +327,19 @@ def test_power_history_pullback_satisfies_real_dot_product_identity():
     directions = {}
     for electric, magnetic, _ in flux_component_pairs(normal):
         for component in (electric, magnetic):
-            histories[component] = (
-                rng.standard_normal((n_samples, n_points))
-                + 1j * rng.standard_normal((n_samples, n_points))
-            )
-            directions[component] = (
-                rng.standard_normal((n_samples, n_points))
-                + 1j * rng.standard_normal((n_samples, n_points))
-            )
+            histories[component] = rng.standard_normal(
+                (n_samples, n_points)
+            ) + 1j * rng.standard_normal((n_samples, n_points))
+            directions[component] = rng.standard_normal(
+                (n_samples, n_points)
+            ) + 1j * rng.standard_normal((n_samples, n_points))
     power_covector = rng.standard_normal(n_samples - 1)
 
     tangent_power = np.zeros(n_samples - 1)
     for electric, magnetic, sign in flux_component_pairs(normal):
         electric_history = histories[electric][:-1]
         electric_direction = directions[electric][:-1]
-        magnetic_history = 0.5 * (
-            histories[magnetic][:-1] + histories[magnetic][1:]
-        )
+        magnetic_history = 0.5 * (histories[magnetic][:-1] + histories[magnetic][1:])
         magnetic_direction = 0.5 * (
             directions[magnetic][:-1] + directions[magnetic][1:]
         )
@@ -395,9 +387,7 @@ def test_power_history_accepts_one_complete_2d_component_pair():
     )
 
     centered_h = 0.5 * (histories[mp.Hy][:-1] + histories[mp.Hy][1:])
-    expected = 2.0 * np.real(
-        np.conjugate(histories[mp.Ez][:-1]) * centered_h
-    )
+    expected = 2.0 * np.real(np.conjugate(histories[mp.Ez][:-1]) * centered_h)
     np.testing.assert_allclose(result, expected)
 
 

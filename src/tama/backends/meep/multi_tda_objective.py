@@ -82,11 +82,17 @@ from ...nyquist import (
     nyquist_sampling_interval,
 )
 
-
 _NEAR2FAR_SAMPLING_ATTRIBUTES = (
-    "t_final", "dt", "resolution", "_fallback_courant", "sampling_interval",
-    "max_frequency", "history_dtype", "reconstruction_window",
-    "reconstruction_window_params", "reconstruction_half_width",
+    "t_final",
+    "dt",
+    "resolution",
+    "_fallback_courant",
+    "sampling_interval",
+    "max_frequency",
+    "history_dtype",
+    "reconstruction_window",
+    "reconstruction_window_params",
+    "reconstruction_half_width",
 )
 
 
@@ -110,18 +116,11 @@ def _normalize_band_callbacks(callbacks, band_count: int, name: str):
         callbacks,
         Sequence,
     ):
-        raise TypeError(
-            f"{name} must be callable or a sequence of optional callables"
-        )
+        raise TypeError(f"{name} must be callable or a sequence of optional callables")
     normalized = tuple(callbacks)
     if len(normalized) != band_count:
-        raise ValueError(
-            f"{name} sequence must match the number of wavelength bands"
-        )
-    if any(
-        callback is not None and not callable(callback)
-        for callback in normalized
-    ):
+        raise ValueError(f"{name} sequence must match the number of wavelength bands")
+    if any(callback is not None and not callable(callback) for callback in normalized):
         raise TypeError(f"{name} sequence entries must be callable or None")
     return normalized
 
@@ -243,9 +242,7 @@ def bandpass_kernel(
     if f_low >= f_high:
         raise ValueError("bandpass frequencies must satisfy f_low < f_high")
     if f_high >= 0.5 / dt:
-        raise ValueError(
-            "f_high must be below the temporal Nyquist frequency 0.5 / dt"
-        )
+        raise ValueError("f_high must be below the temporal Nyquist frequency 0.5 / dt")
     if (
         isinstance(length, (bool, np.bool_))
         or not isinstance(length, (int, np.integer))
@@ -256,9 +253,8 @@ def bandpass_kernel(
 
     n = np.arange(length)
     tau = (n - (length - 1) / 2) * dt
-    kernel = (
-        2 * f_high * np.sinc(2 * f_high * tau)
-        - 2 * f_low * np.sinc(2 * f_low * tau)
+    kernel = 2 * f_high * np.sinc(2 * f_high * tau) - 2 * f_low * np.sinc(
+        2 * f_low * tau
     )
     kernel *= _numpy_window(window, kernel.size, window_params)
 
@@ -274,14 +270,11 @@ def _validate_power_complementary_bands(
     wavelength_bands: Sequence[tuple[float, float]],
 ) -> None:
     if len(wavelength_bands) < 2:
-        raise ValueError(
-            "power_complementary filter_bank requires at least two bands"
-        )
+        raise ValueError("power_complementary filter_bank requires at least two bands")
     for left, right in zip(wavelength_bands[:-1], wavelength_bands[1:]):
         if not np.isclose(left[1], right[0], rtol=1.0e-12, atol=0.0):
             raise ValueError(
-                "power_complementary wavelength bands must be ordered "
-                "and contiguous"
+                "power_complementary wavelength bands must be ordered " "and contiguous"
             )
 
 
@@ -302,25 +295,16 @@ def _power_complementary_kernels(
     outer_low = frequency_bands[-1][0]
     outer_high = frequency_bands[0][1]
     if outer_low - transition_width <= 0.0:
-        raise ValueError(
-            "transition_width extends below zero frequency"
-        )
+        raise ValueError("transition_width extends below zero frequency")
     if outer_high + transition_width >= nyquist_frequency:
         raise ValueError(
-            "transition_width extends to or above the temporal Nyquist "
-            "frequency"
+            "transition_width extends to or above the temporal Nyquist " "frequency"
         )
-    minimum_bandwidth = min(
-        f_high - f_low for f_low, f_high in frequency_bands
-    )
+    minimum_bandwidth = min(f_high - f_low for f_low, f_high in frequency_bands)
     if transition_width >= minimum_bandwidth:
-        raise ValueError(
-            "transition_width must be smaller than every band width"
-        )
+        raise ValueError("transition_width must be smaller than every band width")
 
-    design_point_count = 1 << int(
-        np.ceil(np.log2(max(512, 2 * length)))
-    )
+    design_point_count = 1 << int(np.ceil(np.log2(max(512, 2 * length))))
     design_frequencies = np.linspace(
         0.0,
         nyquist_frequency,
@@ -331,51 +315,33 @@ def _power_complementary_kernels(
         dtype=float,
     )
     for band_index, (f_low, f_high) in enumerate(frequency_bands):
-        inside = (
-            (design_frequencies >= f_low)
-            & (design_frequencies <= f_high)
-        )
+        inside = (design_frequencies >= f_low) & (design_frequencies <= f_high)
         target_power[band_index, inside] = 1.0
 
     for band_index in range(len(frequency_bands) - 1):
         boundary = frequency_bands[band_index][0]
-        crossover = (
-            (design_frequencies >= boundary - half_transition)
-            & (design_frequencies <= boundary + half_transition)
+        crossover = (design_frequencies >= boundary - half_transition) & (
+            design_frequencies <= boundary + half_transition
         )
         coordinate = (
-            design_frequencies[crossover]
-            - (boundary - half_transition)
+            design_frequencies[crossover] - (boundary - half_transition)
         ) / transition_width
-        target_power[band_index, crossover] = np.sin(
-            0.5 * np.pi * coordinate
-        ) ** 2
-        target_power[band_index + 1, crossover] = np.cos(
-            0.5 * np.pi * coordinate
-        ) ** 2
+        target_power[band_index, crossover] = np.sin(0.5 * np.pi * coordinate) ** 2
+        target_power[band_index + 1, crossover] = np.cos(0.5 * np.pi * coordinate) ** 2
 
-    lower_taper = (
-        (design_frequencies >= outer_low - transition_width)
-        & (design_frequencies < outer_low)
+    lower_taper = (design_frequencies >= outer_low - transition_width) & (
+        design_frequencies < outer_low
     )
     lower_coordinate = (
-        design_frequencies[lower_taper]
-        - (outer_low - transition_width)
+        design_frequencies[lower_taper] - (outer_low - transition_width)
     ) / transition_width
-    target_power[-1, lower_taper] = np.sin(
-        0.5 * np.pi * lower_coordinate
-    ) ** 2
+    target_power[-1, lower_taper] = np.sin(0.5 * np.pi * lower_coordinate) ** 2
 
-    upper_taper = (
-        (design_frequencies > outer_high)
-        & (design_frequencies <= outer_high + transition_width)
+    upper_taper = (design_frequencies > outer_high) & (
+        design_frequencies <= outer_high + transition_width
     )
-    upper_coordinate = (
-        design_frequencies[upper_taper] - outer_high
-    ) / transition_width
-    target_power[0, upper_taper] = np.cos(
-        0.5 * np.pi * upper_coordinate
-    ) ** 2
+    upper_coordinate = (design_frequencies[upper_taper] - outer_high) / transition_width
+    target_power[0, upper_taper] = np.cos(0.5 * np.pi * upper_coordinate) ** 2
 
     return [
         firwin2(
@@ -412,12 +378,15 @@ def temporal_convolve_signal(
     kernel = np.asarray(kernel)
     if signal.ndim == 0 or signal.shape[0] == 0:
         raise ValueError("full convolution requires a nonempty time axis")
-    return _temporal_fft_convolve(
-        signal,
-        kernel,
-        output_start=0,
-        output_length=signal.shape[0] + kernel.size - 1,
-    ) * dt
+    return (
+        _temporal_fft_convolve(
+            signal,
+            kernel,
+            output_start=0,
+            output_length=signal.shape[0] + kernel.size - 1,
+        )
+        * dt
+    )
 
 
 def _temporal_fft_convolve(
@@ -439,7 +408,8 @@ def _temporal_fft_convolve(
 
     sample_count = signal.shape[0]
     output_dtype = (
-        signal.dtype if np.issubdtype(signal.dtype, np.inexact)
+        signal.dtype
+        if np.issubdtype(signal.dtype, np.inexact)
         else np.result_type(signal.dtype, kernel.dtype, np.float64)
     )
     if np.iscomplexobj(kernel) and not np.iscomplexobj(signal):
@@ -524,16 +494,17 @@ def temporal_convolve_signal_transpose(
     kernel = np.asarray(kernel)
     if kernel.ndim != 1:
         raise ValueError("kernel must be one-dimensional")
-    if (
-        signal.ndim == 0 or signal.shape[0] == 0 or signal.shape[0] < kernel.size
-    ):
+    if signal.ndim == 0 or signal.shape[0] == 0 or signal.shape[0] < kernel.size:
         raise ValueError("full transpose requires at least kernel.size time samples")
-    return _temporal_fft_convolve(
-        signal,
-        np.conjugate(kernel[::-1]),
-        output_start=kernel.size - 1,
-        output_length=signal.shape[0] - kernel.size + 1,
-    ) * dt
+    return (
+        _temporal_fft_convolve(
+            signal,
+            np.conjugate(kernel[::-1]),
+            output_start=kernel.size - 1,
+            output_length=signal.shape[0] - kernel.size + 1,
+        )
+        * dt
+    )
 
 
 def auto_pixel_chunk(
@@ -615,19 +586,13 @@ class MultiTDAObjective:
         fom_fn: Optional[
             Union[
                 Callable[[np.ndarray, float], float],
-                Sequence[
-                    Optional[Callable[[np.ndarray, float], float]]
-                ],
+                Sequence[Optional[Callable[[np.ndarray, float], float]]],
             ]
         ] = None,
         adjoint_signal_fn: Optional[
             Union[
                 Callable[[np.ndarray, float], np.ndarray],
-                Sequence[
-                    Optional[
-                        Callable[[np.ndarray, float], np.ndarray]
-                    ]
-                ],
+                Sequence[Optional[Callable[[np.ndarray, float], np.ndarray]]],
             ]
         ] = None,
         scalarization_fn: Optional[Callable[[np.ndarray], object]] = None,
@@ -850,11 +815,17 @@ class MultiTDAObjective:
         if targets is not None:
             targets = tuple(targets)
         if targets and all(isinstance(target, Near2FarTarget) for target in targets):
-            if any(value is not None for value in
-                   (wavelength_bands, weights, kernel_length, transition_width,
-                    kernel_window_params, target_history_block_size)) or (
-                        filter_bank != "independent" or kernel_window != "hamming"
-                    ):
+            if any(
+                value is not None
+                for value in (
+                    wavelength_bands,
+                    weights,
+                    kernel_length,
+                    transition_width,
+                    kernel_window_params,
+                    target_history_block_size,
+                )
+            ) or (filter_bank != "independent" or kernel_window != "hamming"):
                 raise ValueError(
                     "Near2FarTarget uses discrete frequencies, not PC-FIR "
                     "wavelength_bands, weights, kernel settings, or temporal history settings"
@@ -862,17 +833,29 @@ class MultiTDAObjective:
             from .tda_objective import TDAObjective
 
             fns = _normalize_band_callbacks(fom_fn, len(targets), "fom_fn")
-            signals = _normalize_band_callbacks(adjoint_signal_fn, len(targets), "adjoint_signal_fn")
+            signals = _normalize_band_callbacks(
+                adjoint_signal_fn, len(targets), "adjoint_signal_fn"
+            )
             _validate_band_callback_pairs(fns, signals)
             core = TDAObjective(
-                update_design=update_design, sim_factory=sim_factory, t_final=t_final,
-                monitor_position=monitor_positions, component=component,
+                update_design=update_design,
+                sim_factory=sim_factory,
+                t_final=t_final,
+                monitor_position=monitor_positions,
+                component=component,
                 adjoint_source_size=adjoint_source_size,
                 adjoint_source_amplitude=adjoint_source_amplitude,
-                design=design, designs=designs, simulation=simulation, target=targets[0],
-                dt=dt, resolution=resolution, history_dtype=history_dtype,
-                chunk_balancer=chunk_balancer, sampling_interval=sampling_interval,
-                max_frequency=max_frequency, reuse_simulation=reuse_simulation,
+                design=design,
+                designs=designs,
+                simulation=simulation,
+                target=targets[0],
+                dt=dt,
+                resolution=resolution,
+                history_dtype=history_dtype,
+                chunk_balancer=chunk_balancer,
+                sampling_interval=sampling_interval,
+                max_frequency=max_frequency,
+                reuse_simulation=reuse_simulation,
                 reconstruction_window=reconstruction_window,
                 reconstruction_window_params=reconstruction_window_params,
                 reconstruction_half_width=reconstruction_half_width,
@@ -891,37 +874,68 @@ class MultiTDAObjective:
             self.fom_fn, self.adjoint_signal_fn = fom_fn, adjoint_signal_fn
             self.scalarization_fn = scalarization_fn or self._weighted_sum_scalarization
             self.last_far_fields = None
-            self.last_band_objectives = self.last_band_losses = self.last_band_coeffs = None
-            self.last_scalarization_info = self.last_smooth_min = self.last_total_fom = None
+            self.last_band_objectives = self.last_band_losses = (
+                self.last_band_coeffs
+            ) = None
+            self.last_scalarization_info = self.last_smooth_min = (
+                self.last_total_fom
+            ) = None
             self.last_sampling_interval = None
             self.last_actual_time = None
             return
 
         if targets and any(isinstance(target, Near2FarTarget) for target in targets):
             self.targets = targets
-            self._near2far_indices = tuple(i for i, target in enumerate(targets)
-                                          if isinstance(target, Near2FarTarget))
-            self._temporal_indices = tuple(i for i, target in enumerate(targets)
-                                          if not isinstance(target, Near2FarTarget))
+            self._near2far_indices = tuple(
+                i
+                for i, target in enumerate(targets)
+                if isinstance(target, Near2FarTarget)
+            )
+            self._temporal_indices = tuple(
+                i
+                for i, target in enumerate(targets)
+                if not isinstance(target, Near2FarTarget)
+            )
             self._near2far_targets = tuple(targets[i] for i in self._near2far_indices)
-            if (not isinstance(simulation, SimulationSpec)
-                    or (sim_factory is not None
-                        and getattr(sim_factory, "__self__", None) is not simulation)):
-                raise ValueError("Near2FarTarget requires direct simulation=SimulationSpec(...)")
+            if not isinstance(simulation, SimulationSpec) or (
+                sim_factory is not None
+                and getattr(sim_factory, "__self__", None) is not simulation
+            ):
+                raise ValueError(
+                    "Near2FarTarget requires direct simulation=SimulationSpec(...)"
+                )
             if chunk_balancer == "auto":
                 chunk_balancer = None
             if chunk_balancer is not None:
-                raise ValueError("Near2FarTarget does not support adaptive chunk balancing")
-            if (wavelength_bands is None or len(wavelength_bands) != len(targets)
-                    or any(wavelength_bands[i] is not None for i in self._near2far_indices)):
-                raise ValueError("mixed wavelength_bands must match targets with None for Near2FarTarget")
+                raise ValueError(
+                    "Near2FarTarget does not support adaptive chunk balancing"
+                )
+            if (
+                wavelength_bands is None
+                or len(wavelength_bands) != len(targets)
+                or any(wavelength_bands[i] is not None for i in self._near2far_indices)
+            ):
+                raise ValueError(
+                    "mixed wavelength_bands must match targets with None for Near2FarTarget"
+                )
             if weights is None or len(weights) != len(targets):
                 raise ValueError("mixed weights must match targets")
             if any(weights[i] != 1 for i in self._near2far_indices):
-                raise ValueError("Near2FarTarget requires unit filter weights; use scalarization_fn")
-            if any(value is not None for value in (monitor_positions, component,
-                                                  adjoint_source_size, adjoint_source_amplitude)):
-                raise ValueError("mixed near-to-far targets cannot use legacy target arguments")
+                raise ValueError(
+                    "Near2FarTarget requires unit filter weights; use scalarization_fn"
+                )
+            if any(
+                value is not None
+                for value in (
+                    monitor_positions,
+                    component,
+                    adjoint_source_size,
+                    adjoint_source_amplitude,
+                )
+            ):
+                raise ValueError(
+                    "mixed near-to-far targets cannot use legacy target arguments"
+                )
             wavelength_bands = [wavelength_bands[i] for i in self._temporal_indices]
             weights = [weights[i] for i in self._temporal_indices]
             targets = tuple(targets[i] for i in self._temporal_indices)
@@ -937,11 +951,14 @@ class MultiTDAObjective:
         )
         resolved_designs = _resolve_designs(design, designs)
         design = (
-            _DesignCollection(resolved_designs) if len(resolved_designs) > 1
+            _DesignCollection(resolved_designs)
+            if len(resolved_designs) > 1
             else next(iter(resolved_designs), None)
         )
         if design is not None:
-            update_design = update_design if update_design is not None else design.update_weights
+            update_design = (
+                update_design if update_design is not None else design.update_weights
+            )
         if simulation is not None:
             sim_factory = sim_factory if sim_factory is not None else simulation.make
             resolution = resolution if resolution is not None else simulation.resolution
@@ -954,9 +971,7 @@ class MultiTDAObjective:
             if simulation is not None
             else bool(getattr(design, "is_cylindrical", False))
         )
-        has_coordinate_system_metadata = (
-            simulation is not None or design is not None
-        )
+        has_coordinate_system_metadata = simulation is not None or design is not None
         if wavelength_bands is not None:
             wavelength_bands = _validate_wavelength_bands(wavelength_bands)
         has_regional_targets = False
@@ -972,13 +987,8 @@ class MultiTDAObjective:
             targets = tuple(targets)
             if not targets:
                 raise ValueError("targets must not be empty")
-            if (
-                wavelength_bands is not None
-                and len(targets) != len(wavelength_bands)
-            ):
-                raise ValueError(
-                    "targets must match the number of wavelength bands"
-                )
+            if wavelength_bands is not None and len(targets) != len(wavelength_bands):
+                raise ValueError("targets must match the number of wavelength bands")
             if any(
                 not isinstance(
                     target,
@@ -996,20 +1006,13 @@ class MultiTDAObjective:
                     "FluxTarget, or EigenmodeCoefficientTarget"
                 )
             has_regional_targets = any(
-                isinstance(target, FieldRegionTarget)
-                for target in targets
+                isinstance(target, FieldRegionTarget) for target in targets
             )
-            has_flux_targets = any(
-                isinstance(target, FluxTarget)
-                for target in targets
-            )
+            has_flux_targets = any(isinstance(target, FluxTarget) for target in targets)
             has_eigenmode_targets = any(
-                isinstance(target, EigenmodeCoefficientTarget)
-                for target in targets
+                isinstance(target, EigenmodeCoefficientTarget) for target in targets
             )
-            has_exact_surface_targets = (
-                has_flux_targets or has_eigenmode_targets
-            )
+            has_exact_surface_targets = has_flux_targets or has_eigenmode_targets
             if has_regional_targets or has_exact_surface_targets:
                 conflicting = [
                     name
@@ -1032,22 +1035,16 @@ class MultiTDAObjective:
                         "target arguments: " + ", ".join(conflicting)
                     )
             point_positions = (
-                tuple(monitor_positions)
-                if monitor_positions is not None
-                else tuple(
-                    target.position
-                    for target in targets
+                (
+                    tuple(monitor_positions)
+                    if monitor_positions is not None
+                    else tuple(target.position for target in targets)
                 )
-            ) if not (
-                has_regional_targets or has_exact_surface_targets
-            ) else None
-            if (
-                point_positions is not None
-                and len(point_positions) != len(targets)
-            ):
-                raise ValueError(
-                    "monitor_positions must match the number of targets"
-                )
+                if not (has_regional_targets or has_exact_surface_targets)
+                else None
+            )
+            if point_positions is not None and len(point_positions) != len(targets):
+                raise ValueError("monitor_positions must match the number of targets")
             target_positions = tuple(
                 (
                     target.positions
@@ -1060,32 +1057,25 @@ class MultiTDAObjective:
                         ),
                     )
                     else (
-                        point_positions[target_index]
-                        if point_positions is not None
-                        else target.position,
+                        (
+                            point_positions[target_index]
+                            if point_positions is not None
+                            else target.position
+                        ),
                     )
                 )
                 for target_index, target in enumerate(targets)
             )
             target_sample_shapes = tuple(
-                (
-                    target.sample_shape
-                    if isinstance(target, FieldRegionTarget)
-                    else ()
-                )
+                (target.sample_shape if isinstance(target, FieldRegionTarget) else ())
                 for target in targets
             )
             target_is_regional = tuple(
-                isinstance(target, FieldRegionTarget)
-                for target in targets
+                isinstance(target, FieldRegionTarget) for target in targets
             )
-            target_is_flux = tuple(
-                isinstance(target, FluxTarget)
-                for target in targets
-            )
+            target_is_flux = tuple(isinstance(target, FluxTarget) for target in targets)
             target_is_eigenmode = tuple(
-                isinstance(target, EigenmodeCoefficientTarget)
-                for target in targets
+                isinstance(target, EigenmodeCoefficientTarget) for target in targets
             )
             target_normals = tuple(
                 (
@@ -1138,25 +1128,23 @@ class MultiTDAObjective:
                         target,
                         (FluxTarget, EigenmodeCoefficientTarget),
                     )
-                    else (
-                        component
-                        if component is not None
-                        else target.component
-                    )
+                    else (component if component is not None else target.component)
                 )
                 for target in targets
             )
             adjoint_source_sizes = tuple(
-                adjoint_source_size
-                if adjoint_source_size is not None
-                else (
-                    (
-                        target.adjoint_source_size
-                        if target.adjoint_source_size is not None
+                (
+                    adjoint_source_size
+                    if adjoint_source_size is not None
+                    else (
+                        (
+                            target.adjoint_source_size
+                            if target.adjoint_source_size is not None
+                            else mp.Vector3()
+                        )
+                        if isinstance(target, PointTarget)
                         else mp.Vector3()
                     )
-                    if isinstance(target, PointTarget)
-                    else mp.Vector3()
                 )
                 for target in targets
             )
@@ -1181,7 +1169,8 @@ class MultiTDAObjective:
             adjoint_source_amplitudes = None
 
         missing = [
-            name for name, value in (
+            name
+            for name, value in (
                 ("update_design", update_design),
                 ("sim_factory", sim_factory),
                 ("t_final", t_final),
@@ -1197,7 +1186,9 @@ class MultiTDAObjective:
             if value is None
         ]
         if missing:
-            raise ValueError("MultiTDAObjective missing required inputs: " + ", ".join(missing))
+            raise ValueError(
+                "MultiTDAObjective missing required inputs: " + ", ".join(missing)
+            )
         t_final = _positive_finite_float(t_final, "t_final")
         if (
             isinstance(kernel_length, (bool, np.bool_))
@@ -1215,9 +1206,7 @@ class MultiTDAObjective:
             )
         if transition_width is not None:
             if isinstance(transition_width, (bool, np.bool_)):
-                raise ValueError(
-                    "transition_width must be a positive finite number"
-                )
+                raise ValueError("transition_width must be a positive finite number")
             transition_width = _positive_finite_float(
                 transition_width,
                 "transition_width",
@@ -1230,8 +1219,7 @@ class MultiTDAObjective:
             _validate_power_complementary_bands(wavelength_bands)
             if kernel_length % 2 == 0:
                 raise ValueError(
-                    "power_complementary filter_bank requires an odd "
-                    "kernel_length"
+                    "power_complementary filter_bank requires an odd " "kernel_length"
                 )
             if kernel_window not in (None, "hamming") or kernel_window_params:
                 raise ValueError(
@@ -1283,10 +1271,7 @@ class MultiTDAObjective:
                     "max_frequency cannot be combined with sampling_interval > 1"
                 )
             highest_band_frequency = max(
-                (
-                    1.0 / float(lambda_min)
-                    for lambda_min, _ in wavelength_bands
-                ),
+                (1.0 / float(lambda_min) for lambda_min, _ in wavelength_bands),
                 default=None,
             )
             if (
@@ -1298,9 +1283,12 @@ class MultiTDAObjective:
                     f"{highest_band_frequency:g} to cover the highest "
                     "wavelength-band frequency"
                 )
-            if (self._near2far_targets and max_frequency < max(
-                    f for target in self._near2far_targets for f in target.frequencies)):
-                raise ValueError("max_frequency must cover every near-to-far target frequency")
+            if self._near2far_targets and max_frequency < max(
+                f for target in self._near2far_targets for f in target.frequencies
+            ):
+                raise ValueError(
+                    "max_frequency must cover every near-to-far target frequency"
+                )
         (
             reconstruction_window,
             reconstruction_window_params,
@@ -1330,14 +1318,15 @@ class MultiTDAObjective:
                 else None
             )
         if chunk_balancer is not None and getattr(simulation, "symmetries", ()):
-            raise ValueError("Mirror simulations do not support adaptive chunk balancing")
+            raise ValueError(
+                "Mirror simulations do not support adaptive chunk balancing"
+            )
         if chunk_balancer is not None and not uses_simulation_spec:
             raise ValueError("adaptive chunk balancing requires SimulationSpec.make")
         if (
             (has_flux_targets or has_eigenmode_targets)
             and chunk_balancer is not None
-            and getattr(chunk_balancer, "source_boundary_mode", "auto")
-            == "finite"
+            and getattr(chunk_balancer, "source_boundary_mode", "auto") == "finite"
         ):
             raise ValueError(
                 "FluxTarget and EigenmodeCoefficientTarget require exact "
@@ -1371,41 +1360,24 @@ class MultiTDAObjective:
         if target_components is None:
             target_components = (component,) * len(self.monitor_positions)
             source_size = (
-                adjoint_source_size
-                if adjoint_source_size is not None
-                else mp.Vector3()
+                adjoint_source_size if adjoint_source_size is not None else mp.Vector3()
             )
             adjoint_source_sizes = (source_size,) * len(self.monitor_positions)
             source_amplitude = (
-                1.0
-                if adjoint_source_amplitude is None
-                else adjoint_source_amplitude
+                1.0 if adjoint_source_amplitude is None else adjoint_source_amplitude
             )
-            adjoint_source_amplitudes = (
-                complex(source_amplitude),
-            ) * len(self.monitor_positions)
-            target_positions = tuple(
-                (position,) for position in self.monitor_positions
+            adjoint_source_amplitudes = (complex(source_amplitude),) * len(
+                self.monitor_positions
             )
-            target_sample_shapes = tuple(
-                () for _ in self.monitor_positions
-            )
+            target_positions = tuple((position,) for position in self.monitor_positions)
+            target_sample_shapes = tuple(() for _ in self.monitor_positions)
             target_spatial_weights = tuple(
-                np.ones(1, dtype=float)
-                for _ in self.monitor_positions
+                np.ones(1, dtype=float) for _ in self.monitor_positions
             )
-            target_is_regional = tuple(
-                False for _ in self.monitor_positions
-            )
-            target_is_flux = tuple(
-                False for _ in self.monitor_positions
-            )
-            target_is_eigenmode = tuple(
-                False for _ in self.monitor_positions
-            )
-            target_normals = tuple(
-                None for _ in self.monitor_positions
-            )
+            target_is_regional = tuple(False for _ in self.monitor_positions)
+            target_is_flux = tuple(False for _ in self.monitor_positions)
+            target_is_eigenmode = tuple(False for _ in self.monitor_positions)
+            target_normals = tuple(None for _ in self.monitor_positions)
         self.target_components = tuple(target_components)
         self.adjoint_source_sizes = tuple(adjoint_source_sizes)
         self.adjoint_source_amplitudes = tuple(adjoint_source_amplitudes)
@@ -1423,20 +1395,14 @@ class MultiTDAObjective:
             )
         )
         self._eigenmode_targets = tuple(
-            (
-                target
-                if isinstance(target, EigenmodeCoefficientTarget)
-                else None
-            )
+            (target if isinstance(target, EigenmodeCoefficientTarget) else None)
             for target in (
                 targets
                 if targets is not None
                 else (None,) * len(self.monitor_positions)
             )
         )
-        self._reference_mode_fields = tuple(
-            None for _ in self.monitor_positions
-        )
+        self._reference_mode_fields = tuple(None for _ in self.monitor_positions)
         self.target_normals = tuple(target_normals)
         self.target_positions = tuple(
             tuple(positions) for positions in target_positions
@@ -1473,24 +1439,18 @@ class MultiTDAObjective:
             int(simulation.m) if uses_simulation_spec else None
         )
         self._is_cylindrical = is_cylindrical
-        self._has_coordinate_system_metadata = (
-            has_coordinate_system_metadata
-        )
+        self._has_coordinate_system_metadata = has_coordinate_system_metadata
         self._inferred_is_cylindrical = None
         self._configure_target_channel_layout()
         self.component = (
-            self.target_components[0]
-            if len(set(self.target_components)) == 1
-            else None
+            self.target_components[0] if len(set(self.target_components)) == 1 else None
         )
         source_size_keys = {
             (source_size.x, source_size.y, source_size.z)
             for source_size in self.adjoint_source_sizes
         }
         self.adjoint_source_size = (
-            self.adjoint_source_sizes[0]
-            if len(source_size_keys) == 1
-            else None
+            self.adjoint_source_sizes[0] if len(source_size_keys) == 1 else None
         )
         self.adjoint_source_amplitude = (
             self.adjoint_source_amplitudes[0]
@@ -1522,7 +1482,11 @@ class MultiTDAObjective:
         )
         self.fom_fn = fom_fn
         self.adjoint_signal_fn = adjoint_signal_fn
-        self.scalarization_fn = scalarization_fn if scalarization_fn is not None else self._weighted_sum_scalarization
+        self.scalarization_fn = (
+            scalarization_fn
+            if scalarization_fn is not None
+            else self._weighted_sum_scalarization
+        )
         self.history_dtype = history_dtype
         self.target_history_block_size = target_history_block_size
         self.chunk_balancer = chunk_balancer
@@ -1545,22 +1509,25 @@ class MultiTDAObjective:
             raise ValueError(
                 "2D flux and eigenmode target normals must lie in the x-y plane"
             )
-        if simulation is not None and design is not None and (
-            bool(getattr(design, "is_cylindrical", False))
-            != self._is_cylindrical
+        if (
+            simulation is not None
+            and design is not None
+            and (bool(getattr(design, "is_cylindrical", False)) != self._is_cylindrical)
         ):
             raise ValueError(
                 "DesignGrid coordinate system must match SimulationSpec dimensions"
             )
         self.reuse_simulation = reuse_simulation
         self._reuse_simulation_for_adjoint = (
-            (self.reuse_simulation or bool(self._near2far_targets)) and uses_simulation_spec
-        )
+            self.reuse_simulation or bool(self._near2far_targets)
+        ) and uses_simulation_spec
         self.last_chunk_balance = None
         self.last_source_boundary_decision = None
 
         if len(self.monitor_positions) != len(self.wavelength_bands):
-            raise ValueError("monitor_positions must match the number of wavelength bands")
+            raise ValueError(
+                "monitor_positions must match the number of wavelength bands"
+            )
         if self.weights.size != len(self.wavelength_bands):
             raise ValueError("weights must match the number of wavelength bands")
 
@@ -1644,18 +1611,12 @@ class MultiTDAObjective:
             for raw_component in raw_components:
                 component_start = sample_offset
                 flat_target_positions.extend(positions)
-                flat_target_components.extend(
-                    [raw_component] * len(positions)
-                )
-                flat_adjoint_source_sizes.extend(
-                    [source_size] * len(positions)
-                )
+                flat_target_components.extend([raw_component] * len(positions))
+                flat_adjoint_source_sizes.extend([source_size] * len(positions))
                 flat_adjoint_source_amplitudes.extend(
                     [source_amplitude] * len(positions)
                 )
-                sample_target_indices.extend(
-                    [target_index] * len(positions)
-                )
+                sample_target_indices.extend([target_index] * len(positions))
                 sample_offset += len(positions)
                 component_slices[raw_component] = slice(
                     component_start,
@@ -1667,12 +1628,8 @@ class MultiTDAObjective:
         self._target_component_slices = tuple(target_component_slices)
         self._flat_target_positions = tuple(flat_target_positions)
         self._flat_target_components = tuple(flat_target_components)
-        self._flat_adjoint_source_sizes = tuple(
-            flat_adjoint_source_sizes
-        )
-        self._flat_adjoint_source_amplitudes = tuple(
-            flat_adjoint_source_amplitudes
-        )
+        self._flat_adjoint_source_sizes = tuple(flat_adjoint_source_sizes)
+        self._flat_adjoint_source_amplitudes = tuple(flat_adjoint_source_amplitudes)
         self._sample_target_indices = tuple(sample_target_indices)
 
         flat_to_monitor_indices = np.empty(
@@ -1738,18 +1695,13 @@ class MultiTDAObjective:
         )
         self._monitor_target_positions = tuple(monitor_target_positions)
         self._monitor_target_components = tuple(monitor_target_components)
-        self._monitor_adjoint_source_sizes = tuple(
-            monitor_adjoint_source_sizes
-        )
+        self._monitor_adjoint_source_sizes = tuple(monitor_adjoint_source_sizes)
         self._monitor_adjoint_source_amplitudes = tuple(
             monitor_adjoint_source_amplitudes
         )
-        self._monitor_sample_target_indices = tuple(
-            monitor_sample_target_indices
-        )
-        self._uses_deduplicated_monitors = (
-            len(self._monitor_target_positions)
-            < len(self._flat_target_positions)
+        self._monitor_sample_target_indices = tuple(monitor_sample_target_indices)
+        self._uses_deduplicated_monitors = len(self._monitor_target_positions) < len(
+            self._flat_target_positions
         )
 
         if self.design is not None:
@@ -1770,8 +1722,10 @@ class MultiTDAObjective:
         if (
             self.design is not None
             and self._simulation_spec is not None
-            and (self._near2far_targets
-                 or _uses_material_jacobian(self._simulation_spec, self.design))
+            and (
+                self._near2far_targets
+                or _uses_material_jacobian(self._simulation_spec, self.design)
+            )
         ):
             self.gradient_components = (mp.Ex, mp.Ey, mp.Ez)
 
@@ -1779,9 +1733,7 @@ class MultiTDAObjective:
         for monitor_index, target_component in enumerate(
             self._monitor_target_components
         ):
-            monitor_groups.setdefault(target_component, []).append(
-                monitor_index
-            )
+            monitor_groups.setdefault(target_component, []).append(monitor_index)
         self._monitor_groups = tuple(
             (target_component, tuple(target_indices))
             for target_component, target_indices in monitor_groups.items()
@@ -1797,8 +1749,7 @@ class MultiTDAObjective:
         if self._has_coordinate_system_metadata:
             if is_cylindrical != self._is_cylindrical:
                 raise ValueError(
-                    "target coordinate system does not match the forward "
-                    "simulation"
+                    "target coordinate system does not match the forward " "simulation"
                 )
             return
         if (
@@ -1806,8 +1757,7 @@ class MultiTDAObjective:
             and is_cylindrical != self._inferred_is_cylindrical
         ):
             raise ValueError(
-                "target coordinate system does not match the forward "
-                "simulation"
+                "target coordinate system does not match the forward " "simulation"
             )
         if is_cylindrical:
             for normal, positions, spatial_weights, is_surface in zip(
@@ -1832,9 +1782,7 @@ class MultiTDAObjective:
         if self.filter_bank == "power_complementary":
             transition_width = self.transition_width
             if transition_width is None:
-                transition_width = 2.0 / (
-                    self.kernel_length * configured_dt
-                )
+                transition_width = 2.0 / (self.kernel_length * configured_dt)
             kernels = _power_complementary_kernels(
                 self.wavelength_bands,
                 configured_dt,
@@ -1951,12 +1899,16 @@ class MultiTDAObjective:
     @staticmethod
     def _parse_scalarization_result(result, band_objectives: np.ndarray):
         if not isinstance(result, tuple) or len(result) not in (2, 3):
-            raise ValueError("scalarization_fn must return (total_fom, band_coeffs) or (total_fom, band_coeffs, info)")
+            raise ValueError(
+                "scalarization_fn must return (total_fom, band_coeffs) or (total_fom, band_coeffs, info)"
+            )
         total_fom, band_coeffs = result[:2]
         info = result[2] if len(result) == 3 else None
         band_coeffs = np.asarray(band_coeffs, dtype=float)
         if band_coeffs.shape != band_objectives.shape:
-            raise ValueError("scalarization_fn band_coeffs must match band_objectives shape")
+            raise ValueError(
+                "scalarization_fn band_coeffs must match band_objectives shape"
+            )
         return float(total_fom), band_coeffs, info
 
     def _evaluate_scalarization(
@@ -2105,8 +2057,7 @@ class MultiTDAObjective:
         if output_time_count is None:
             output_time_count = signals.shape[0]
         requires_complex = bool(
-            np.iscomplexobj(signals)
-            and np.any(signals.imag != 0.0)
+            np.iscomplexobj(signals) and np.any(signals.imag != 0.0)
         )
         local = np.zeros(
             (output_time_count, signals.shape[1]),
@@ -2130,8 +2081,7 @@ class MultiTDAObjective:
                         "target transform must match the requested target shape"
                     )
                 transformed_is_complex = bool(
-                    np.iscomplexobj(transformed)
-                    and np.any(transformed.imag != 0.0)
+                    np.iscomplexobj(transformed) and np.any(transformed.imag != 0.0)
                 )
                 if transformed_is_complex and not requires_complex:
                     local = local.astype(np.complex128)
@@ -2214,15 +2164,11 @@ class MultiTDAObjective:
             return float(band_objective), None
 
         if band_adjoint_signal_fn is not None:
-            band_signal = np.asarray(
-                band_adjoint_signal_fn(band_history, self.dt)
-            )
+            band_signal = np.asarray(band_adjoint_signal_fn(band_history, self.dt))
             signal_name = "adjoint_signal_fn"
             signal_scale = 1.0
         elif band_fom_fn is not None:
-            band_signal = np.asarray(
-                grad(band_fom_fn, 0)(band_history, self.dt)
-            )
+            band_signal = np.asarray(grad(band_fom_fn, 0)(band_history, self.dt))
             signal_name = "fom_fn derivative"
             signal_scale = 1.0 / self.dt
         elif self._flux_target_mask[band_index]:
@@ -2235,8 +2181,7 @@ class MultiTDAObjective:
             signal_scale = 1.0
         else:
             band_signal = (
-                np.conjugate(band_history)
-                * self.target_spatial_weights[band_index]
+                np.conjugate(band_history) * self.target_spatial_weights[band_index]
             )
             signal_name = "default field derivative"
             signal_scale = 1.0
@@ -2273,10 +2218,12 @@ class MultiTDAObjective:
             component_covectors = None
 
         if component_covectors is not None:
-            adjoint_dtype = np.result_type(*(
-                np.asarray(covector).dtype
-                for covector in component_covectors.values()
-            ))
+            adjoint_dtype = np.result_type(
+                *(
+                    np.asarray(covector).dtype
+                    for covector in component_covectors.values()
+                )
+            )
         else:
             adjoint_dtype = np.asarray(band_signal).dtype
         filtered_adjoint = np.zeros_like(
@@ -2286,9 +2233,7 @@ class MultiTDAObjective:
         if component_covectors is not None:
             target_start = self._target_slices[band_index].start
             for component, component_covector in component_covectors.items():
-                component_slice = self._target_component_slices[
-                    band_index
-                ][component]
+                component_slice = self._target_component_slices[band_index][component]
                 filtered_adjoint[
                     :,
                     slice(
@@ -2314,13 +2259,9 @@ class MultiTDAObjective:
         """Evaluate modal bands from their contracted E/H histories."""
         overlap_history = np.asarray(overlap_history)
         band_count = len(self.wavelength_bands)
-        if (
-            overlap_history.ndim != 2
-            or overlap_history.shape[1] != 2 * band_count
-        ):
+        if overlap_history.ndim != 2 or overlap_history.shape[1] != 2 * band_count:
             raise ValueError(
-                "eigenmode overlap history must have shape "
-                "(n_time, 2 * n_bands)"
+                "eigenmode overlap history must have shape " "(n_time, 2 * n_bands)"
             )
         overlaps_by_band = overlap_history.reshape(
             overlap_history.shape[0],
@@ -2338,9 +2279,7 @@ class MultiTDAObjective:
                 self.weighted_kernels[band_index],
                 self.dt,
             )
-            band_history = _coefficient_history_from_overlaps(
-                filtered_overlaps
-            )
+            band_history = _coefficient_history_from_overlaps(filtered_overlaps)
             band_fom_fn = fom_fns[band_index]
             band_adjoint_signal_fn = adjoint_signal_fns[band_index]
             band_objective = (
@@ -2353,15 +2292,11 @@ class MultiTDAObjective:
                 continue
 
             if band_adjoint_signal_fn is not None:
-                band_signal = np.asarray(
-                    band_adjoint_signal_fn(band_history, self.dt)
-                )
+                band_signal = np.asarray(band_adjoint_signal_fn(band_history, self.dt))
                 signal_name = "adjoint_signal_fn"
                 signal_scale = 1.0
             elif band_fom_fn is not None:
-                band_signal = np.asarray(
-                    grad(band_fom_fn, 0)(band_history, self.dt)
-                )
+                band_signal = np.asarray(grad(band_fom_fn, 0)(band_history, self.dt))
                 signal_name = "fom_fn derivative"
                 signal_scale = 1.0 / self.dt
             else:
@@ -2379,9 +2314,7 @@ class MultiTDAObjective:
                 )
             )
         return np.asarray(band_objectives), (
-            np.stack(overlap_covectors, axis=1)
-            if need_gradient
-            else None
+            np.stack(overlap_covectors, axis=1) if need_gradient else None
         )
 
     def _filter_transpose_eigenmode_overlap_covectors(
@@ -2402,8 +2335,7 @@ class MultiTDAObjective:
                 np.conjugate(
                     temporal_convolve_signal_transpose(
                         np.conjugate(
-                            values[:, band_index, :]
-                            * band_coeffs[band_index]
+                            values[:, band_index, :] * band_coeffs[band_index]
                         ),
                         self.weighted_kernels[band_index],
                         self.dt,
@@ -2430,16 +2362,13 @@ class MultiTDAObjective:
         band_count = len(self.wavelength_bands)
         if values.shape != (times.size, band_count, 2):
             raise ValueError(
-                "eigenmode overlap covectors must have shape "
-                "(n_time, n_bands, 2)"
+                "eigenmode overlap covectors must have shape " "(n_time, n_bands, 2)"
             )
         if (
             len(overlap_monitors) != band_count
             or len(indexed_stencils_by_band) != band_count
         ):
-            raise ValueError(
-                "eigenmode overlap monitors must match the band count"
-            )
+            raise ValueError("eigenmode overlap monitors must match the band count")
 
         # Yee electric updates sample current halfway through each step.
         t_array = float(actual_time) + 0.5 * dt - times[::-1]
@@ -2470,12 +2399,11 @@ class MultiTDAObjective:
                 mp.CustomSource(src_func=shifted_magnetic_function),
             )
 
-            for component, projection_weights in (
-                overlap_monitor.component_weights.items()
-            ):
-                component_slice = self._target_component_slices[
-                    band_index
-                ][component]
+            for (
+                component,
+                projection_weights,
+            ) in overlap_monitor.component_weights.items():
+                component_slice = self._target_component_slices[band_index][component]
                 flat_indices = np.arange(
                     component_slice.start,
                     component_slice.stop,
@@ -2498,7 +2426,9 @@ class MultiTDAObjective:
         return sources
 
     def _resolved_target_callbacks(self, *, validate_pairs: bool):
-        band_count = len(self.targets) if self._near2far_targets else len(self.wavelength_bands)
+        band_count = (
+            len(self.targets) if self._near2far_targets else len(self.wavelength_bands)
+        )
         fom_fns = _normalize_band_callbacks(
             self.fom_fn,
             band_count,
@@ -2516,8 +2446,10 @@ class MultiTDAObjective:
     def _resolved_band_callbacks(self, *, validate_pairs: bool):
         fns, signals = self._resolved_target_callbacks(validate_pairs=validate_pairs)
         if self._near2far_targets:
-            return (tuple(fns[i] for i in self._temporal_indices),
-                    tuple(signals[i] for i in self._temporal_indices))
+            return (
+                tuple(fns[i] for i in self._temporal_indices),
+                tuple(signals[i] for i in self._temporal_indices),
+            )
         return fns, signals
 
     def _validate_runtime_band_callbacks(self, *, validate_pairs: bool):
@@ -2533,9 +2465,7 @@ class MultiTDAObjective:
 
         nproc = mp.count_processors()
         if nproc > 1:
-            failed_ranks = int(
-                mp.sum_to_all(int(callback_error is not None))
-            )
+            failed_ranks = int(mp.sum_to_all(int(callback_error is not None)))
             if failed_ranks:
                 if callback_error is not None:
                     raise callback_error
@@ -2548,9 +2478,7 @@ class MultiTDAObjective:
                 ("adjoint_signal_fn", adjoint_signal_fns),
             ):
                 for callback in callbacks:
-                    configured_ranks = int(
-                        mp.sum_to_all(int(callback is not None))
-                    )
+                    configured_ranks = int(mp.sum_to_all(int(callback is not None)))
                     if configured_ranks not in (0, nproc):
                         raise RuntimeError(
                             f"{name} must be configured consistently for "
@@ -2567,19 +2495,19 @@ class MultiTDAObjective:
             or not self._uses_concrete_simulation_spec
             or bool(getattr(self._simulation_spec, "symmetries", ()))
             or self._is_cylindrical
-            or not (
-                all(self._regional_target_mask)
-                or all(self._flux_target_mask)
-            )
+            or not (all(self._regional_target_mask) or all(self._flux_target_mask))
         ):
             return False
         fom_fns, adjoint_signal_fns = self._resolved_band_callbacks(
             validate_pairs=False,
         )
-        return all(callback is None for callback in (
-            *fom_fns,
-            *adjoint_signal_fns,
-        ))
+        return all(
+            callback is None
+            for callback in (
+                *fom_fns,
+                *adjoint_signal_fns,
+            )
+        )
 
     def _close_distributed_flux_ownership(self, owners) -> None:
         """Replicate connected mixed-owner flux point channels to closure."""
@@ -2588,17 +2516,13 @@ class MultiTDAObjective:
             if not is_flux:
                 continue
             component_indices = []
-            for component_slice in self._target_component_slices[
-                target_index
-            ].values():
+            for component_slice in self._target_component_slices[target_index].values():
                 flat_indices = np.arange(
                     component_slice.start,
                     component_slice.stop,
                     dtype=np.intp,
                 )
-                component_indices.append(
-                    self._flat_to_monitor_indices[flat_indices]
-                )
+                component_indices.append(self._flat_to_monitor_indices[flat_indices])
             flux_targets.append(np.stack(component_indices, axis=1))
 
         changed = True
@@ -2606,15 +2530,12 @@ class MultiTDAObjective:
             changed = False
             for target_points in flux_targets:
                 for point_channels in target_points:
-                    active_channels = point_channels[
-                        owners[point_channels] != -2
-                    ]
+                    active_channels = point_channels[owners[point_channels] != -2]
                     if active_channels.size == 0:
                         continue
                     point_owners = owners[active_channels]
-                    common_owner = (
-                        point_owners[0] >= 0
-                        and np.all(point_owners == point_owners[0])
+                    common_owner = point_owners[0] >= 0 and np.all(
+                        point_owners == point_owners[0]
                     )
                     if not common_owner and np.any(point_owners != -1):
                         owners[active_channels] = -1
@@ -2655,9 +2576,7 @@ class MultiTDAObjective:
             "support configuration",
         )
         if mp.count_processors() > 1:
-            ownership_reduction = FastFieldGrid.reduce_real_inplace(
-                ownership_reduction
-            )
+            ownership_reduction = FastFieldGrid.reduce_real_inplace(ownership_reduction)
         owners = None
         lookup = {}
         local_unique_channels = 0
@@ -2665,9 +2584,7 @@ class MultiTDAObjective:
         implicit_zero_channels = 0
         configuration_error = None
         try:
-            support_counts = np.rint(ownership_reduction[0]).astype(
-                np.int64
-            )
+            support_counts = np.rint(ownership_reduction[0]).astype(np.int64)
             # Nonnegative entries are unique-owner ranks, -1 is replicated,
             # and -2 is a globally unallocated component represented as zero.
             owners = np.full(channel_count, -2, dtype=np.int64)
@@ -2693,24 +2610,18 @@ class MultiTDAObjective:
                 replicated_indices = np.flatnonzero(
                     owners[group_global_indices] == -1
                 ).astype(np.int64)
-                history_indices = np.concatenate(
-                    (unique_indices, replicated_indices)
-                )
+                history_indices = np.concatenate((unique_indices, replicated_indices))
                 group["monitor"].configure_history_indices(history_indices)
                 group["history_indices"] = history_indices
                 group["unique_count"] = int(unique_indices.size)
                 group["replicated_count"] = int(replicated_indices.size)
-                group["history_global_indices"] = group_global_indices[
-                    history_indices
-                ]
+                group["history_global_indices"] = group_global_indices[history_indices]
                 group["history"] = np.empty(
                     (row_count, history_indices.size),
                     dtype=dtype,
                 )
                 local_unique_channels += int(unique_indices.size)
-                for column, global_index in enumerate(
-                    group["history_global_indices"]
-                ):
+                for column, global_index in enumerate(group["history_global_indices"]):
                     lookup[int(global_index)] = (group_index, column)
         except Exception as exc:
             configuration_error = exc
@@ -2734,9 +2645,7 @@ class MultiTDAObjective:
             "history_itemsize": np.dtype(dtype).itemsize,
         }
         layout["allocated_history_bytes"] = (
-            row_count
-            * layout["stored_channels"]
-            * layout["history_itemsize"]
+            row_count * layout["stored_channels"] * layout["history_itemsize"]
         )
         layout["legacy_history_bytes"] = (
             row_count * channel_count * layout["history_itemsize"]
@@ -2764,9 +2673,7 @@ class MultiTDAObjective:
                 width = min(block_size, replicated_count - first)
                 rows_per_block = max(
                     1,
-                    max_work_bytes // (
-                        width * group["history"].dtype.itemsize
-                    ),
+                    max_work_bytes // (width * group["history"].dtype.itemsize),
                 )
                 scratch = None
                 scratch_error = None
@@ -2785,7 +2692,7 @@ class MultiTDAObjective:
                 column_stop = column_start + width
                 for row_start in range(0, row_count, rows_per_block):
                     row_stop = min(row_count, row_start + rows_per_block)
-                    work = scratch[:row_stop - row_start]
+                    work = scratch[: row_stop - row_start]
                     work[:] = group["history"][
                         row_start:row_stop,
                         column_start:column_stop,
@@ -2810,10 +2717,7 @@ class MultiTDAObjective:
         global_indices = np.asarray(global_indices, dtype=np.intp)
         entries = [layout["lookup"].get(int(index)) for index in global_indices]
         missing = np.asarray([entry is None for entry in entries])
-        if np.any(
-            missing
-            & (layout["owners"][global_indices] != -2)
-        ):
+        if np.any(missing & (layout["owners"][global_indices] != -2)):
             raise RuntimeError(
                 "distributed target point is missing a required component history"
             )
@@ -2848,9 +2752,7 @@ class MultiTDAObjective:
 
     def _distributed_filtered_target_blocks(self, layout, *, objective_pass):
         """Yield bounded filtered spatial blocks for every local target."""
-        for target_index, component_slices in enumerate(
-            self._target_component_slices
-        ):
+        for target_index, component_slices in enumerate(self._target_component_slices):
             component_indices = {}
             for component, component_slice in component_slices.items():
                 flat_indices = np.arange(
@@ -2867,10 +2769,7 @@ class MultiTDAObjective:
             )
             stored_counts = np.asarray(
                 [
-                    sum(
-                        int(channel) in layout["lookup"]
-                        for channel in channels
-                    )
+                    sum(int(channel) in layout["lookup"] for channel in channels)
                     for channels in point_channels
                 ]
             )
@@ -2878,10 +2777,7 @@ class MultiTDAObjective:
                 layout["owners"][point_channels] != -2,
                 axis=1,
             )
-            if np.any(
-                (stored_counts != 0)
-                & (stored_counts != active_counts)
-            ):
+            if np.any((stored_counts != 0) & (stored_counts != active_counts)):
                 raise RuntimeError(
                     "distributed flux point components do not share an owner"
                 )
@@ -2892,8 +2788,7 @@ class MultiTDAObjective:
                     axis=1,
                 )
                 assigned = (
-                    np.arange(point_channels.shape[0])
-                    % max(1, mp.count_processors())
+                    np.arange(point_channels.shape[0]) % max(1, mp.count_processors())
                 ) == mp.my_rank()
                 stored &= ~replicated | assigned
             positions = np.flatnonzero(stored)
@@ -2903,9 +2798,7 @@ class MultiTDAObjective:
                 positions.size,
                 self.target_history_block_size,
             ):
-                block = positions[
-                    first:first + self.target_history_block_size
-                ]
+                block = positions[first : first + self.target_history_block_size]
                 layout["peak_work_columns"] = max(
                     layout["peak_work_columns"],
                     int(block.size),
@@ -2976,10 +2869,7 @@ class MultiTDAObjective:
                     field_history = next(iter(filtered.values()))
                     local_objectives[target_index] += float(
                         0.5
-                        * np.sum(
-                            np.abs(field_history) ** 2
-                            * weights[np.newaxis, :]
-                        )
+                        * np.sum(np.abs(field_history) ** 2 * weights[np.newaxis, :])
                         * self.dt
                     )
         except Exception as exc:
@@ -3010,21 +2900,14 @@ class MultiTDAObjective:
         entries = [layout["lookup"].get(int(index)) for index in global_indices]
         global_indices = np.asarray(global_indices, dtype=np.intp)
         missing = np.asarray([entry is None for entry in entries])
-        if np.any(
-            missing
-            & (layout["owners"][global_indices] != -2)
-        ):
-            raise RuntimeError(
-                "distributed adjoint block is missing a monitor channel"
-            )
+        if np.any(missing & (layout["owners"][global_indices] != -2)):
+            raise RuntimeError("distributed adjoint block is missing a monitor channel")
         present_entries = [entry for entry in entries if entry is not None]
         if not present_entries:
             return
         group_indices = {entry[0] for entry in present_entries}
         if len(group_indices) != 1:
-            raise RuntimeError(
-                "one adjoint component spans multiple monitor groups"
-            )
+            raise RuntimeError("one adjoint component spans multiple monitor groups")
         group_index = present_entries[0][0]
         columns = np.asarray(
             [entry[1] for entry in present_entries],
@@ -3047,8 +2930,7 @@ class MultiTDAObjective:
         transform_error = None
         try:
             adjoint_histories = [
-                np.zeros_like(group["history"])
-                for group in layout["groups"]
+                np.zeros_like(group["history"]) for group in layout["groups"]
             ]
             for (
                 target_index,
@@ -3075,18 +2957,14 @@ class MultiTDAObjective:
                     component = next(iter(filtered))
                     filtered_covectors = {
                         component: (
-                            np.conjugate(filtered[component])
-                            * weights[np.newaxis, :]
+                            np.conjugate(filtered[component]) * weights[np.newaxis, :]
                         )
                     }
 
                 for component, filtered_covector in filtered_covectors.items():
                     raw_covector = np.conjugate(
                         temporal_convolve_signal_transpose(
-                            np.conjugate(
-                                filtered_covector
-                                * band_coeffs[target_index]
-                            ),
+                            np.conjugate(filtered_covector * band_coeffs[target_index]),
                             self.weighted_kernels[target_index],
                             self.dt,
                         )
@@ -3157,9 +3035,7 @@ class MultiTDAObjective:
         """Create sources only for compact histories with local stencils."""
         active = []
         for group_index, group in enumerate(layout["groups"]):
-            for column, global_index in enumerate(
-                group["history_global_indices"]
-            ):
+            for column, global_index in enumerate(group["history_global_indices"]):
                 stencil = indexed_stencils[int(global_index)]
                 if stencil is not None and len(stencil[0]) != 0:
                     active.append((int(global_index), group_index, column))
@@ -3172,9 +3048,7 @@ class MultiTDAObjective:
             len(active),
             self.target_history_block_size,
         ):
-            active_block = active[
-                first:first + self.target_history_block_size
-            ]
+            active_block = active[first : first + self.target_history_block_size]
             values = np.column_stack(
                 [
                     adjoint_histories[group_index][:, column]
@@ -3183,11 +3057,13 @@ class MultiTDAObjective:
             )
             parity = np.asarray(
                 [
-                    -1.0
-                    if _is_magnetic_component(
-                        self._monitor_target_components[global_index]
+                    (
+                        -1.0
+                        if _is_magnetic_component(
+                            self._monitor_target_components[global_index]
+                        )
+                        else 1.0
                     )
-                    else 1.0
                     for global_index, _, _ in active_block
                 ]
             )
@@ -3206,9 +3082,7 @@ class MultiTDAObjective:
             magnetic_columns = [
                 column
                 for column, (global_index, _, _) in enumerate(active_block)
-                if _is_magnetic_component(
-                    self._monitor_target_components[global_index]
-                )
+                if _is_magnetic_component(self._monitor_target_components[global_index])
             ]
             if t_array.size >= 4:
                 shifted_functions.update(
@@ -3222,13 +3096,15 @@ class MultiTDAObjective:
                     for column in magnetic_columns
                 )
             elif magnetic_columns:
-                shifted_functions.update(zip(
-                    (active_block[column][0] for column in magnetic_columns),
-                    _tabulated_cubic_sources(
-                        t_array + 0.5 * dt,
-                        values[:, magnetic_columns],
-                    ),
-                ))
+                shifted_functions.update(
+                    zip(
+                        (active_block[column][0] for column in magnetic_columns),
+                        _tabulated_cubic_sources(
+                            t_array + 0.5 * dt,
+                            values[:, magnetic_columns],
+                        ),
+                    )
+                )
 
         sources = []
         for global_index, _, _ in active:
@@ -3264,31 +3140,25 @@ class MultiTDAObjective:
                 filtered_monitors,
                 band_index,
             )
-            band_objective, filtered_adjoint = (
-                self._band_fom_value_and_adjoint_signal(
-                    filtered_raw_history,
-                    band_index,
-                    need_gradient=need_gradient,
-                )
+            band_objective, filtered_adjoint = self._band_fom_value_and_adjoint_signal(
+                filtered_raw_history,
+                band_index,
+                need_gradient=need_gradient,
             )
             band_objectives.append(band_objective)
             if need_gradient:
                 band_adjoint_signals.append(filtered_adjoint)
         adjoint_signals = None
         if need_gradient:
-            adjoint_dtype = np.result_type(*(
-                signal.dtype for signal in band_adjoint_signals
-            ))
+            adjoint_dtype = np.result_type(
+                *(signal.dtype for signal in band_adjoint_signals)
+            )
             adjoint_signals = np.zeros_like(
                 filtered_monitors,
                 dtype=adjoint_dtype,
             )
-            for band_index, filtered_adjoint in enumerate(
-                band_adjoint_signals
-            ):
-                adjoint_signals[:, self._target_slices[band_index]] = (
-                    filtered_adjoint
-                )
+            for band_index, filtered_adjoint in enumerate(band_adjoint_signals):
+                adjoint_signals[:, self._target_slices[band_index]] = filtered_adjoint
         return np.asarray(band_objectives), adjoint_signals
 
     def _filter_transpose_adjoint_signals(
@@ -3307,9 +3177,7 @@ class MultiTDAObjective:
             # the bilinear complex-covector convention used by Meep sources.
             return np.conjugate(
                 temporal_convolve_signal_transpose(
-                    np.conjugate(
-                        band_signal * band_coeffs[band_index]
-                    ),
+                    np.conjugate(band_signal * band_coeffs[band_index]),
                     self.weighted_kernels[band_index],
                     self.dt,
                 )
@@ -3319,8 +3187,7 @@ class MultiTDAObjective:
             filtered_adjoint_signals,
             pullback,
             output_time_count=(
-                filtered_adjoint_signals.shape[0]
-                - self.kernel_length + 1
+                filtered_adjoint_signals.shape[0] - self.kernel_length + 1
             ),
         )
 
@@ -3331,10 +3198,7 @@ class MultiTDAObjective:
         """Evaluate band FoMs without expanding shared monitor channels."""
         monitor_history = np.asarray(monitor_history)
         expected_width = len(self._monitor_target_positions)
-        if (
-            monitor_history.ndim != 2
-            or monitor_history.shape[1] != expected_width
-        ):
+        if monitor_history.ndim != 2 or monitor_history.shape[1] != expected_width:
             raise ValueError(
                 "deduplicated monitor history must have shape "
                 "(n_time, n_monitor_channels)"
@@ -3403,9 +3267,7 @@ class MultiTDAObjective:
         if transform_failed:
             if transform_error is not None:
                 raise transform_error
-            raise RuntimeError(
-                "band objective evaluation failed on another MPI rank"
-            )
+            raise RuntimeError("band objective evaluation failed on another MPI rank")
         return np.asarray(band_objectives.real, dtype=float)
 
     def _distributed_deduplicated_adjoint_signals(
@@ -3416,10 +3278,7 @@ class MultiTDAObjective:
         """Pull band covectors back and sum them on shared channels."""
         monitor_history = np.asarray(monitor_history)
         expected_width = len(self._monitor_target_positions)
-        if (
-            monitor_history.ndim != 2
-            or monitor_history.shape[1] != expected_width
-        ):
+        if monitor_history.ndim != 2 or monitor_history.shape[1] != expected_width:
             raise ValueError(
                 "deduplicated monitor history must have shape "
                 "(n_time, n_monitor_channels)"
@@ -3449,19 +3308,15 @@ class MultiTDAObjective:
                     self.weighted_kernels[band_index],
                     self.dt,
                 )
-                _, filtered_adjoint = (
-                    self._band_fom_value_and_adjoint_signal(
-                        filtered_raw_history,
-                        band_index,
-                        need_gradient=True,
-                        evaluate_fom=False,
-                    )
+                _, filtered_adjoint = self._band_fom_value_and_adjoint_signal(
+                    filtered_raw_history,
+                    band_index,
+                    need_gradient=True,
+                    evaluate_fom=False,
                 )
                 raw_adjoint = np.conjugate(
                     temporal_convolve_signal_transpose(
-                        np.conjugate(
-                            filtered_adjoint * band_coeffs[band_index]
-                        ),
+                        np.conjugate(filtered_adjoint * band_coeffs[band_index]),
                         self.weighted_kernels[band_index],
                         self.dt,
                     )
@@ -3476,7 +3331,7 @@ class MultiTDAObjective:
                     local[:, monitor_index] += np.sum(
                         raw_adjoint[:, monitor_indices == monitor_index],
                         axis=1,
-                )
+                    )
         except Exception as exc:
             transform_error = exc
         raw_history = None
@@ -3498,9 +3353,7 @@ class MultiTDAObjective:
         if transform_failed:
             if transform_error is not None:
                 raise transform_error
-            raise RuntimeError(
-                "band adjoint evaluation failed on another MPI rank"
-            )
+            raise RuntimeError("band adjoint evaluation failed on another MPI rank")
         if requires_complex and not np.iscomplexobj(local):
             local = local.astype(np.complex128)
         if distribute_bands:
@@ -3512,15 +3365,20 @@ class MultiTDAObjective:
         return local
 
     def _make_history_memmap(self, shape, *, dtype=None):
-        tmp = tempfile.NamedTemporaryFile(prefix="tama_history_", suffix=".dat", delete=False)
+        tmp = tempfile.NamedTemporaryFile(
+            prefix="tama_history_", suffix=".dat", delete=False
+        )
         path = tmp.name
         tmp.close()
-        return np.memmap(
+        return (
+            np.memmap(
+                path,
+                dtype=self.history_dtype if dtype is None else dtype,
+                mode="w+",
+                shape=shape,
+            ),
             path,
-            dtype=self.history_dtype if dtype is None else dtype,
-            mode="w+",
-            shape=shape,
-        ), path
+        )
 
     def _history_values_to_grid(self, values, history_indices, grid_shape):
         grid = np.zeros(grid_shape, dtype=self.history_dtype)
@@ -3534,13 +3392,12 @@ class MultiTDAObjective:
         n_time, n_bands = signals.shape
         nproc = mp.count_processors()
         if nproc <= 1:
-            return np.column_stack([
-                transform(band_index) for band_index in range(n_bands)
-            ])
+            return np.column_stack(
+                [transform(band_index) for band_index in range(n_bands)]
+            )
 
         requires_complex = bool(
-            np.iscomplexobj(signals)
-            and np.any(signals.imag != 0.0)
+            np.iscomplexobj(signals) and np.any(signals.imag != 0.0)
         )
         local = np.zeros(
             (n_time, n_bands),
@@ -3551,8 +3408,7 @@ class MultiTDAObjective:
             for band_index in range(mp.my_rank(), n_bands, nproc):
                 transformed = np.asarray(transform(band_index))
                 transformed_is_complex = bool(
-                    np.iscomplexobj(transformed)
-                    and np.any(transformed.imag != 0.0)
+                    np.iscomplexobj(transformed) and np.any(transformed.imag != 0.0)
                 )
                 if transformed_is_complex and not requires_complex:
                     local = local.astype(np.complex128)
@@ -3575,9 +3431,7 @@ class MultiTDAObjective:
         if transform_failed:
             if transform_error is not None:
                 raise transform_error
-            raise RuntimeError(
-                "band transform failed on another active Meep rank"
-            )
+            raise RuntimeError("band transform failed on another active Meep rank")
         if requires_complex and not np.iscomplexobj(local):
             local = local.astype(np.complex128)
         return (
@@ -3629,10 +3483,7 @@ class MultiTDAObjective:
         return self.evaluate(x, need_gradient=True)
 
     def _forward_sources_for_evaluation(self):
-        if (
-            self.chunk_balancer is None
-            or not self._uses_concrete_simulation_spec
-        ):
+        if self.chunk_balancer is None or not self._uses_concrete_simulation_spec:
             return ()
         return tuple(self._simulation_spec.resolve_sources())
 
@@ -3665,8 +3516,12 @@ class MultiTDAObjective:
             the same number of entries as `x` when `need_gradient=True`;
             otherwise it is `None`.
         """
-        if self.chunk_balancer is not None and getattr(self._simulation_spec, "symmetries", ()):
-            raise ValueError("Mirror simulations do not support adaptive chunk balancing")
+        if self.chunk_balancer is not None and getattr(
+            self._simulation_spec, "symmetries", ()
+        ):
+            raise ValueError(
+                "Mirror simulations do not support adaptive chunk balancing"
+            )
         if self._near2far_targets and self.chunk_balancer is not None:
             raise ValueError("Near2FarTarget does not support adaptive chunk balancing")
         if self._near2far_objective is not None:
@@ -3674,7 +3529,9 @@ class MultiTDAObjective:
 
             if need_gradient and self.design is None:
                 raise ValueError("gradient evaluation requires a DesignGrid")
-            callbacks = _normalize_band_callbacks(self.fom_fn, len(self.targets), "fom_fn")
+            callbacks = _normalize_band_callbacks(
+                self.fom_fn, len(self.targets), "fom_fn"
+            )
             signals = _normalize_band_callbacks(
                 self.adjoint_signal_fn, len(self.targets), "adjoint_signal_fn"
             )
@@ -3683,12 +3540,25 @@ class MultiTDAObjective:
             core = self._sync_near2far_sampling()
             core.update_design = self.update_design
             result = evaluate_near2far(
-                core, x, need_gradient, targets=self.targets, fom_fns=callbacks,
-                adjoint_signal_fns=signals, scalarize=self._evaluate_scalarization,
+                core,
+                x,
+                need_gradient,
+                targets=self.targets,
+                fom_fns=callbacks,
+                adjoint_signal_fns=signals,
+                scalarize=self._evaluate_scalarization,
             )
-            for name in ("last_far_fields", "last_band_objectives", "last_band_losses",
-                         "last_band_coeffs", "last_scalarization_info", "last_smooth_min",
-                         "last_total_fom", "last_sampling_interval", "last_actual_time"):
+            for name in (
+                "last_far_fields",
+                "last_band_objectives",
+                "last_band_losses",
+                "last_band_coeffs",
+                "last_scalarization_info",
+                "last_smooth_min",
+                "last_total_fom",
+                "last_sampling_interval",
+                "last_actual_time",
+            ):
                 setattr(self, name, getattr(core, name))
             return result
 
@@ -3741,12 +3611,11 @@ class MultiTDAObjective:
                     and not self._has_flux_targets
                     and not self._has_regional_targets
                 )
-                else "FluxTarget"
-                if (
-                    self._has_flux_targets
-                    and not self._has_regional_targets
+                else (
+                    "FluxTarget"
+                    if (self._has_flux_targets and not self._has_regional_targets)
+                    else "FieldRegionTarget"
                 )
-                else "FieldRegionTarget"
             )
             raise ValueError(
                 f"{target_name} gradient evaluation requires "
@@ -3755,9 +3624,7 @@ class MultiTDAObjective:
         forward_sources = self._forward_sources_for_evaluation()
         self.update_design(x)
         effective_adjoint_source_sizes = self._monitor_adjoint_source_sizes
-        effective_adjoint_source_amplitudes = (
-            self._monitor_adjoint_source_amplitudes
-        )
+        effective_adjoint_source_amplitudes = self._monitor_adjoint_source_amplitudes
         indexed_source_mask = tuple(
             bool(
                 self._uses_simulation_spec
@@ -3789,15 +3656,12 @@ class MultiTDAObjective:
                     "adjoint_source_amplitude": self.adjoint_source_amplitude,
                 }
                 if (
-                    len(self._monitor_target_positions)
-                    == len(self.target_components)
+                    len(self._monitor_target_positions) == len(self.target_components)
                     and self.adjoint_source_size is not None
                     and self.adjoint_source_amplitude is not None
                 )
                 else {
-                    "adjoint_source_sizes": (
-                        self._monitor_adjoint_source_sizes
-                    ),
+                    "adjoint_source_sizes": (self._monitor_adjoint_source_sizes),
                     "adjoint_source_amplitudes": (
                         self._monitor_adjoint_source_amplitudes
                     ),
@@ -3816,8 +3680,7 @@ class MultiTDAObjective:
                 source_boundary_decision.source_amplitudes
             )
         if any(
-            indexed
-            and not _is_zero_source_size(source_size)
+            indexed and not _is_zero_source_size(source_size)
             for indexed, source_size in zip(
                 indexed_source_mask,
                 effective_adjoint_source_sizes,
@@ -3856,18 +3719,29 @@ class MultiTDAObjective:
             balance_wall_start = time.perf_counter() if balance_enabled else None
             sim_fwd = self._make_forward_simulation(forward_sources)
             if self._near2far_targets:
-                from .near2far import (add_near2far_monitors, farfield_values,
-                                      farfield_adjoint_sources)
+                from .near2far import (
+                    add_near2far_monitors,
+                    farfield_values,
+                    farfield_adjoint_sources,
+                )
 
                 near_monitors = add_near2far_monitors(
-                    sim_fwd, self._near2far_targets, self.max_frequency,
-                    chunk_layout=self._simulation_spec.chunk_layout)
-                fns, signals = self._resolved_target_callbacks(validate_pairs=need_gradient)
+                    sim_fwd,
+                    self._near2far_targets,
+                    self.max_frequency,
+                    chunk_layout=self._simulation_spec.chunk_layout,
+                )
+                fns, signals = self._resolved_target_callbacks(
+                    validate_pairs=need_gradient
+                )
                 near_fns = tuple(fns[i] for i in self._near2far_indices)
                 near_signals = tuple(signals[i] for i in self._near2far_indices)
             _require_no_meep_symmetries(sim_fwd)
-            if (need_gradient and getattr(sim_fwd, "symmetries", ())
-                    and (not self._uses_simulation_spec or not all(indexed_source_mask))):
+            if (
+                need_gradient
+                and getattr(sim_fwd, "symmetries", ())
+                and (not self._uses_simulation_spec or not all(indexed_source_mask))
+            ):
                 raise ValueError(
                     "Mirror gradients require direct SimulationSpec and exact indexed adjoint sources"
                 )
@@ -3875,9 +3749,7 @@ class MultiTDAObjective:
             forward_mode = getattr(sim_fwd, "m", 0)
             forward_mode = 0 if forward_mode is None else forward_mode
             if is_cylindrical:
-                for target_index, target_positions in enumerate(
-                    self.target_positions
-                ):
+                for target_index, target_positions in enumerate(self.target_positions):
                     if self._mixed_surface_target_mask[target_index]:
                         continue
                     for target_position in target_positions:
@@ -3887,9 +3759,7 @@ class MultiTDAObjective:
                     "cylindrical gradient evaluation requires "
                     "simulation=SimulationSpec(...)"
                 )
-            self._resolve_runtime_surface_coordinate_system(
-                is_cylindrical
-            )
+            self._resolve_runtime_surface_coordinate_system(is_cylindrical)
             if (
                 (self._has_flux_targets or self._has_eigenmode_targets)
                 and _is_cartesian_2d_simulation(sim_fwd)
@@ -3903,8 +3773,7 @@ class MultiTDAObjective:
                 )
             ):
                 raise ValueError(
-                    "2D flux and eigenmode target normals must lie in the "
-                    "x-y plane"
+                    "2D flux and eigenmode target normals must lie in the " "x-y plane"
                 )
             if need_gradient and is_cylindrical:
                 if forward_mode not in (-1, 0, 1):
@@ -3945,27 +3814,22 @@ class MultiTDAObjective:
                 )
             if self.dt != dt:
                 self._configure_time_grid(dt)
-            if (
-                self._has_eigenmode_targets
-                and any(
-                    fields is None
-                    for target, fields in zip(
-                        self._eigenmode_targets,
-                        self._reference_mode_fields,
-                    )
-                    if target is not None
+            if self._has_eigenmode_targets and any(
+                fields is None
+                for target, fields in zip(
+                    self._eigenmode_targets,
+                    self._reference_mode_fields,
                 )
+                if target is not None
             ):
                 reference_mode_fields = list(self._reference_mode_fields)
-                for target_index, target in enumerate(
-                    self._eigenmode_targets
-                ):
+                for target_index, target in enumerate(self._eigenmode_targets):
                     if (
                         target is not None
                         and reference_mode_fields[target_index] is None
                     ):
-                        reference_mode_fields[target_index] = (
-                            sample_reference_mode(sim_fwd, target)
+                        reference_mode_fields[target_index] = sample_reference_mode(
+                            sim_fwd, target
                         )
                 self._reference_mode_fields = tuple(reference_mode_fields)
             eigenmode_projection_weights = None
@@ -3985,19 +3849,18 @@ class MultiTDAObjective:
             run_until = _aligned_run_until(
                 self.run_time,
                 dt=dt,
-                sampling_interval=(sampling_interval if need_gradient or self._near2far_targets else 1),
+                sampling_interval=(
+                    sampling_interval if need_gradient or self._near2far_targets else 1
+                ),
             )
             monitor_times = []
-            forward_sampling_interval = (
-                sampling_interval if need_gradient else 1
-            )
+            forward_sampling_interval = sampling_interval if need_gradient else 1
             use_native_forward = hasattr(
                 getattr(sim_fwd, "fields", None),
                 "this",
             )
             distributed_history_active = bool(
-                use_native_forward
-                and self._uses_distributed_builtin_target_history()
+                use_native_forward and self._uses_distributed_builtin_target_history()
             )
             if distributed_history_active:
                 self.last_target_history_mode = "distributed"
@@ -4007,9 +3870,7 @@ class MultiTDAObjective:
                     run_until,
                     forward_sampling_interval,
                 )
-                n_expected = (
-                    native_fine_step_count // forward_sampling_interval + 1
-                )
+                n_expected = native_fine_step_count // forward_sampling_interval + 1
                 n_monitor_expected = native_fine_step_count + 1
             else:
                 n_expected = int(np.ceil(run_until / dt_eff)) + 8
@@ -4044,10 +3905,7 @@ class MultiTDAObjective:
 
             def prepare_fwd_monitors(sim, native_group_histories=False):
                 nonlocal distributed_history_layout
-                if (
-                    streaming_eigenmode_overlap
-                    and fwd_monitor["overlaps"] is None
-                ):
+                if streaming_eigenmode_overlap and fwd_monitor["overlaps"] is None:
                     overlap_monitors = []
                     overlap_stencils_by_band = []
                     for target_index, (
@@ -4060,27 +3918,18 @@ class MultiTDAObjective:
                             electric_weights,
                             magnetic_weights,
                         )
-                        overlap_stencils = (
-                            overlap_monitor.indexed_transpose_stencils()
-                        )
+                        overlap_stencils = overlap_monitor.indexed_transpose_stencils()
                         for component, stencil in overlap_stencils.items():
                             _validate_indexed_monitor_support(
                                 sim,
-                                (component,) * len(
-                                    self.target_positions[target_index]
-                                ),
+                                (component,) * len(self.target_positions[target_index]),
                                 stencil[0],
                             )
                         overlap_monitors.append(overlap_monitor)
                         overlap_stencils_by_band.append(overlap_stencils)
                     fwd_monitor["overlaps"] = tuple(overlap_monitors)
-                    fwd_monitor["overlap_stencils"] = tuple(
-                        overlap_stencils_by_band
-                    )
-                elif (
-                    not streaming_eigenmode_overlap
-                    and fwd_monitor["groups"] is None
-                ):
+                    fwd_monitor["overlap_stencils"] = tuple(overlap_stencils_by_band)
+                elif not streaming_eigenmode_overlap and fwd_monitor["groups"] is None:
                     fwd_monitor["groups"] = []
                     for target_component, target_indices in self._monitor_groups:
                         indices = np.asarray(target_indices, dtype=np.intp)
@@ -4103,10 +3952,7 @@ class MultiTDAObjective:
                             "monitor": monitor,
                             "indexed_stencil": indexed_stencil,
                         }
-                        if (
-                            native_group_histories
-                            and not distributed_history_active
-                        ):
+                        if native_group_histories and not distributed_history_active:
                             consecutive = np.array_equal(
                                 indices,
                                 np.arange(
@@ -4140,22 +3986,16 @@ class MultiTDAObjective:
                         )
 
             if use_native_forward:
-                native_setup_start = (
-                    time.perf_counter() if balance_enabled else None
-                )
+                native_setup_start = time.perf_counter() if balance_enabled else None
                 prepare_fwd_monitors(
                     sim_fwd,
-                    native_group_histories=(
-                        not streaming_eigenmode_overlap
-                    ),
+                    native_group_histories=(not streaming_eigenmode_overlap),
                 )
                 if streaming_eigenmode_overlap:
                     monitor_bindings = tuple(
                         (
                             overlap_monitor,
-                            monitor_history[
-                                :, 2 * band_index : 2 * band_index + 2
-                            ],
+                            monitor_history[:, 2 * band_index : 2 * band_index + 2],
                         )
                         for band_index, overlap_monitor in enumerate(
                             fwd_monitor["overlaps"]
@@ -4167,9 +4007,7 @@ class MultiTDAObjective:
                         for group in fwd_monitor["groups"]
                     )
                 native_setup_seconds = (
-                    time.perf_counter() - native_setup_start
-                    if balance_enabled
-                    else 0.0
+                    time.perf_counter() - native_setup_start if balance_enabled else 0.0
                 )
                 (
                     sample_count["value"],
@@ -4185,18 +4023,13 @@ class MultiTDAObjective:
                     fine_step_count=native_fine_step_count,
                 )
                 del monitor_bindings
-                if (
-                    not streaming_eigenmode_overlap
-                    and not distributed_history_active
-                ):
+                if not streaming_eigenmode_overlap and not distributed_history_active:
                     for group in fwd_monitor["groups"]:
                         if not np.shares_memory(
                             monitor_history,
                             group["history"],
                         ):
-                            monitor_history[:, group["indices"]] = (
-                                group["history"]
-                            )
+                            monitor_history[:, group["indices"]] = group["history"]
                         del group["history"]
                     del group
                 if balance_enabled:
@@ -4224,15 +4057,15 @@ class MultiTDAObjective:
                         fwd_monitor["overlaps"]
                     ):
                         overlap_monitor.sample_history_into(
-                            monitor_row[
-                                2 * band_index : 2 * band_index + 2
-                            ]
+                            monitor_row[2 * band_index : 2 * band_index + 2]
                         )
                 else:
                     for group in fwd_monitor["groups"]:
                         group["monitor"].sample_history_into(group["values"])
                         monitor_row[group["indices"]] = group["values"]
-                monitor_times.append(_sample_time_from_simulation(sim, sample_index, self.dt))
+                monitor_times.append(
+                    _sample_time_from_simulation(sim, sample_index, self.dt)
+                )
                 if need_gradient and sample_count["value"] % sampling_interval == 0:
                     native_history.sample_forward(
                         sim,
@@ -4245,6 +4078,7 @@ class MultiTDAObjective:
             if not use_native_forward:
                 record_fwd = record_fwd_impl
                 if balance_enabled:
+
                     def record_fwd(sim):
                         start = time.perf_counter()
                         try:
@@ -4257,15 +4091,13 @@ class MultiTDAObjective:
                 sim_fwd.run(record_fwd, until=run_until)
             actual_time = sim_fwd.round_time()
             if not distributed_history_active:
-                monitor_history = monitor_history[:sample_count["value"]]
+                monitor_history = monitor_history[: sample_count["value"]]
             if distributed_history_active:
                 pass
             elif streaming_eigenmode_overlap:
                 eigenmode_overlap_monitors = fwd_monitor["overlaps"]
-                monitor_history = (
-                    eigenmode_overlap_monitors[0].reduce_history(
-                        monitor_history
-                    )
+                monitor_history = eigenmode_overlap_monitors[0].reduce_history(
+                    monitor_history
                 )
             else:
                 # Every component group uses the same active Meep communicator.
@@ -4282,12 +4114,9 @@ class MultiTDAObjective:
                 fwd_histories = native_history.finish_forward(fwd_count["value"])
                 fine_step_count = sample_count["value"] - 1
                 expected_history_rows = fine_step_count // sampling_interval + 1
-                if (
-                    fine_step_count % sampling_interval != 0
-                    or any(
-                        history.shape[0] != expected_history_rows
-                        for history in fwd_histories.values()
-                    )
+                if fine_step_count % sampling_interval != 0 or any(
+                    history.shape[0] != expected_history_rows
+                    for history in fwd_histories.values()
                 ):
                     raise RuntimeError(
                         "forward callback count is not aligned with the Nyquist "
@@ -4308,18 +4137,14 @@ class MultiTDAObjective:
             if streaming_eigenmode_overlap and need_gradient:
                 adjoint_indexed_stencils = fwd_monitor["overlap_stencils"]
             elif need_gradient and any(indexed_source_mask):
-                adjoint_indexed_stencils = [
-                    None
-                ] * len(self._monitor_target_positions)
+                adjoint_indexed_stencils = [None] * len(self._monitor_target_positions)
                 for group in fwd_monitor["groups"]:
                     if not any(
                         indexed_source_mask[target_index]
                         for target_index in group["indices"]
                     ):
                         continue
-                    offsets, source_data, source_weights = group[
-                        "indexed_stencil"
-                    ]
+                    offsets, source_data, source_weights = group["indexed_stencil"]
                     if offsets.shape != (len(group["indices"]) + 1,):
                         raise RuntimeError(
                             "MultiTDAObjective indexed monitor "
@@ -4330,18 +4155,23 @@ class MultiTDAObjective:
                             continue
                         adjoint_indexed_stencils[target_index] = (
                             source_data[
-                                int(offsets[group_index]):
-                                int(offsets[group_index + 1])
+                                int(offsets[group_index]) : int(
+                                    offsets[group_index + 1]
+                                )
                             ],
                             source_weights[
-                                int(offsets[group_index]):
-                                int(offsets[group_index + 1])
+                                int(offsets[group_index]) : int(
+                                    offsets[group_index + 1]
+                                )
                             ],
                         )
-            fwd_timing = self.chunk_balancer.capture_timing(sim_fwd) if balance_enabled else None
+            fwd_timing = (
+                self.chunk_balancer.capture_timing(sim_fwd) if balance_enabled else None
+            )
             if self._near2far_targets:
                 near_fields, near_values = farfield_values(
-                    sim_fwd, near_monitors, self._near2far_targets, near_fns, dt)
+                    sim_fwd, near_monitors, self._near2far_targets, near_fns, dt
+                )
                 self.last_far_fields = tuple(f.copy() for f in near_fields)
                 self.last_actual_time = actual_time
             fwd_monitor["groups"] = None
@@ -4368,16 +4198,12 @@ class MultiTDAObjective:
                     )
                 )
             elif self._uses_deduplicated_monitors:
-                band_objectives = (
-                    self._distributed_deduplicated_band_objectives(
-                        monitor_history
-                    )
+                band_objectives = self._distributed_deduplicated_band_objectives(
+                    monitor_history
                 )
             else:
-                filtered_monitors = (
-                    self._distributed_filter_monitor_signals(
-                        monitor_history
-                    )
+                filtered_monitors = self._distributed_filter_monitor_signals(
+                    monitor_history
                 )
                 band_objectives, filtered_adjoint_signals = (
                     self._band_fom_values_and_adjoint_signals(
@@ -4393,17 +4219,25 @@ class MultiTDAObjective:
             band_losses = -band_objectives
             scalarization_error = None
             try:
-                total_fom, band_coeffs, scalarization_info = self._evaluate_scalarization(
-                    band_objectives,
-                    need_gradient=need_gradient,
+                total_fom, band_coeffs, scalarization_info = (
+                    self._evaluate_scalarization(
+                        band_objectives,
+                        need_gradient=need_gradient,
+                    )
                 )
-                if self._near2far_targets and (not np.isfinite(total_fom)
-                        or (need_gradient and not np.all(np.isfinite(band_coeffs)))):
-                    raise ValueError("mixed scalarization value and coefficients must be finite")
+                if self._near2far_targets and (
+                    not np.isfinite(total_fom)
+                    or (need_gradient and not np.all(np.isfinite(band_coeffs)))
+                ):
+                    raise ValueError(
+                        "mixed scalarization value and coefficients must be finite"
+                    )
             except Exception as exc:
                 scalarization_error = exc
             if self._near2far_targets:
-                self._synchronize_distributed_target_error(scalarization_error, "scalarization")
+                self._synchronize_distributed_target_error(
+                    scalarization_error, "scalarization"
+                )
             elif scalarization_error is not None:
                 raise scalarization_error
             self.last_band_objectives = band_objectives
@@ -4419,9 +4253,16 @@ class MultiTDAObjective:
             if self._near2far_targets:
                 if need_gradient:
                     near_sources = farfield_adjoint_sources(
-                        sim_fwd, near_monitors, self._near2far_targets, near_fields,
-                        near_fns, near_signals, np.asarray(band_coeffs)[list(self._near2far_indices)],
-                        actual_time, dt)
+                        sim_fwd,
+                        near_monitors,
+                        self._near2far_targets,
+                        near_fields,
+                        near_fns,
+                        near_signals,
+                        np.asarray(band_coeffs)[list(self._near2far_indices)],
+                        actual_time,
+                        dt,
+                    )
                     band_coeffs = np.asarray(band_coeffs)[list(self._temporal_indices)]
             if not need_gradient:
                 return total_fom, None
@@ -4450,18 +4291,14 @@ class MultiTDAObjective:
                 )
                 adj_signals = None
             elif streaming_eigenmode_overlap:
-                adj_signals = (
-                    self._filter_transpose_eigenmode_overlap_covectors(
-                        filtered_adjoint_signals,
-                        band_coeffs,
-                    )
+                adj_signals = self._filter_transpose_eigenmode_overlap_covectors(
+                    filtered_adjoint_signals,
+                    band_coeffs,
                 )
             elif self._uses_deduplicated_monitors:
-                adj_signals = (
-                    self._distributed_deduplicated_adjoint_signals(
-                        monitor_history,
-                        band_coeffs,
-                    )
+                adj_signals = self._distributed_deduplicated_adjoint_signals(
+                    monitor_history,
+                    band_coeffs,
                 )
             else:
                 adj_signals = self._filter_transpose_adjoint_signals(
@@ -4473,21 +4310,21 @@ class MultiTDAObjective:
                 del monitor_history
             del filtered_monitors
             if balance_enabled:
-                balance_timing["extra_seconds"] += time.perf_counter() - preprocess_start
+                balance_timing["extra_seconds"] += (
+                    time.perf_counter() - preprocess_start
+                )
             if distributed_history_active:
                 for group in distributed_history_layout["groups"]:
                     group["history"] = None
-                adjoint_sources, adjoint_midpoint = (
-                    self._distributed_adjoint_sources(
-                        distributed_history_layout,
-                        distributed_adjoint_histories,
-                        adjoint_indexed_stencils,
-                        monitor_times,
-                        actual_time,
-                        dt,
-                        effective_adjoint_source_sizes,
-                        effective_adjoint_source_amplitudes,
-                    )
+                adjoint_sources, adjoint_midpoint = self._distributed_adjoint_sources(
+                    distributed_history_layout,
+                    distributed_adjoint_histories,
+                    adjoint_indexed_stencils,
+                    monitor_times,
+                    actual_time,
+                    dt,
+                    effective_adjoint_source_sizes,
+                    effective_adjoint_source_amplitudes,
                 )
                 distributed_adjoint_histories = None
             elif streaming_eigenmode_overlap:
@@ -4520,13 +4357,15 @@ class MultiTDAObjective:
                         or len(adjoint_indexed_stencils[sample_index][0]) != 0
                     )
                 ]
-                base_source_functions = dict(zip(
-                    active_source_indices,
-                    _tabulated_cubic_sources(
-                        t_array,
-                        adj_signals[:, active_source_indices],
-                    ),
-                ))
+                base_source_functions = dict(
+                    zip(
+                        active_source_indices,
+                        _tabulated_cubic_sources(
+                            t_array,
+                            adj_signals[:, active_source_indices],
+                        ),
+                    )
+                )
                 magnetic_indices = [
                     sample_index
                     for sample_index in active_source_indices
@@ -4543,34 +4382,35 @@ class MultiTDAObjective:
                         for sample_index in magnetic_indices
                     }
                 else:
-                    shifted_source_functions = dict(zip(
-                        magnetic_indices,
-                        _tabulated_cubic_sources(
-                            t_array + 0.5 * dt,
-                            adj_signals[:, magnetic_indices],
-                        ),
-                    ))
+                    shifted_source_functions = dict(
+                        zip(
+                            magnetic_indices,
+                            _tabulated_cubic_sources(
+                                t_array + 0.5 * dt,
+                                adj_signals[:, magnetic_indices],
+                            ),
+                        )
+                    )
                 adjoint_sources = []
                 for sample_index, (
-                        target_component,
-                        monitor_position,
-                        source_size,
-                        source_amplitude,
-                    ) in enumerate(zip(
+                    target_component,
+                    monitor_position,
+                    source_size,
+                    source_amplitude,
+                ) in enumerate(
+                    zip(
                         self._monitor_target_components,
                         self._monitor_target_positions,
                         effective_adjoint_source_sizes,
                         effective_adjoint_source_amplitudes,
-                    )):
+                    )
+                ):
                     indexed_stencil = (
                         None
                         if adjoint_indexed_stencils is None
                         else adjoint_indexed_stencils[sample_index]
                     )
-                    if (
-                        indexed_stencil is not None
-                        and len(indexed_stencil[0]) == 0
-                    ):
+                    if indexed_stencil is not None and len(indexed_stencil[0]) == 0:
                         continue
                     adj_source_func = (
                         shifted_source_functions[sample_index]
@@ -4632,9 +4472,7 @@ class MultiTDAObjective:
                 sampling_interval=sampling_interval,
                 reconstruction_half_width=self.reconstruction_half_width,
                 reconstruction_window=self.reconstruction_window,
-                reconstruction_window_params=(
-                    self.reconstruction_window_params
-                ),
+                reconstruction_window_params=(self.reconstruction_window_params),
             )
             grad_grid = native_accumulator.reduce()
             native_accumulator.release()
@@ -4654,9 +4492,7 @@ class MultiTDAObjective:
             del fwd_histories
             gc.collect()
 
-            gradient = (
-                grad_grid * dt * gradient_scale
-            ).real.flatten()
+            gradient = (grad_grid * dt * gradient_scale).real.flatten()
             del grad_grid
             gc.collect()
             return total_fom, gradient
@@ -4701,8 +4537,7 @@ class MultiTDAObjective:
         expected_width = len(self._flat_target_positions)
         if signals.ndim != 2 or signals.shape[1] != expected_width:
             raise ValueError(
-                "signals must have shape "
-                "(n_time, total_raw_target_channels)"
+                "signals must have shape " "(n_time, total_raw_target_channels)"
             )
         output_time_count = signals.shape[0] + self.kernel_length - 1
         output_dtype = signals.dtype
@@ -4711,16 +4546,15 @@ class MultiTDAObjective:
         if any(np.iscomplexobj(kernel) for kernel in self.kernels):
             output_dtype = np.result_type(output_dtype, np.complex64)
         filtered = np.empty(
-            (output_time_count, signals.shape[1]), dtype=output_dtype,
+            (output_time_count, signals.shape[1]),
+            dtype=output_dtype,
         )
         for band_index in range(len(self._target_slices)):
             band_history = self._raw_target_history(signals, band_index)
-            filtered[:, self._target_slices[band_index]] = (
-                temporal_convolve_signal(
-                    band_history,
-                    self.weights[band_index] * self.kernels[band_index],
-                    self.dt,
-                )
+            filtered[:, self._target_slices[band_index]] = temporal_convolve_signal(
+                band_history,
+                self.weights[band_index] * self.kernels[band_index],
+                self.dt,
             )
         return filtered
 

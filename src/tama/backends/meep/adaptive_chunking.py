@@ -115,9 +115,7 @@ def _axis_index(axis) -> int:
         return 1
     if axis == mp.Z:
         return 2
-    raise ValueError(
-        "partition split direction must be mp.X, mp.Y, mp.Z, or mp.R"
-    )
+    raise ValueError("partition split direction must be mp.X, mp.Y, mp.Z, or mp.R")
 
 
 def _axis_name(axis) -> str:
@@ -192,8 +190,8 @@ def _rebalance_cylindrical_partition(
     )
     cells_by_rank = np.zeros(rank_work.size, dtype=float)
     for volume, owner in zip(chunk_volumes, chunk_owners):
-        cells_by_rank[int(owner)] += (
-            volume.num_direction(mp.R) * volume.num_direction(mp.Z)
+        cells_by_rank[int(owner)] += volume.num_direction(mp.R) * volume.num_direction(
+            mp.Z
         )
 
     candidate = copy.deepcopy(partition)
@@ -224,8 +222,7 @@ def _rebalance_cylindrical_partition(
                 + (node_high[axis_index] - node_low[axis_index]) * split_fraction
             )
             updated.split_pos = (
-                sensitivity * predicted
-                + (1.0 - sensitivity) * current.split_pos
+                sensitivity * predicted + (1.0 - sensitivity) * current.split_pos
             )
 
         left_high = node_high.copy()
@@ -493,9 +490,9 @@ class AdaptiveAdjointChunkBalancer:
         self.source_boundary_mode = source_boundary_mode
         self.finite_source_width_cells = float(finite_source_width_cells)
         self.last_report: Optional[AdaptiveChunkBalanceReport] = None
-        self.last_source_boundary_decision: Optional[
-            AdaptiveSourceBoundaryDecision
-        ] = None
+        self.last_source_boundary_decision: Optional[AdaptiveSourceBoundaryDecision] = (
+            None
+        )
         self._meep_balancer = ChunkBalancer()
         self._prepared_simulation_spec = None
         self._prepared_source_signature = None
@@ -579,13 +576,10 @@ class AdaptiveAdjointChunkBalancer:
             )
         if adjoint_source_sizes is None:
             base_size = (
-                adjoint_source_size
-                if adjoint_source_size is not None
-                else mp.Vector3()
+                adjoint_source_size if adjoint_source_size is not None else mp.Vector3()
             )
             base_sizes = tuple(
-                mp.Vector3(base_size.x, base_size.y, base_size.z)
-                for _ in positions
+                mp.Vector3(base_size.x, base_size.y, base_size.z) for _ in positions
             )
         else:
             if len(adjoint_source_sizes) != len(positions):
@@ -593,23 +587,19 @@ class AdaptiveAdjointChunkBalancer:
                     "adjoint_source_sizes must match adjoint_source_positions"
                 )
             base_sizes = tuple(
-                mp.Vector3(size.x, size.y, size.z)
-                for size in adjoint_source_sizes
+                mp.Vector3(size.x, size.y, size.z) for size in adjoint_source_sizes
             )
         if adjoint_source_amplitudes is None:
             base_amplitudes = tuple(
-                complex(adjoint_source_amplitude)
-                for _ in positions
+                complex(adjoint_source_amplitude) for _ in positions
             )
         else:
             if len(adjoint_source_amplitudes) != len(positions):
                 raise ValueError(
-                    "adjoint_source_amplitudes must match "
-                    "adjoint_source_positions"
+                    "adjoint_source_amplitudes must match " "adjoint_source_positions"
                 )
             base_amplitudes = tuple(
-                complex(amplitude)
-                for amplitude in adjoint_source_amplitudes
+                complex(amplitude) for amplitude in adjoint_source_amplitudes
             )
         if indexed_source_mask is None:
             indexed_source_mask = tuple(cylindrical for _ in positions)
@@ -619,14 +609,12 @@ class AdaptiveAdjointChunkBalancer:
                     "indexed_source_mask must match adjoint_source_positions"
                 )
             if any(
-                not isinstance(value, (bool, np.bool_))
-                for value in indexed_source_mask
+                not isinstance(value, (bool, np.bool_)) for value in indexed_source_mask
             ):
                 raise ValueError("indexed_source_mask values must be boolean")
             indexed_source_mask = tuple(bool(value) for value in indexed_source_mask)
         if any(
-            indexed
-            and not np.array_equal(_vector_array(size), np.zeros(3))
+            indexed and not np.array_equal(_vector_array(size), np.zeros(3))
             for indexed, size in zip(indexed_source_mask, base_sizes)
         ):
             raise ValueError("indexed adjoint sources require zero source size")
@@ -666,7 +654,7 @@ class AdaptiveAdjointChunkBalancer:
                         base_sizes,
                         base_amplitudes,
                         tuple(
-                            ("x", "y", "z")[:_simulation_dimensions(simulation_spec)]
+                            ("x", "y", "z")[: _simulation_dimensions(simulation_spec)]
                             for _ in positions
                         ),
                         dimensions=_simulation_dimensions(simulation_spec),
@@ -764,8 +752,7 @@ class AdaptiveAdjointChunkBalancer:
 
             if self.source_boundary_mode == "finite":
                 finite_axes = tuple(
-                    _axis_name(axis).lower()
-                    for axis in _partition_axes(native_layout)
+                    _axis_name(axis).lower() for axis in _partition_axes(native_layout)
                 )
                 source_sizes, source_amplitudes, changed_axes = (
                     self._regularize_adjoint_sources(
@@ -787,8 +774,7 @@ class AdaptiveAdjointChunkBalancer:
                     changed_axes = tuple(() for _ in positions)
                     method = "layout"
                     reason = (
-                        "indexed adjoint sources require no "
-                        "boundary regularization"
+                        "indexed adjoint sources require no " "boundary regularization"
                         if all(indexed_source_mask)
                         else (
                             "Meep-native chunk boundaries avoid non-indexed "
@@ -826,10 +812,7 @@ class AdaptiveAdjointChunkBalancer:
                         sources=_source_bounds(
                             _source_volumes(
                                 layout_positions,
-                                tuple(
-                                    base_sizes[index]
-                                    for index in layout_indices
-                                ),
+                                tuple(base_sizes[index] for index in layout_indices),
                             )
                         ),
                     )
@@ -921,14 +904,10 @@ class AdaptiveAdjointChunkBalancer:
         nproc = mp.count_processors()
         if nproc <= 1:
             if not valid:
-                raise ValueError(
-                    "local callback timing must be finite and nonnegative"
-                )
+                raise ValueError("local callback timing must be finite and nonnegative")
             return np.asarray([local_seconds], dtype=float)
         local_times = np.zeros((nproc, 1), dtype=np.complex128)
-        local_times[mp.my_rank(), 0] = (
-            complex(local_seconds, 0.0) if valid else 1j
-        )
+        local_times[mp.my_rank(), 0] = complex(local_seconds, 0.0) if valid else 1j
         group_times = native_sampler.reduce_complex_grid_sum(local_times)
         if np.any(np.asarray(group_times[:, 0]).imag != 0.0):
             raise ValueError(
@@ -942,14 +921,10 @@ class AdaptiveAdjointChunkBalancer:
     ) -> Optional[np.ndarray]:
         nproc = mp.count_processors()
         present = local_seconds is not None
-        valid = not present or bool(
-            np.isfinite(local_seconds) and local_seconds >= 0
-        )
+        valid = not present or bool(np.isfinite(local_seconds) and local_seconds >= 0)
         if nproc <= 1:
             if not valid:
-                raise ValueError(
-                    "local wall timing must be finite and nonnegative"
-                )
+                raise ValueError("local wall timing must be finite and nonnegative")
             return (
                 None
                 if local_seconds is None
@@ -1031,20 +1006,13 @@ class AdaptiveAdjointChunkBalancer:
                 if other_axis == axis_index:
                     continue
                 crosses_region &= (
-                    (sources[:, 1, other_axis] >= node_low[other_axis] - tolerance)
-                    & (sources[:, 0, other_axis] <= node_high[other_axis] + tolerance)
-                )
+                    sources[:, 1, other_axis] >= node_low[other_axis] - tolerance
+                ) & (sources[:, 0, other_axis] <= node_high[other_axis] + tolerance)
             blocked = (
                 axis_sensitive
                 & crosses_region
-                & (
-                    node.split_pos
-                    > sources[:, 0, axis_index] - protected_gap
-                )
-                & (
-                    node.split_pos
-                    < sources[:, 1, axis_index] + protected_gap
-                )
+                & (node.split_pos > sources[:, 0, axis_index] - protected_gap)
+                & (node.split_pos < sources[:, 1, axis_index] + protected_gap)
             )
             axis_name = _axis_name(node.split_dir).lower()
             for source_index in np.flatnonzero(blocked):
@@ -1082,7 +1050,9 @@ class AdaptiveAdjointChunkBalancer:
         axis_index = _axis_index(axis)
         n_axis_cells = int(np.rint((high[axis_index] - low[axis_index]) * resolution))
         left_required = _minimum_axis_cells(candidate.left, axis, self.min_chunk_cells)
-        right_required = _minimum_axis_cells(candidate.right, axis, self.min_chunk_cells)
+        right_required = _minimum_axis_cells(
+            candidate.right, axis, self.min_chunk_cells
+        )
         tolerance = 1e-12
         protected_gap = max(self.protected_gap_cells / resolution, tolerance)
         active_protected = protected
@@ -1098,14 +1068,15 @@ class AdaptiveAdjointChunkBalancer:
         for offset_cells in range(left_required, n_axis_cells - right_required + 1):
             position = low[axis_index] + offset_cells / resolution
             if active_protected.size:
-                other_axes = [
-                    index for index in active_axes if index != axis_index
-                ]
+                other_axes = [index for index in active_axes if index != axis_index]
                 crosses_region = np.ones(active_protected.shape[0], dtype=bool)
                 for other_axis in other_axes:
                     crosses_region &= (
-                        (active_protected[:, 1, other_axis] >= low[other_axis] - tolerance)
-                        & (active_protected[:, 0, other_axis] <= high[other_axis] + tolerance)
+                        active_protected[:, 1, other_axis]
+                        >= low[other_axis] - tolerance
+                    ) & (
+                        active_protected[:, 0, other_axis]
+                        <= high[other_axis] + tolerance
                     )
                 if np.any(
                     crosses_region
@@ -1115,7 +1086,9 @@ class AdaptiveAdjointChunkBalancer:
                     continue
             valid_positions.append(position)
         if not valid_positions:
-            raise ValueError("no safe grid-aligned position remains for a chunk boundary")
+            raise ValueError(
+                "no safe grid-aligned position remains for a chunk boundary"
+            )
 
         candidate.split_pos = min(
             valid_positions,
@@ -1188,9 +1161,7 @@ class AdaptiveAdjointChunkBalancer:
                 applied=False,
                 reason="serial run",
                 critical_path_seconds=float(
-                    extra_work[0]
-                    if wall_times is None
-                    else wall_times[0]
+                    extra_work[0] if wall_times is None else wall_times[0]
                 ),
                 topology=(
                     _topology_label(current_layout)
@@ -1205,7 +1176,9 @@ class AdaptiveAdjointChunkBalancer:
             )
             return current_layout
         if not isinstance(current_layout, mp.BinaryPartition):
-            raise ValueError("adaptive balancing requires a BinaryPartition chunk layout")
+            raise ValueError(
+                "adaptive balancing requires a BinaryPartition chunk layout"
+            )
 
         extra_work = self._gather_rank_times(local_extra_work_seconds)
         wall_times = self._gather_optional_rank_times(local_wall_seconds)
@@ -1309,17 +1282,17 @@ class AdaptiveAdjointChunkBalancer:
         )
         balanced_converged = bool(
             minimum_observed
-            and self._balanced_observation_streak
-            >= self._REQUIRED_CONVERGENCE_STREAK
+            and self._balanced_observation_streak >= self._REQUIRED_CONVERGENCE_STREAK
         )
         score_converged = bool(
             minimum_observed
-            and self._stalled_best_score_streak
-            >= self._REQUIRED_CONVERGENCE_STREAK
+            and self._stalled_best_score_streak >= self._REQUIRED_CONVERGENCE_STREAK
         )
         freeze_reason = None
         if maximum_observed:
-            freeze_reason = "maximum calibration observations reached; best layout is frozen"
+            freeze_reason = (
+                "maximum calibration observations reached; best layout is frozen"
+            )
         elif balanced_converged:
             freeze_reason = "rank workload converged within the imbalance threshold"
         elif score_converged:
@@ -1433,7 +1406,9 @@ class AdaptiveAdjointChunkBalancer:
         candidate_positions = _split_positions(candidate)
         moved = sum(
             not np.isclose(old_position, new_position)
-            for old_position, new_position in zip(previous_positions, candidate_positions)
+            for old_position, new_position in zip(
+                previous_positions, candidate_positions
+            )
         )
         applied = moved > 0
         self.last_report = AdaptiveChunkBalanceReport(
@@ -1441,7 +1416,11 @@ class AdaptiveAdjointChunkBalancer:
             max_to_mean=imbalance,
             moved_boundaries=moved,
             applied=applied,
-            reason="chunk boundaries updated" if applied else "safe projection kept the current layout",
+            reason=(
+                "chunk boundaries updated"
+                if applied
+                else "safe projection kept the current layout"
+            ),
             critical_path_seconds=topology_score,
             topology=topology_label,
             next_topology=topology_label,

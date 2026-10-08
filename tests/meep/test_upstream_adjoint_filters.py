@@ -81,6 +81,9 @@ def test_upstream_fully_periodic_conic_constraints(constraint, eta, axis, fracti
     shifted_value = constraint(shifted_weights, *tama_args)
     shifted_gradient = grad(constraint)(shifted_weights, *tama_args)
     assert round(abs(value - shifted_value), 15) == 0
-    assert round(
-        np.sum(np.abs(np.roll(gradient, -shift, axis=axis) - shifted_gradient)), 15
-    ) == 0
+    assert (
+        round(
+            np.sum(np.abs(np.roll(gradient, -shift, axis=axis) - shifted_gradient)), 15
+        )
+        == 0
+    )

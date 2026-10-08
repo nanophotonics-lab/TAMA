@@ -2,7 +2,6 @@
 
 import numpy as np
 
-
 _IDENTITY_PROJECTION_BETA = np.sqrt(np.finfo(float).eps)
 
 
@@ -85,8 +84,7 @@ def _periodic_conic_transfer(
     periodic_axes: tuple[int, ...],
 ) -> np.ndarray:
     kernel_shape = tuple(
-        shape[axis] if axis in periodic_axes else 1
-        for axis in range(len(shape))
+        shape[axis] if axis in periodic_axes else 1 for axis in range(len(shape))
     )
     squared_distance = np.zeros(kernel_shape, dtype=float)
     for axis in periodic_axes:
@@ -94,9 +92,7 @@ def _periodic_conic_transfer(
         wrapped_distance = np.minimum(indices, shape[axis] - indices)
         reshape = [1] * len(shape)
         reshape[axis] = shape[axis]
-        squared_distance += (
-            wrapped_distance.reshape(reshape) * spacing[axis]
-        ) ** 2
+        squared_distance += (wrapped_distance.reshape(reshape) * spacing[axis]) ** 2
     kernel = np.maximum(0.0, 1.0 - np.sqrt(squared_distance) / radius)
     kernel /= np.sum(kernel)
     return np.fft.fftn(kernel, axes=periodic_axes)
@@ -212,9 +208,7 @@ def tanh_projection(weights, *, beta, eta=0.5) -> np.ndarray:
     if beta <= _IDENTITY_PROJECTION_BETA:
         return weights.copy()
     denominator = np.tanh(beta * eta) + np.tanh(beta * (1.0 - eta))
-    return (
-        np.tanh(beta * eta) + np.tanh(beta * (weights - eta))
-    ) / denominator
+    return (np.tanh(beta * eta) + np.tanh(beta * (weights - eta))) / denominator
 
 
 def tanh_projection_vjp(

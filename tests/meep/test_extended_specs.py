@@ -36,13 +36,17 @@ def test_near2far_target_preserves_frequency_and_observation_order():
     assert tm.get_backend("meep").Near2FarTarget is tm.Near2FarTarget
 
 
-@pytest.mark.parametrize("frequencies", [[], [0], [-1], [np.nan], [np.inf], np.array([0.6 + 0.1j])])
+@pytest.mark.parametrize(
+    "frequencies", [[], [0], [-1], [np.nan], [np.inf], np.array([0.6 + 0.1j])]
+)
 def test_near2far_target_rejects_invalid_frequencies(frequencies):
     with pytest.raises(ValueError, match="frequencies"):
         tm.Near2FarTarget([_near_region()], frequencies, [mp.Vector3(0, 10)])
 
 
-@pytest.mark.parametrize("points", [[], [mp.Vector3(np.nan)], [mp.Vector3(1j)], [(0, 10, 0)]])
+@pytest.mark.parametrize(
+    "points", [[], [mp.Vector3(np.nan)], [mp.Vector3(1j)], [(0, 10, 0)]]
+)
 def test_near2far_target_rejects_invalid_observation_points(points):
     with pytest.raises((TypeError, ValueError), match="far_points"):
         tm.Near2FarTarget([_near_region()], [0.6], points)

@@ -13,7 +13,12 @@ def _problem(mirror):
     for x in (-0.3, 0.3):
         grid = mp.MaterialGrid(mp.Vector3(3, 3), low, high)
         design = tm.DesignGrid(
-            grid, mp.Vector3(x, 0), mp.Vector3(0.3, 0.5), (3, 3), low, high,
+            grid,
+            mp.Vector3(x, 0),
+            mp.Vector3(0.3, 0.5),
+            (3, 3),
+            low,
+            high,
         )
         designs.append(design)
         geometry.append(mp.Block(center=design.center, size=design.size, material=grid))
@@ -27,16 +32,26 @@ def _problem(mirror):
     return tm.TDAObjective(
         designs=designs,
         simulation=tm.SimulationSpec(
-            cell_size=mp.Vector3(3, 3), resolution=10, courant=0.25,
-            boundary_layers=[mp.PML(0.3)], geometry=geometry,
-            sources=[mp.Source(mp.GaussianSource(0.7, fwidth=0.4),
-                               component=mp.Ez, center=mp.Vector3(-0.75, 0))],
+            cell_size=mp.Vector3(3, 3),
+            resolution=10,
+            courant=0.25,
+            boundary_layers=[mp.PML(0.3)],
+            geometry=geometry,
+            sources=[
+                mp.Source(
+                    mp.GaussianSource(0.7, fwidth=0.4),
+                    component=mp.Ez,
+                    center=mp.Vector3(-0.75, 0),
+                )
+            ],
             eps_averaging=False,
             symmetries=[mp.Mirror(mp.Y)] if mirror else [],
         ),
-        target=tm.Near2FarTarget(regions, [0.6, 0.8],
-                                [mp.Vector3(8, 2), mp.Vector3(8, -2)]),
-        t_final=35, chunk_balancer=None,
+        target=tm.Near2FarTarget(
+            regions, [0.6, 0.8], [mp.Vector3(8, 2), mp.Vector3(8, -2)]
+        ),
+        t_final=35,
+        chunk_balancer=None,
     )
 
 
@@ -55,13 +70,18 @@ def test_near2far_multiple_regions_and_mirror_match_full_domain_and_fd():
     assert gradient.shape == (18,)
     assert np.all(np.isfinite(gradient))
     np.testing.assert_allclose(value, full_value, rtol=1e-8, atol=1e-12)
-    np.testing.assert_allclose(gradient @ direction, full_gradient @ direction,
-                               rtol=0.002, atol=1e-10)
+    np.testing.assert_allclose(
+        gradient @ direction, full_gradient @ direction, rtol=0.002, atol=1e-10
+    )
     differences = []
     for h in (1e-4, 5e-5):
-        differences.append((reduced.fom(weights + h * direction)
-                            - reduced.fom(weights - h * direction)) / (2 * h))
+        differences.append(
+            (
+                reduced.fom(weights + h * direction)
+                - reduced.fom(weights - h * direction)
+            )
+            / (2 * h)
+        )
     np.testing.assert_allclose(differences[0], differences[1], rtol=1e-4, atol=1e-10)
-    np.testing.assert_allclose(gradient @ direction, differences,
-                               rtol=0.01, atol=1e-10)
+    np.testing.assert_allclose(gradient @ direction, differences, rtol=0.01, atol=1e-10)
     print("Combined near2far/regions/Mirror:", value, gradient @ direction, differences)

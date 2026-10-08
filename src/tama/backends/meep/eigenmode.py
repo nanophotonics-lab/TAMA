@@ -13,7 +13,6 @@ from .objectives import (
     _is_cylindrical_simulation,
 )
 
-
 _AXIS_DIRECTIONS = (mp.X, mp.Y, mp.Z)
 
 
@@ -75,14 +74,11 @@ def _normalized_mode_fields(
         )
 
     arrays = {
-        component: np.asarray(mode_fields[component])
-        for component in active_components
+        component: np.asarray(mode_fields[component]) for component in active_components
     }
     first = next(iter(arrays.values()))
     if first.ndim != 1 or first.size == 0:
-        raise ValueError(
-            "mode field arrays must be nonempty and one-dimensional"
-        )
+        raise ValueError("mode field arrays must be nonempty and one-dimensional")
     for mode_field in arrays.values():
         if mode_field.ndim != 1:
             raise ValueError("mode field arrays must be one-dimensional")
@@ -102,10 +98,7 @@ def _mode_power(
     absolute_power = 0.0
     for electric, magnetic, sign in active_pairs:
         contributions = (
-            sign
-            * weights
-            * np.conjugate(mode_fields[electric])
-            * mode_fields[magnetic]
+            sign * weights * np.conjugate(mode_fields[electric]) * mode_fields[magnetic]
         )
         signed_power += float(np.sum(np.real(contributions)))
         absolute_power += float(np.sum(np.abs(contributions)))
@@ -148,10 +141,7 @@ def _sample_mode_fields(mode, positions, normal, *, cylindrical=False):
     )
     fields = {
         component: np.asarray(
-            [
-                mode.amplitude(position, component)
-                for position in positions
-            ],
+            [mode.amplitude(position, component) for position in positions],
             dtype=np.complex128,
         )
         for component in components
@@ -183,8 +173,7 @@ def sample_reference_mode(sim: mp.Simulation, target) -> Dict[int, np.ndarray]:
             reference_m = getattr(target, "reference_m", None)
             if reference_m is None:
                 raise ValueError(
-                    "cylindrical EigenmodeCoefficientTarget reference_m is "
-                    "required"
+                    "cylindrical EigenmodeCoefficientTarget reference_m is " "required"
                 )
             simulation_m = getattr(sim, "m", 0)
             simulation_m = 0 if simulation_m is None else int(simulation_m)
@@ -247,10 +236,7 @@ def sample_reference_mode(sim: mp.Simulation, target) -> Dict[int, np.ndarray]:
         )
         dimension = "in-plane line"
     else:
-        valid_region = all(
-            region_size[index] > 1.0e-12
-            for index in tangential_axes
-        )
+        valid_region = all(region_size[index] > 1.0e-12 for index in tangential_axes)
         dimension = "plane"
     if not valid_region:
         raise ValueError(
@@ -285,10 +271,13 @@ def sample_reference_mode(sim: mp.Simulation, target) -> Dict[int, np.ndarray]:
         )
 
     frequency_scale = max(1.0, abs(target.frequency))
-    frequency_tolerance = max(
-        1.0e-10,
-        100.0 * target.eig_tolerance,
-    ) * frequency_scale
+    frequency_tolerance = (
+        max(
+            1.0e-10,
+            100.0 * target.eig_tolerance,
+        )
+        * frequency_scale
+    )
     selected_frequency = float(mode.freq)
     if (
         not np.isfinite(selected_frequency)
@@ -352,9 +341,7 @@ def _normalized_inputs(
         has_electric = electric in histories
         has_magnetic = magnetic in histories
         if has_electric != has_magnetic:
-            raise ValueError(
-                "histories must contain both components of each E/H pair"
-            )
+            raise ValueError("histories must contain both components of each E/H pair")
         if has_electric and {electric, magnetic}.isdisjoint(expected):
             raise ValueError(
                 "histories and mode_fields must contain the same component pairs"
@@ -365,8 +352,7 @@ def _normalized_inputs(
         )
 
     arrays = {
-        component: np.asarray(histories[component])
-        for component in active_components
+        component: np.asarray(histories[component]) for component in active_components
     }
     first = next(iter(arrays.values()))
     if first.ndim not in (1, 2):
@@ -375,22 +361,16 @@ def _normalized_inputs(
         raise ValueError("field histories must contain at least two samples")
     for history in arrays.values():
         if history.ndim not in (1, 2):
-            raise ValueError(
-                "field histories must be one- or two-dimensional"
-            )
+            raise ValueError("field histories must be one- or two-dimensional")
         if history.shape != first.shape:
             raise ValueError("all field histories must have the same shape")
 
     n_points = 1 if first.ndim == 1 else first.shape[1]
     if n_points != weights.size:
-        raise ValueError(
-            "field history point count must match the mode point count"
-        )
+        raise ValueError("field history point count must match the mode point count")
     matrices = {
         component: (
-            history.reshape(history.shape[0], 1)
-            if history.ndim == 1
-            else history
+            history.reshape(history.shape[0], 1) if history.ndim == 1 else history
         )
         for component, history in arrays.items()
     }
@@ -416,12 +396,8 @@ def _projection_weights_from_normalized(
     magnetic_weights = {}
     for electric, magnetic, sign in active_pairs:
         common = 0.5 * normalization * sign * weights
-        electric_weights[electric] = (
-            common * np.conjugate(modes[magnetic])
-        )
-        magnetic_weights[magnetic] = (
-            common * np.conjugate(modes[electric])
-        )
+        electric_weights[electric] = common * np.conjugate(modes[magnetic])
+        magnetic_weights[magnetic] = common * np.conjugate(modes[electric])
     return electric_weights, magnetic_weights
 
 
@@ -439,9 +415,7 @@ def _coefficient_projection_weights(
         spatial_weights,
         cylindrical=cylindrical,
     )
-    normalization = 1.0 / np.sqrt(
-        abs(_mode_power(active_pairs, modes, weights))
-    )
+    normalization = 1.0 / np.sqrt(abs(_mode_power(active_pairs, modes, weights)))
     return _projection_weights_from_normalized(
         active_pairs,
         modes,
@@ -459,9 +433,7 @@ def _coefficient_history_from_overlaps(
         raise ValueError("overlap_history must have shape (n_samples, 2)")
     if overlaps.shape[0] < 2:
         raise ValueError("overlap_history must contain at least two samples")
-    return overlaps[:-1, 0] + 0.5 * (
-        overlaps[:-1, 1] + overlaps[1:, 1]
-    )
+    return overlaps[:-1, 0] + 0.5 * (overlaps[:-1, 1] + overlaps[1:, 1])
 
 
 def _coefficient_overlap_pullback(
@@ -478,9 +450,7 @@ def _coefficient_overlap_pullback(
     sample_count = int(sample_count)
     covector = np.asarray(coefficient_covector)
     if covector.shape != (sample_count - 1,):
-        raise ValueError(
-            "coefficient_covector must have shape (sample_count - 1,)"
-        )
+        raise ValueError("coefficient_covector must have shape (sample_count - 1,)")
     pulled_back = np.zeros(
         (sample_count, 2),
         dtype=np.result_type(covector.dtype, np.complex128),
@@ -600,13 +570,11 @@ def coefficient_history_pullback(
     }
     for component, component_weights in electric_weights.items():
         pulled_back[component] = (
-            overlap_covectors[:, 0, np.newaxis]
-            * component_weights[np.newaxis, :]
+            overlap_covectors[:, 0, np.newaxis] * component_weights[np.newaxis, :]
         )
     for component, component_weights in magnetic_weights.items():
         pulled_back[component] = (
-            overlap_covectors[:, 1, np.newaxis]
-            * component_weights[np.newaxis, :]
+            overlap_covectors[:, 1, np.newaxis] * component_weights[np.newaxis, :]
         )
 
     if was_one_dimensional:

@@ -107,7 +107,7 @@ class _NativeDesignHistorySet:
             if row_index >= state["array"].shape[0]:
                 raise RuntimeError("forward field history buffer is too small")
             self.forward_fields[component].sample_into(
-                state["array"][row_index, :state["width"]]
+                state["array"][row_index, : state["width"]]
             )
 
     def native_bindings(self) -> tuple[tuple, tuple[np.ndarray, ...]]:
@@ -120,9 +120,7 @@ class _NativeDesignHistorySet:
                 for component in self.components
             ),
             tuple(
-                self.states[component]["array"][
-                    :, :self.states[component]["width"]
-                ]
+                self.states[component]["array"][:, : self.states[component]["width"]]
                 for component in self.components
             ),
         )
@@ -133,7 +131,7 @@ class _NativeDesignHistorySet:
         histories = {}
         for component in self.components:
             state = self.states[component]
-            histories[component] = state["array"][:row_count, :state["width"]]
+            histories[component] = state["array"][:row_count, : state["width"]]
             _discard_memmap_resident_pages(state["array"], state["path"])
         return histories
 
@@ -244,7 +242,7 @@ class _NativeDesignAccumulator:
                 dtype=np.float64 if self._use_real else np.complex128,
             )
         region, _, offset = _region_component(self.design, component)
-        local = self.local.reshape(-1)[offset:offset + int(np.prod(region.shape))]
+        local = self.local.reshape(-1)[offset : offset + int(np.prod(region.shape))]
         local = local.reshape(region.shape)
         if self.midpoint:
             native_field.accumulate_midpoint(derivative, local)
@@ -308,10 +306,12 @@ class _NativeDesignAccumulator:
 
         offset_args = ()
         if isinstance(self.design, _DesignCollection):
-            offset_args = (tuple(
-                int(_region_component(self.design, component)[2])
-                for component in self.components
-            ),)
+            offset_args = (
+                tuple(
+                    int(_region_component(self.design, component)[2])
+                    for component in self.components
+                ),
+            )
         setup_seconds = time.perf_counter() - setup_start
         return setup_seconds + float(
             _native_design_call(
@@ -394,12 +394,8 @@ def _run_native_forward_loop(
             "native forward step count is not aligned with the sampling interval"
         )
     monitor_times = np.empty(fine_step_count + 1, dtype=np.float64)
-    monitor_plans = tuple(
-        monitor.ensure_plan() for monitor, _ in monitor_bindings
-    )
-    monitor_histories = tuple(
-        np.asarray(history) for _, history in monitor_bindings
-    )
+    monitor_plans = tuple(monitor.ensure_plan() for monitor, _ in monitor_bindings)
+    monitor_histories = tuple(np.asarray(history) for _, history in monitor_bindings)
     if native_history is None:
         design_plans = ()
         design_histories = ()

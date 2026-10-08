@@ -15,9 +15,8 @@ from tama.specs import EigenmodeCoefficientTarget
 def _positive_power_mode(normal, rng, n_points):
     fields = {}
     for electric, magnetic, sign in flux_component_pairs(normal):
-        electric_field = (
-            rng.standard_normal(n_points)
-            + 1j * rng.standard_normal(n_points)
+        electric_field = rng.standard_normal(n_points) + 1j * rng.standard_normal(
+            n_points
         )
         fields[electric] = electric_field
         fields[magnetic] = sign * electric_field
@@ -81,9 +80,8 @@ def test_cylindrical_self_mode_coefficient_squared_equals_modal_power(
         normal,
         cylindrical=True,
     ):
-        electric_field = (
-            rng.standard_normal(n_points)
-            + 1j * rng.standard_normal(n_points)
+        electric_field = rng.standard_normal(n_points) + 1j * rng.standard_normal(
+            n_points
         )
         mode_fields[electric] = electric_field
         mode_fields[magnetic] = sign * electric_field
@@ -131,9 +129,8 @@ def test_cylindrical_coefficient_pullback_matches_directional_fd(normal):
         normal,
         cylindrical=True,
     ):
-        electric_field = (
-            rng.standard_normal(n_points)
-            + 1j * rng.standard_normal(n_points)
+        electric_field = rng.standard_normal(n_points) + 1j * rng.standard_normal(
+            n_points
         )
         mode_fields[electric] = electric_field
         mode_fields[magnetic] = sign * electric_field
@@ -146,15 +143,13 @@ def test_cylindrical_coefficient_pullback_matches_directional_fd(normal):
     }
     directions = {
         component: (
-            rng.standard_normal(history.shape)
-            + 1j * rng.standard_normal(history.shape)
+            rng.standard_normal(history.shape) + 1j * rng.standard_normal(history.shape)
         )
         for component, history in histories.items()
     }
-    coefficient_covector = (
-        rng.standard_normal(n_samples - 1)
-        + 1j * rng.standard_normal(n_samples - 1)
-    )
+    coefficient_covector = rng.standard_normal(
+        n_samples - 1
+    ) + 1j * rng.standard_normal(n_samples - 1)
 
     pullback = coefficient_history_pullback(
         histories,
@@ -263,15 +258,13 @@ def test_coefficient_pullback_matches_complex_directional_fd(normal):
     }
     directions = {
         component: (
-            rng.standard_normal(history.shape)
-            + 1j * rng.standard_normal(history.shape)
+            rng.standard_normal(history.shape) + 1j * rng.standard_normal(history.shape)
         )
         for component, history in histories.items()
     }
-    coefficient_covector = (
-        rng.standard_normal(n_samples - 1)
-        + 1j * rng.standard_normal(n_samples - 1)
-    )
+    coefficient_covector = rng.standard_normal(
+        n_samples - 1
+    ) + 1j * rng.standard_normal(n_samples - 1)
 
     pullback = coefficient_history_pullback(
         histories,
@@ -335,15 +328,13 @@ def test_coefficient_pullback_satisfies_real_dot_product_identity():
     }
     directions = {
         component: (
-            rng.standard_normal(history.shape)
-            + 1j * rng.standard_normal(history.shape)
+            rng.standard_normal(history.shape) + 1j * rng.standard_normal(history.shape)
         )
         for component, history in histories.items()
     }
-    coefficient_covector = (
-        rng.standard_normal(n_samples - 1)
-        + 1j * rng.standard_normal(n_samples - 1)
-    )
+    coefficient_covector = rng.standard_normal(
+        n_samples - 1
+    ) + 1j * rng.standard_normal(n_samples - 1)
 
     tangent = coefficient_history(
         directions,
@@ -542,11 +533,14 @@ def test_sample_reference_mode_supports_negative_normal_in_reciprocal_medium():
     finally:
         simulation.reset_meep()
 
-    assert mode_power(
-        mode_fields,
-        target.normal,
-        target.spatial_weights,
-    ) > 0.0
+    assert (
+        mode_power(
+            mode_fields,
+            target.normal,
+            target.spatial_weights,
+        )
+        > 0.0
+    )
 
 
 def test_sample_reference_mode_uses_fixed_cylindrical_fields():
@@ -572,12 +566,15 @@ def test_sample_reference_mode_uses_fixed_cylindrical_fields():
     fields = sample_reference_mode(simulation, target)
 
     assert set(fields) == {mp.Er, mp.Hp, mp.Ep, mp.Hr}
-    assert mode_power(
-        fields,
-        target.normal,
-        target.spatial_weights,
-        cylindrical=True,
-    ) > 0.0
+    assert (
+        mode_power(
+            fields,
+            target.normal,
+            target.spatial_weights,
+            cylindrical=True,
+        )
+        > 0.0
+    )
 
 
 def test_sample_reference_mode_validates_cylindrical_reference_m():

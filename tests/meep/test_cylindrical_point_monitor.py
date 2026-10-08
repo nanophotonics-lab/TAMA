@@ -45,10 +45,7 @@ def test_cylindrical_point_plan_matches_meep_and_builds_indexed_transpose(
         assert monitor.ensure_plan() is not None
         assert np.allclose(
             monitor.sample(),
-            [
-                simulation.get_field_point(component, position)
-                for position in positions
-            ],
+            [simulation.get_field_point(component, position) for position in positions],
             rtol=2e-14,
             atol=2e-14,
         )

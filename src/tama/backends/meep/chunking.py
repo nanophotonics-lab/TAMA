@@ -3,7 +3,6 @@ from typing import Optional, Sequence, Tuple
 import meep as mp
 import numpy as np
 
-
 _AXIS_NAMES = ("x", "y", "z")
 
 

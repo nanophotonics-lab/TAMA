@@ -34,8 +34,7 @@ def test_cartesian_3d_point_plan_matches_meep():
         monitor.sample_history_into(local_values)
         deferred_values = monitor.reduce_history(local_values[np.newaxis, :])[0]
         expected = [
-            simulation.get_field_point(mp.Ex, position)
-            for position in positions
+            simulation.get_field_point(mp.Ex, position) for position in positions
         ]
 
         offsets, source_data, amplitudes = monitor.indexed_transpose_stencil()

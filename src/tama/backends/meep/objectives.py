@@ -53,9 +53,7 @@ def _tabulated_cubic_sources(times: np.ndarray, values: np.ndarray):
             extrapolate=False,
         )
         return make_native_tabulated_real_cubic_bank(spline.x, spline.c)
-    complex_values = bool(
-        np.iscomplexobj(values) and np.any(values.imag != 0.0)
-    )
+    complex_values = bool(np.iscomplexobj(values) and np.any(values.imag != 0.0))
     spline = spi.make_interp_spline(
         times,
         values if complex_values else np.asarray(values.real, dtype=np.float64),
@@ -116,7 +114,9 @@ def _simulation_time_step(
     return sim_dt
 
 
-def _sample_time_from_simulation(sim: mp.Simulation, sample_index: int, sample_dt: float) -> float:
+def _sample_time_from_simulation(
+    sim: mp.Simulation, sample_index: int, sample_dt: float
+) -> float:
     meep_time = getattr(sim, "meep_time", None)
     if callable(meep_time):
         return float(meep_time())
@@ -126,7 +126,9 @@ def _sample_time_from_simulation(sim: mp.Simulation, sample_index: int, sample_d
 def _epsilon_from_medium(medium: mp.Medium) -> float:
     epsilon_diag = getattr(medium, "epsilon_diag", None)
     if epsilon_diag is None:
-        raise ValueError("material_factor is required for materials without epsilon_diag")
+        raise ValueError(
+            "material_factor is required for materials without epsilon_diag"
+        )
     return float(epsilon_diag.x)
 
 
@@ -159,9 +161,7 @@ def _is_cartesian_2d_simulation(simulation) -> bool:
         return True
     cell_size = getattr(simulation, "cell_size", None)
     return bool(
-        cell_size is not None
-        and hasattr(cell_size, "z")
-        and float(cell_size.z) == 0.0
+        cell_size is not None and hasattr(cell_size, "z") and float(cell_size.z) == 0.0
     )
 
 
@@ -231,15 +231,11 @@ def _validate_indexed_monitor_support(
     support_state = np.vstack((local_support, local_allocated))
     if mp.count_processors() > 1:
         support_state = FastFieldGrid.reduce_real_inplace(support_state)
-    unsupported = np.flatnonzero(
-        (support_state[0] == 0.0)
-        & (support_state[1] > 0.0)
-    )
+    unsupported = np.flatnonzero((support_state[0] == 0.0) & (support_state[1] > 0.0))
     if unsupported.size:
         indices = ", ".join(str(int(index)) for index in unsupported)
         raise ValueError(
-            "monitor positions have no interpolation support at indices: "
-            f"{indices}"
+            "monitor positions have no interpolation support at indices: " f"{indices}"
         )
 
 
@@ -267,9 +263,7 @@ def _validate_cylindrical_axis_target(
     else:
         return
     if component not in valid_components:
-        raise ValueError(
-            f"cylindrical component {component} vanishes at r=0 for m={m}"
-        )
+        raise ValueError(f"cylindrical component {component} vanishes at r=0 for m={m}")
 
 
 def _electric_components(
@@ -282,8 +276,7 @@ def _electric_components(
     """Return electric components required by an isotropic design gradient."""
     if cylindrical:
         valid_components = (
-            _CYLINDRICAL_ELECTRIC_COMPONENTS
-            + _CYLINDRICAL_MAGNETIC_COMPONENTS
+            _CYLINDRICAL_ELECTRIC_COMPONENTS + _CYLINDRICAL_MAGNETIC_COMPONENTS
         )
         if component not in valid_components:
             raise ValueError(
@@ -300,13 +293,9 @@ def _electric_components(
             return (mp.Er, mp.Ez)
         return _CYLINDRICAL_ELECTRIC_COMPONENTS
 
-    valid_components = (
-        _CARTESIAN_ELECTRIC_COMPONENTS + _CARTESIAN_MAGNETIC_COMPONENTS
-    )
+    valid_components = _CARTESIAN_ELECTRIC_COMPONENTS + _CARTESIAN_MAGNETIC_COMPONENTS
     if component not in valid_components:
-        raise ValueError(
-            "exact design gradients require an Ex/Ey/Ez/Hx/Hy/Hz target"
-        )
+        raise ValueError("exact design gradients require an Ex/Ey/Ez/Hx/Hy/Hz target")
     if dimensions == 3:
         return (mp.Ex, mp.Ey, mp.Ez)
     if dimensions != 2:
@@ -344,15 +333,10 @@ def _adjoint_point_sources(
         rtol=0.0,
         atol=0.0,
     ):
-        raise ValueError(
-            "exact indexed point adjoints require a zero-size source"
-        )
+        raise ValueError("exact indexed point adjoints require a zero-size source")
     source_data, weights = indexed_stencil
     weights = np.asarray(weights, dtype=np.complex128)
-    if (
-        weights.ndim != 1
-        or len(source_data) != weights.size
-    ):
+    if weights.ndim != 1 or len(source_data) != weights.size:
         raise ValueError(
             "indexed point-adjoint stencil must contain one "
             "source-data object per weight"
@@ -496,7 +480,9 @@ class _PointTarget:
         """
         self.monitor_position = monitor_position
         self.component = component
-        self.adjoint_source_size = adjoint_source_size if adjoint_source_size is not None else mp.Vector3()
+        self.adjoint_source_size = (
+            adjoint_source_size if adjoint_source_size is not None else mp.Vector3()
+        )
         self.adjoint_source_amplitude = adjoint_source_amplitude
 
     @property
@@ -592,9 +578,7 @@ class _FieldRegionTarget:
         flat_history: NDArray[np.complex128],
     ) -> NDArray[np.complex128]:
         flat_history = np.asarray(flat_history)
-        return flat_history.reshape(
-            (flat_history.shape[0],) + self.sample_shape
-        )
+        return flat_history.reshape((flat_history.shape[0],) + self.sample_shape)
 
     def adjoint_sources(
         self,

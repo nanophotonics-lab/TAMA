@@ -771,12 +771,15 @@ def test_native_reduction_failure_raises_in_serial():
             sampling_grid.FastFieldGrid.reduce(local)
 
 
-@pytest.mark.parametrize("dtype, reducer", (
-    (np.complex64, "reduce_inplace"),
-    (np.complex128, "reduce_inplace"),
-    (np.float32, "reduce_real_inplace"),
-    (np.float64, "reduce_real_inplace"),
-))
+@pytest.mark.parametrize(
+    "dtype, reducer",
+    (
+        (np.complex64, "reduce_inplace"),
+        (np.complex128, "reduce_inplace"),
+        (np.float32, "reduce_real_inplace"),
+        (np.float64, "reduce_real_inplace"),
+    ),
+)
 def test_native_inplace_reduction_reuses_owned_buffer(dtype, reducer):
     local = np.arange(6, dtype=dtype).reshape(2, 3)
     with _native_sampler(_FakeNativeSampler()):
@@ -786,12 +789,15 @@ def test_native_inplace_reduction_reuses_owned_buffer(dtype, reducer):
     assert reduced.dtype == dtype
 
 
-@pytest.mark.parametrize("dtype, reducer", (
-    (np.complex64, "reduce_complex_grid_sum_inplace"),
-    (np.complex128, "reduce_complex_grid_sum_inplace"),
-    (np.float32, "reduce_real_grid_sum_inplace"),
-    (np.float64, "reduce_real_grid_sum_inplace"),
-))
+@pytest.mark.parametrize(
+    "dtype, reducer",
+    (
+        (np.complex64, "reduce_complex_grid_sum_inplace"),
+        (np.complex128, "reduce_complex_grid_sum_inplace"),
+        (np.float32, "reduce_real_grid_sum_inplace"),
+        (np.float64, "reduce_real_grid_sum_inplace"),
+    ),
+)
 def test_compiled_native_inplace_reduction_preserves_serial_buffer(dtype, reducer):
     local = np.arange(6, dtype=dtype).reshape(2, 3)
     expected = local.copy()
@@ -854,9 +860,7 @@ def test_native_reduction_failure_aborts_mpi_job(monkeypatch):
     monkeypatch.setattr(sampling_grid.mp, "abort", abort)
     with _native_sampler(_FailingReductionSampler()):
         with pytest.raises(AbortCalled):
-            sampling_grid.FastFieldGrid.reduce(
-                np.ones((2, 2), dtype=np.complex128)
-            )
+            sampling_grid.FastFieldGrid.reduce(np.ones((2, 2), dtype=np.complex128))
 
     assert abort_messages == ["TAMA native sampler failure"]
 

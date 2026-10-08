@@ -42,9 +42,7 @@ def test_inplace_reduction_reuses_buffer_and_matches_full_group_sum():
 
     out_of_place_input = _local_values(10.0 * mp.my_rank())
     unchanged = out_of_place_input.copy()
-    out_of_place = native_sampler.reduce_complex_grid_sum(
-        out_of_place_input
-    )
+    out_of_place = native_sampler.reduce_complex_grid_sum(out_of_place_input)
 
     assert out_of_place is not out_of_place_input
     assert np.array_equal(out_of_place_input, unchanged)
@@ -111,10 +109,8 @@ def test_native_adjoint_exception_stays_within_active_process_group():
                     mp.my_rank() == 0,
                 )
         else:
-            result = (
-                native_sampler._synchronize_native_adjoint_exception_for_testing(
-                    False,
-                )
+            result = native_sampler._synchronize_native_adjoint_exception_for_testing(
+                False,
             )
             assert result is None
     finally:
@@ -131,10 +127,7 @@ def test_inplace_reduction_stays_within_active_meep_process_group():
         group_offset = 100.0 * group_index
         local = _local_values(group_offset + 10.0 * mp.my_rank())
         pointer = local.__array_interface__["data"][0]
-        expected = (
-            _local_values(group_offset) +
-            _local_values(group_offset + 10.0)
-        )
+        expected = _local_values(group_offset) + _local_values(group_offset + 10.0)
 
         reduced = native_sampler.reduce_complex_grid_sum_inplace(local)
 
@@ -142,13 +135,10 @@ def test_inplace_reduction_stays_within_active_meep_process_group():
         assert local.__array_interface__["data"][0] == pointer
         assert np.array_equal(local, expected)
 
-        local_real = _local_values(
-            group_offset + 10.0 * mp.my_rank()
-        ).real.copy()
+        local_real = _local_values(group_offset + 10.0 * mp.my_rank()).real.copy()
         real_pointer = local_real.__array_interface__["data"][0]
         expected_real = (
-            _local_values(group_offset).real
-            + _local_values(group_offset + 10.0).real
+            _local_values(group_offset).real + _local_values(group_offset + 10.0).real
         )
 
         reduced_real = native_sampler.reduce_real_grid_sum_inplace(local_real)

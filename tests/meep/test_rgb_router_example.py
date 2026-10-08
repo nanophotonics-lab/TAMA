@@ -3,11 +3,8 @@ from pathlib import Path
 
 import numpy as np
 
-
 EXAMPLE = (
-    Path(__file__).resolve().parents[2]
-    / "examples"
-    / "tda_3d_gamma_rgb_router.py"
+    Path(__file__).resolve().parents[2] / "examples" / "tda_3d_gamma_rgb_router.py"
 )
 
 
@@ -28,17 +25,15 @@ def test_rgb_routing_scalarization_uses_all_nine_incident_normalized_terms():
             [0.5, 0.25, 2.5],
         ]
     )
-    value, coefficients, info = example.make_routing_scalarization(
-        incident
-    )(flux.ravel())
+    value, coefficients, info = example.make_routing_scalarization(incident)(
+        flux.ravel()
+    )
     efficiency = flux / incident[:, np.newaxis]
     desired = np.diag(efficiency)
     off_diagonal = efficiency.copy()
     np.fill_diagonal(off_diagonal, 0.0)
     crosstalk_penalty = np.sum(off_diagonal**2, axis=1)
-    expected = np.mean(
-        desired - example.CROSSTALK_PENALTY * crosstalk_penalty
-    )
+    expected = np.mean(desired - example.CROSSTALK_PENALTY * crosstalk_penalty)
 
     assert value == expected
     assert coefficients.shape == (9,)
@@ -77,13 +72,15 @@ def test_rgb_router_dry_run_builds_reference_and_nine_term_objective(
 ):
     example = _load_example()
     output_path = tmp_path / "must-not-exist.npz"
-    example.main([
-        "--dry-run",
-        "--iterations",
-        "1",
-        "--output",
-        str(output_path),
-    ])
+    example.main(
+        [
+            "--dry-run",
+            "--iterations",
+            "1",
+            "--output",
+            str(output_path),
+        ]
+    )
 
     output = capsys.readouterr().out
     assert "reference_bands=3" in output

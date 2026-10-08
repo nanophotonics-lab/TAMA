@@ -14,6 +14,7 @@ from _objective_test_helpers import (
 
 class _FakeSimulation:
     eps_averaging = False
+
     def __init__(self, dt):
         self.fields = _FakeFields(dt)
         self.resolution = 10
@@ -21,6 +22,7 @@ class _FakeSimulation:
 
 class _OneSampleSimulation:
     eps_averaging = False
+
     def __init__(self):
         self.fields = _FakeFields(0.1)
         self.resolution = 10
@@ -50,7 +52,8 @@ class _FakeDesign:
         self.material_factor = material_factor
         self.is_cylindrical = is_cylindrical
         self.material_grid = mp.MaterialGrid(
-            mp.Vector3(1, 1), mp.Medium(epsilon=1),
+            mp.Vector3(1, 1),
+            mp.Medium(epsilon=1),
             mp.Medium(epsilon=1 + material_factor),
         )
         self.updates = []
@@ -61,6 +64,7 @@ class _FakeDesign:
 
 class _MultiSampleSimulation:
     eps_averaging = False
+
     def __init__(self, dt, steps):
         self.fields = _FakeFields(dt)
         self.resolution = 10
@@ -137,9 +141,7 @@ class _ReusableSimulation(_MultiSampleSimulation):
 
 class _ReusableFluxSimulation(_ReusableSimulation):
     def get_field_point(self, component, position):
-        return _FluxSampleSimulation._component_scales[component] * (
-            self.step + 1
-        )
+        return _FluxSampleSimulation._component_scales[component] * (self.step + 1)
 
 
 class _TerminalSampleSimulation(_MultiSampleSimulation):
@@ -149,6 +151,7 @@ class _TerminalSampleSimulation(_MultiSampleSimulation):
 
 class _FakeSimulationSpec:
     eps_averaging = False
+
     def __init__(self, factory, *, dimensions=2, m=0):
         self.factory = factory
         self.resolution = 10
@@ -163,9 +166,7 @@ class _FakeSimulationSpec:
 
     def make(self, sources=None, *, m=None):
         selected_m = self.m if m is None else m
-        self.make_calls.append(
-            sources if m is None else (sources, selected_m)
-        )
+        self.make_calls.append(sources if m is None else (sources, selected_m))
         simulation = self.factory(sources)
         simulation.dimensions = self.dimensions
         simulation.is_cylindrical = self.is_cylindrical
@@ -364,8 +365,7 @@ class _DeferredPointMonitor:
         self.sample_calls += 1
         for index, position in enumerate(self.positions):
             destination[index] = (
-                self.sim.get_field_point(self.component, position)
-                + 0.25 * index
+                self.sim.get_field_point(self.component, position) + 0.25 * index
             )
 
     def reduce_history(self, history):
@@ -386,9 +386,7 @@ def _make_minimal_tda(**kwargs):
         monitor_position=mp.Vector3(),
         component=mp.Ez,
         dt=0.1,
-        fom_fn=lambda history, dt: float(
-            np.sum(np.abs(history) ** 2) * dt
-        ),
+        fom_fn=lambda history, dt: float(np.sum(np.abs(history) ** 2) * dt),
         adjoint_signal_fn=lambda history, dt: np.ones_like(
             history,
             dtype=np.complex128,
@@ -459,11 +457,7 @@ def test_tda_field_region_value_uses_spatial_shape_and_weights(monkeypatch):
             np.arange(1.0, 7.0) + 0.25,
         )
     ).reshape(6, 1, 2)
-    expected = (
-        0.5
-        * 0.1
-        * np.sum(np.abs(history) ** 2 * np.asarray([1.0, 3.0]))
-    )
+    expected = 0.5 * 0.1 * np.sum(np.abs(history) ** 2 * np.asarray([1.0, 3.0]))
     assert value == pytest.approx(expected)
     assert gradient is None
 
@@ -477,9 +471,7 @@ def test_tda_field_region_builds_point_specific_indexed_sources(monkeypatch):
         sample_shape=(2,),
         adjoint_source_amplitude=1.0,
     )
-    simulation = _FakeSimulationSpec(
-        lambda sources=None: _ReusableSimulation(0.1, 6)
-    )
+    simulation = _FakeSimulationSpec(lambda sources=None: _ReusableSimulation(0.1, 6))
     balancer = _FakeAdaptiveBalancer()
     callback_shapes = []
 
@@ -578,10 +570,7 @@ def test_tda_flux_target_value_exposes_total_power_history(monkeypatch):
     assert callback_shapes == [(5,)]
     assert value == pytest.approx(np.sum(expected_power) * 0.1)
     assert gradient is None
-    assert sum(
-        monitor.reduce_calls
-        for monitor in _DeferredPointMonitor.instances
-    ) == 1
+    assert sum(monitor.reduce_calls for monitor in _DeferredPointMonitor.instances) == 1
     assert [
         shape
         for monitor in _DeferredPointMonitor.instances
@@ -593,9 +582,7 @@ def test_tda_flux_target_combines_electric_and_magnetic_adjoint_sources(
     monkeypatch,
 ):
     _install_fake_native_backend(monkeypatch)
-    simulation = _FakeSimulationSpec(
-        lambda sources=None: _FluxSampleSimulation(0.1, 6)
-    )
+    simulation = _FakeSimulationSpec(lambda sources=None: _FluxSampleSimulation(0.1, 6))
     callback_shapes = []
 
     def fom_fn(power, dt):
@@ -636,18 +623,21 @@ def test_tda_flux_target_combines_electric_and_magnetic_adjoint_sources(
         [1.0, 1.0, 1.0, 1.0],
     )
     # Transpose E[n] * (H[n] + H[n+1])/2, including magnetic parity.
-    expected = ([4.5, 7.5, 10.5, 13.5, 16.5, 0],
-                [-1, -3, -5, -7, -9, -5],
-                [-10.5, -17.5, -24.5, -31.5, -38.5, 0],
-                [2.5, 7.5, 12.5, 17.5, 22.5, 12.5])
-    for source, covector, delay in zip(combined_sources, expected, (.05, .1, .05, .1)):
+    expected = (
+        [4.5, 7.5, 10.5, 13.5, 16.5, 0],
+        [-1, -3, -5, -7, -9, -5],
+        [-10.5, -17.5, -24.5, -31.5, -38.5, 0],
+        [2.5, 7.5, 12.5, 17.5, 22.5, 12.5],
+    )
+    for source, covector, delay in zip(
+        combined_sources, expected, (0.05, 0.1, 0.05, 0.1)
+    ):
         assert np.allclose(
-            [source.src.src_func(.6 + delay - n*.1) for n in range(1, 5)],
+            [source.src.src_func(0.6 + delay - n * 0.1) for n in range(1, 5)],
             covector[1:5],
         )
     assert [
-        accumulator.midpoint
-        for accumulator in _FakeNativeDesignAccumulator.instances
+        accumulator.midpoint for accumulator in _FakeNativeDesignAccumulator.instances
     ] == [False]
     assert gradient.shape == (4,)
 
@@ -655,9 +645,7 @@ def test_tda_flux_target_combines_electric_and_magnetic_adjoint_sources(
 def test_tda_flux_target_reuses_simulation_for_combined_adjoint(monkeypatch):
     _install_fake_native_backend(monkeypatch)
     simulation_instance = _ReusableFluxSimulation(0.1, 6)
-    simulation = _FakeSimulationSpec(
-        lambda sources=None: simulation_instance
-    )
+    simulation = _FakeSimulationSpec(lambda sources=None: simulation_instance)
     obj = tm.TDAObjective(
         design=_FakeDesign(),
         simulation=simulation,
@@ -689,9 +677,7 @@ def test_tda_flux_target_balances_all_indexed_component_sources(
     monkeypatch,
 ):
     _install_fake_native_backend(monkeypatch)
-    simulation = _FakeSimulationSpec(
-        lambda sources=None: _FluxSampleSimulation(0.1, 6)
-    )
+    simulation = _FakeSimulationSpec(lambda sources=None: _FluxSampleSimulation(0.1, 6))
     balancer = _FakeAdaptiveBalancer()
     obj = tm.TDAObjective(
         design=_FakeDesign(),
@@ -804,9 +790,12 @@ def test_tda_cylindrical_flux_value_plain_factory_infers_coordinates(
     assert value == pytest.approx(np.sum(expected_power) * 0.1)
     assert gradient is None
     assert len(simulations) == 1
-    assert {
-        monitor.component for monitor in _DeferredPointMonitor.instances
-    } == {mp.Er, mp.Hp, mp.Ep, mp.Hr}
+    assert {monitor.component for monitor in _DeferredPointMonitor.instances} == {
+        mp.Er,
+        mp.Hp,
+        mp.Ep,
+        mp.Hr,
+    }
 
 
 def test_tda_cylindrical_eigenmode_value_plain_factory_infers_coordinates(
@@ -845,14 +834,15 @@ def test_tda_cylindrical_eigenmode_value_plain_factory_infers_coordinates(
 
     step = np.arange(1.0, 6.0)
     expected_coefficient = 0.5 * (2.0 * step + 3.0 * (step + 0.5))
-    assert value == pytest.approx(
-        np.sum(np.abs(expected_coefficient) ** 2) * 0.1
-    )
+    assert value == pytest.approx(np.sum(np.abs(expected_coefficient) ** 2) * 0.1)
     assert gradient is None
     assert len(simulations) == 1
-    assert {
-        monitor.component for monitor in _DeferredPointMonitor.instances
-    } == {mp.Er, mp.Hp, mp.Ep, mp.Hr}
+    assert {monitor.component for monitor in _DeferredPointMonitor.instances} == {
+        mp.Er,
+        mp.Hp,
+        mp.Ep,
+        mp.Hr,
+    }
 
 
 def test_tda_surface_value_plain_factory_locks_inferred_coordinates(
@@ -957,9 +947,7 @@ def test_tda_flux_target_rejects_finite_source_fallback():
                 normal=mp.Vector3(1.0),
             ),
             t_final=0.6,
-            chunk_balancer=_FakeAdaptiveBalancer(
-                source_boundary_mode="finite"
-            ),
+            chunk_balancer=_FakeAdaptiveBalancer(source_boundary_mode="finite"),
         )
 
 
@@ -1188,11 +1176,7 @@ def test_tda_cylindrical_gradient_components_follow_mode_polarization(
         component=component,
     )
 
-    expected = (
-        m0_components
-        if forward_mode == 0
-        else (mp.Er, mp.Ep, mp.Ez)
-    )
+    expected = m0_components if forward_mode == 0 else (mp.Er, mp.Ep, mp.Ez)
     assert obj.gradient_components == expected
 
 
@@ -1651,9 +1635,7 @@ def test_tda_gradient_rejects_nonunit_logical_amplitude_before_forward(
         target=target,
         t_final=0.6,
         dt=0.1,
-        fom_fn=lambda history, dt: float(
-            np.sum(np.abs(history) ** 2) * dt
-        ),
+        fom_fn=lambda history, dt: float(np.sum(np.abs(history) ** 2) * dt),
         adjoint_signal_fn=lambda history, dt: np.ones_like(history),
     )
 
@@ -2123,12 +2105,15 @@ def test_cylindrical_electric_components_follow_mode_polarization(
     m0_components,
 ):
     expected = m0_components if m == 0 else (mp.Er, mp.Ep, mp.Ez)
-    assert objectives_module._electric_components(
-        component,
-        2,
-        cylindrical=True,
-        m=m,
-    ) == expected
+    assert (
+        objectives_module._electric_components(
+            component,
+            2,
+            cylindrical=True,
+            m=m,
+        )
+        == expected
+    )
 
 
 def test_tda_real_cubic_sources_share_one_batched_spline():
@@ -2148,9 +2133,7 @@ def test_tda_real_cubic_sources_share_one_batched_spline():
         extrapolate=False,
     )
     query = np.linspace(times[0], times[-1], 257)
-    actual = np.column_stack(
-        [[source(time) for time in query] for source in sources]
-    )
+    actual = np.column_stack([[source(time) for time in query] for source in sources])
 
     assert len(sources) == values.shape[1]
     assert all(isinstance(source(0.2), float) for source in sources)
@@ -2196,9 +2179,7 @@ def test_tda_cubic_sources_use_compact_shared_coefficient_bank(
     assert captured["coefficients"].nbytes == (
         sample_count * channel_count * expected_itemsize
     )
-    legacy_piecewise_bytes = (
-        4 * (sample_count - 1) * channel_count * expected_itemsize
-    )
+    legacy_piecewise_bytes = 4 * (sample_count - 1) * channel_count * expected_itemsize
     assert captured["coefficients"].nbytes < 0.26 * legacy_piecewise_bytes
 
 
@@ -2246,8 +2227,12 @@ def test_tda_objective_updates_simulation_spec_with_adaptive_layout(monkeypatch)
         monitor_position=mp.Vector3(),
         component=mp.Ez,
         dt=0.1,
-        fom_fn=lambda monitor_history, dt: float(np.sum(np.abs(monitor_history) ** 2) * dt),
-        adjoint_signal_fn=lambda monitor_history, dt: np.ones_like(monitor_history, dtype=np.complex128),
+        fom_fn=lambda monitor_history, dt: float(
+            np.sum(np.abs(monitor_history) ** 2) * dt
+        ),
+        adjoint_signal_fn=lambda monitor_history, dt: np.ones_like(
+            monitor_history, dtype=np.complex128
+        ),
         chunk_balancer=balancer,
     )
 

@@ -30,35 +30,38 @@ def test_distributed_band_filters_match_local_reference_exactly():
         dt=dt,
     )
     time = np.arange(37) * dt
-    signals = np.column_stack([
-        np.exp((0.1j + 0.03 * band_index) * time)
-        for band_index in range(len(bands))
-    ]).astype(np.complex128)
+    signals = np.column_stack(
+        [np.exp((0.1j + 0.03 * band_index) * time) for band_index in range(len(bands))]
+    ).astype(np.complex128)
 
-    expected_filtered = np.column_stack([
-        temporal_convolve_signal(
-            signals[:, band_index],
-            weights[band_index] * objective.kernels[band_index],
-            dt,
-        )
-        for band_index in range(len(bands))
-    ])
+    expected_filtered = np.column_stack(
+        [
+            temporal_convolve_signal(
+                signals[:, band_index],
+                weights[band_index] * objective.kernels[band_index],
+                dt,
+            )
+            for band_index in range(len(bands))
+        ]
+    )
     distributed_filtered = objective._distributed_filter_monitor_signals(signals)
     assert np.array_equal(distributed_filtered, expected_filtered)
 
     coefficients = np.array([0.5, 1.5, 0.25, 2.0])
-    expected_transpose = np.column_stack([
-        temporal_convolve_signal_transpose(
-            expected_filtered[:, band_index] * coefficients[band_index],
-            objective.weighted_kernels[band_index],
-            dt,
-        )
-        for band_index in range(len(bands))
-    ])
+    expected_transpose = np.column_stack(
+        [
+            temporal_convolve_signal_transpose(
+                expected_filtered[:, band_index] * coefficients[band_index],
+                objective.weighted_kernels[band_index],
+                dt,
+            )
+            for band_index in range(len(bands))
+        ]
+    )
     distributed_transpose = objective._distributed_target_transform(
         expected_filtered,
         lambda band_index: temporal_convolve_signal_transpose(
-            expected_filtered[:, band_index:band_index + 1]
+            expected_filtered[:, band_index : band_index + 1]
             * coefficients[band_index],
             objective.weighted_kernels[band_index],
             dt,
@@ -67,27 +70,25 @@ def test_distributed_band_filters_match_local_reference_exactly():
     )
     assert np.array_equal(distributed_transpose, expected_transpose)
 
-    filtered_adjoint_signals = (
-        np.conjugate(expected_filtered) + (0.25 - 0.1j)
-    )
-    expected_custom_transpose = np.column_stack([
-        np.conjugate(
-            temporal_convolve_signal_transpose(
-                np.conjugate(
-                    filtered_adjoint_signals[:, band_index]
-                    * coefficients[band_index]
-                ),
-                objective.weighted_kernels[band_index],
-                dt,
+    filtered_adjoint_signals = np.conjugate(expected_filtered) + (0.25 - 0.1j)
+    expected_custom_transpose = np.column_stack(
+        [
+            np.conjugate(
+                temporal_convolve_signal_transpose(
+                    np.conjugate(
+                        filtered_adjoint_signals[:, band_index]
+                        * coefficients[band_index]
+                    ),
+                    objective.weighted_kernels[band_index],
+                    dt,
+                )
             )
-        )
-        for band_index in range(len(bands))
-    ])
-    distributed_custom_transpose = (
-        objective._filter_transpose_adjoint_signals(
-            filtered_adjoint_signals,
-            coefficients,
-        )
+            for band_index in range(len(bands))
+        ]
+    )
+    distributed_custom_transpose = objective._filter_transpose_adjoint_signals(
+        filtered_adjoint_signals,
+        coefficients,
     )
     assert np.array_equal(
         distributed_custom_transpose,

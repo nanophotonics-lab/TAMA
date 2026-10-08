@@ -50,9 +50,7 @@ def _run_fake_adjoint_loop(
     def accumulate(active_sim):
         fine_index = fine_step_count - status["step"]
         if fine_index < 0:
-            raise RuntimeError(
-                "adjoint callback count exceeds the forward time grid"
-            )
+            raise RuntimeError("adjoint callback count exceeds the forward time grid")
         for component, history in field_histories.items():
             if sampling_interval > 1:
                 current, neighbor, derivative = buffers[component]

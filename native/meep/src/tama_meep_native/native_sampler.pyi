@@ -5,7 +5,6 @@ from numpy.typing import NDArray
 
 API_VERSION: int
 
-
 def create_native_design_plan(
     fields_addr: int,
     geps_addr: int,
@@ -32,7 +31,6 @@ def create_native_design_plan(
     """
     ...
 
-
 def configure_native_material_operator(
     structure_addr: int,
     geps_addr: int,
@@ -43,16 +41,13 @@ def configure_native_material_operator(
     """Initialize anisotropic MaterialGrid averaging before fields are created."""
     ...
 
-
 def native_design_plan_local_size(plan: Any) -> int:
     """Return the rank-local history entry count, including tensor stencils."""
     ...
 
-
 def native_design_plan_signature(plan: Any) -> NDArray[np.int64]:
     """Return Yee coordinates; tensor plans append component and stencil node."""
     ...
-
 
 def sample_native_design_plan_into(
     plan: Any,
@@ -60,7 +55,6 @@ def sample_native_design_plan_into(
 ) -> None:
     """Sample rank-local native Yee values into `destination`."""
     ...
-
 
 def sample_native_design_plan_real_into(
     plan: Any,
@@ -73,7 +67,6 @@ def sample_native_design_plan_real_into(
     """
     ...
 
-
 def accumulate_native_design_product_local_inplace(
     plan: Any,
     forward_values: NDArray[np.complex128],
@@ -82,7 +75,6 @@ def accumulate_native_design_product_local_inplace(
     """Apply the native MaterialGrid transpose to one field-product row."""
     ...
 
-
 def accumulate_native_design_real_product_local_inplace(
     plan: Any,
     forward_values: NDArray[np.float64],
@@ -90,7 +82,6 @@ def accumulate_native_design_real_product_local_inplace(
 ) -> None:
     """Apply the native MaterialGrid transpose to one real field-product row."""
     ...
-
 
 def accumulate_native_design_midpoint_product_local_inplace(
     plan: Any,
@@ -104,7 +95,6 @@ def accumulate_native_design_midpoint_product_local_inplace(
     """
     ...
 
-
 def accumulate_native_design_real_midpoint_product_local_inplace(
     plan: Any,
     forward_values: NDArray[np.float64],
@@ -112,7 +102,6 @@ def accumulate_native_design_real_midpoint_product_local_inplace(
 ) -> bool:
     """Accumulate real fields using consecutive-adjoint-sample midpoints."""
     ...
-
 
 def run_native_design_adjoint_segment(
     plans: Sequence[Any],
@@ -135,11 +124,9 @@ def run_native_design_adjoint_segment(
     """
     ...
 
-
 def native_forward_step_count(fields_addr: int, run_until: float) -> int:
     """Return the number of Meep steps for a rounded-time run duration."""
     ...
-
 
 def run_native_forward_segment(
     monitor_plans: Sequence[Any],
@@ -166,7 +153,6 @@ def run_native_forward_segment(
     """
     ...
 
-
 def create_component_grid_plan(
     fields_addr: int,
     coords_x: Sequence[float],
@@ -187,7 +173,6 @@ def create_component_grid_plan(
     """
     ...
 
-
 def sample_component_grid_plan_allreduced(
     plan: Any,
 ) -> NDArray[np.complex128]:
@@ -201,7 +186,6 @@ def sample_component_grid_plan_allreduced(
     """
     ...
 
-
 @overload
 def create_component_point_plan(
     fields_addr: int,
@@ -211,7 +195,6 @@ def create_component_point_plan(
 ) -> Any:
     """Precompute metadata for paired 2D `(x, y)` or cylindrical `(r, z)` points."""
     ...
-
 
 @overload
 def create_component_point_plan(
@@ -224,13 +207,11 @@ def create_component_point_plan(
     """Precompute metadata for paired Cartesian 3D `(x, y, z)` points."""
     ...
 
-
 def sample_component_point_plan_allreduced(
     plan: Any,
 ) -> NDArray[np.complex128]:
     """Sample all paired monitor coordinates with one packed MPI reduction."""
     ...
-
 
 def component_point_plan_indexed_stencil(
     plan: Any,
@@ -252,14 +233,12 @@ def component_point_plan_indexed_stencil(
     """
     ...
 
-
 def configure_component_point_plan_history(
     plan: Any,
     indices: NDArray[np.int64],
 ) -> None:
     """Restrict local/native-forward history columns to selected points."""
     ...
-
 
 def populate_sourcedata(
     sourcedata_addr: int,
@@ -270,7 +249,6 @@ def populate_sourcedata(
     """Populate one Meep sourcedata object with an exact rank-local field index."""
     ...
 
-
 def merge_sourcedata(
     destination_addr: int,
     source_addresses: Sequence[int],
@@ -278,14 +256,12 @@ def merge_sourcedata(
     """Merge singleton sourcedata indices sharing one component and chunk."""
     ...
 
-
 def sample_component_point_plan_local_into(
     plan: Any,
     destination: NDArray[np.complex128],
 ) -> None:
     """Sample rank-local paired monitor contributions into `destination`."""
     ...
-
 
 def sample_component_point_plan_local_real_into(
     plan: Any,
@@ -298,7 +274,6 @@ def sample_component_point_plan_local_real_into(
     """
     ...
 
-
 def create_eigenmode_overlap_plan(
     component_plans: Sequence[Any],
     weights: Sequence[NDArray[np.complex128]],
@@ -307,14 +282,12 @@ def create_eigenmode_overlap_plan(
     """Bind component point plans to fixed electric/magnetic weights."""
     ...
 
-
 def sample_eigenmode_overlap_plan_local_into(
     plan: Any,
     destination: NDArray[np.complex128],
 ) -> None:
     """Write rank-local electric and magnetic overlap contributions."""
     ...
-
 
 def component_grid_plan_local_complete_mask(
     plan: Any,
@@ -329,7 +302,6 @@ def component_grid_plan_local_complete_mask(
     """
     ...
 
-
 def component_grid_plan_local_boundary_mask(
     plan: Any,
 ) -> NDArray[np.bool_]:
@@ -342,7 +314,6 @@ def component_grid_plan_local_boundary_mask(
         Boolean grid with shape `(len(coords_x), len(coords_y))`.
     """
     ...
-
 
 def configure_component_grid_plan_history(
     plan: Any,
@@ -358,7 +329,6 @@ def configure_component_grid_plan_history(
     """
     ...
 
-
 def sample_component_grid_plan_history_into(
     plan: Any,
     destination: NDArray[np.complex128],
@@ -370,14 +340,12 @@ def sample_component_grid_plan_history_into(
     """
     ...
 
-
 def configure_component_grid_plan_accumulation(
     plan: Any,
     indices: NDArray[np.int64],
 ) -> None:
     """Cache fixed indices used by repeated gradient accumulation."""
     ...
-
 
 def sample_component_grid_plan_points_local(
     plan: Any,
@@ -386,14 +354,12 @@ def sample_component_grid_plan_points_local(
     """Sample selected flat point indices from rank-local plan entries."""
     ...
 
-
 def sample_component_grid_plan_points_allreduced(
     plan: Any,
     indices: NDArray[np.int64],
 ) -> NDArray[np.complex128]:
     """Sample selected flat point indices and MPI-sum rank contributions."""
     ...
-
 
 def sample_component_grid_plan_points_support_reduced(
     plan: Any,
@@ -405,7 +371,6 @@ def sample_component_grid_plan_points_support_reduced(
     rank-asymmetric subsets are unsupported.
     """
     ...
-
 
 def sample_component_grid(
     fields_addr: int,
@@ -427,7 +392,6 @@ def sample_component_grid(
     """
     ...
 
-
 def sample_component_grid_allreduced(
     fields_addr: int,
     coords_x: Sequence[float],
@@ -447,7 +411,6 @@ def sample_component_grid_allreduced(
         Complex sampled field grid with MPI rank contributions combined.
     """
     ...
-
 
 def accumulate_component_product_allreduced(
     fields_addr: int,
@@ -470,7 +433,6 @@ def accumulate_component_product_allreduced(
     """
     ...
 
-
 def accumulate_component_product_local_inplace(
     fields_addr: int,
     coords_x: Sequence[float],
@@ -491,7 +453,6 @@ def accumulate_component_product_local_inplace(
     """
     ...
 
-
 def accumulate_component_product_plan_local_inplace(
     plan: Any,
     multiplier: NDArray[np.complex128],
@@ -505,7 +466,6 @@ def accumulate_component_product_plan_local_inplace(
         accumulator: Complex grid updated in place on the local rank.
     """
     ...
-
 
 def accumulate_component_product_plan_points_local_inplace(
     plan: Any,
@@ -523,7 +483,6 @@ def accumulate_component_product_plan_points_local_inplace(
     """
     ...
 
-
 def accumulate_component_product_plan_configured_local_inplace(
     plan: Any,
     values: NDArray[np.complex128],
@@ -531,7 +490,6 @@ def accumulate_component_product_plan_configured_local_inplace(
 ) -> None:
     """Accumulate products using indices cached in `plan`."""
     ...
-
 
 def accumulate_component_difference_product_plan_configured_local_inplace(
     plan: Any,
@@ -546,7 +504,6 @@ def accumulate_component_difference_product_plan_configured_local_inplace(
     """
     ...
 
-
 def reduce_complex_grid_sum(
     local_grid: NDArray[np.complex128],
 ) -> NDArray[np.complex128]:
@@ -560,7 +517,6 @@ def reduce_complex_grid_sum(
     """
     ...
 
-
 def reduce_complex_grid_sum_inplace(
     local_grid: NDArray,
 ) -> NDArray:
@@ -571,7 +527,6 @@ def reduce_complex_grid_sum_inplace(
     returned after summation.
     """
     ...
-
 
 def reduce_real_grid_sum_inplace(
     local_grid: NDArray,
@@ -584,13 +539,10 @@ def reduce_real_grid_sum_inplace(
     """
     ...
 
-
 class TabulatedCubic:
     """Native complex piecewise-cubic callable created by its factory."""
 
-    def __call__(self, time: float) -> complex:
-        ...
-
+    def __call__(self, time: float) -> complex: ...
 
 def create_tabulated_cubic(
     breaks: NDArray[np.float64],
@@ -603,13 +555,10 @@ def create_tabulated_cubic(
     """
     ...
 
-
 class TabulatedRealCubic:
     """Native real piecewise-cubic callable created by its bank factory."""
 
-    def __call__(self, time: float) -> float:
-        ...
-
+    def __call__(self, time: float) -> float: ...
 
 def create_tabulated_real_cubic_bank(
     breaks: NDArray[np.float64],
@@ -622,13 +571,10 @@ def create_tabulated_real_cubic_bank(
     """
     ...
 
-
 class TabulatedBSpline:
     """Native complex cubic B-spline callable created by its bank factory."""
 
-    def __call__(self, time: float) -> complex:
-        ...
-
+    def __call__(self, time: float) -> complex: ...
 
 def create_tabulated_bspline_bank(
     knots: NDArray[np.float64],
@@ -641,13 +587,10 @@ def create_tabulated_bspline_bank(
     """
     ...
 
-
 class TabulatedRealBSpline:
     """Native real cubic B-spline callable created by its bank factory."""
 
-    def __call__(self, time: float) -> float:
-        ...
-
+    def __call__(self, time: float) -> float: ...
 
 def create_tabulated_real_bspline_bank(
     knots: NDArray[np.float64],
@@ -660,15 +603,11 @@ def create_tabulated_real_bspline_bank(
     """
     ...
 
-
 @overload
 def shift_tabulated_bspline(
     source: TabulatedBSpline,
     time_shift: float,
-) -> TabulatedBSpline:
-    ...
-
-
+) -> TabulatedBSpline: ...
 @overload
 def shift_tabulated_bspline(
     source: TabulatedRealBSpline,
@@ -677,13 +616,13 @@ def shift_tabulated_bspline(
     """Create a shifted view that evaluates `source(time - time_shift)`."""
     ...
 
-
 def fold_near2far_sources(
-    fields_addr: int, near2far_addr: int, source_addresses: Sequence[int],
+    fields_addr: int,
+    near2far_addr: int,
+    source_addresses: Sequence[int],
 ) -> list[tuple[int, int, NDArray[np.intp], NDArray[np.complex128]]]:
     """Return chunk-grouped sources for the exact near-to-far transpose."""
     ...
-
 
 def sample_ez_grid(
     fields_addr: int,

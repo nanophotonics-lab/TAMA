@@ -551,8 +551,7 @@ def test_distributed_band_transform_requires_native_reduction(
     monkeypatch.setattr(
         multi_tda_module.FastFieldGrid,
         "reduce_real_inplace",
-        lambda local: local
-        + np.array([[0, 2, 0], [0, 2, 0]], dtype=np.float64),
+        lambda local: local + np.array([[0, 2, 0], [0, 2, 0]], dtype=np.float64),
     )
     signals = np.zeros((2, 3), dtype=np.complex128)
     transformed_bands = []
@@ -663,9 +662,8 @@ def test_power_complementary_filter_transpose_satisfies_bilinear_identity(
     filtered_covectors = rng.standard_normal((257 + obj.kernel_length - 1, 4))
     if complex_signals:
         signals = signals + 1j * rng.standard_normal(signals.shape)
-        filtered_covectors = (
-            filtered_covectors
-            + 1j * rng.standard_normal(filtered_covectors.shape)
+        filtered_covectors = filtered_covectors + 1j * rng.standard_normal(
+            filtered_covectors.shape
         )
 
     filtered = obj.filter_monitor_signals(signals)
@@ -713,9 +711,7 @@ def test_power_complementary_smooth_min_matches_directional_finite_difference(
         filtered_adjoint_signals,
         band_coeffs,
     )
-    adjoint_derivative = obj.dt * np.real(
-        np.sum(monitor_adjoint_signals * direction)
-    )
+    adjoint_derivative = obj.dt * np.real(np.sum(monitor_adjoint_signals * direction))
 
     def objective(values):
         filtered_values = obj.filter_monitor_signals(values)
@@ -727,8 +723,7 @@ def test_power_complementary_smooth_min_matches_directional_finite_difference(
 
     step = 1.0e-6
     finite_difference = (
-        objective(signals + step * direction)
-        - objective(signals - step * direction)
+        objective(signals + step * direction) - objective(signals - step * direction)
     ) / (2.0 * step)
 
     assert adjoint_derivative == pytest.approx(
@@ -786,23 +781,31 @@ def test_temporal_fft_convolution_matches_direct_linear_convolution(
     kernel = rng.standard_normal(kernel_length)
     dt = 0.0125
 
-    expected = convolve(
-        signal,
-        kernel[:, None],
-        mode="full",
-        method="direct",
-    ) * dt
+    expected = (
+        convolve(
+            signal,
+            kernel[:, None],
+            mode="full",
+            method="direct",
+        )
+        * dt
+    )
     actual = multi_tda_module.temporal_convolve_signal(signal, kernel, dt)
 
     assert np.allclose(actual, expected, rtol=2.0e-12, atol=2.0e-12)
 
-    cotangent = rng.standard_normal(expected.shape) + 1j * rng.standard_normal(expected.shape)
-    expected_transpose = convolve(
-        cotangent,
-        kernel[::-1, None].conj(),
-        mode="valid",
-        method="direct",
-    ) * dt
+    cotangent = rng.standard_normal(expected.shape) + 1j * rng.standard_normal(
+        expected.shape
+    )
+    expected_transpose = (
+        convolve(
+            cotangent,
+            kernel[::-1, None].conj(),
+            mode="valid",
+            method="direct",
+        )
+        * dt
+    )
     actual_transpose = multi_tda_module.temporal_convolve_signal_transpose(
         cotangent,
         kernel,
@@ -843,7 +846,9 @@ def test_temporal_convolution_promotes_nonfloating_signal(signal, kernel):
     )
 
     assert actual_transpose.dtype == np.float64
-    np.testing.assert_allclose(actual_transpose, expected_transpose, rtol=2e-12, atol=2e-12)
+    np.testing.assert_allclose(
+        actual_transpose, expected_transpose, rtol=2e-12, atol=2e-12
+    )
 
 
 def test_complex_band_adjoint_signal_matches_directional_finite_difference():
@@ -868,8 +873,7 @@ def test_complex_band_adjoint_signal_matches_directional_finite_difference():
     adjoint_derivative = dt * np.real(np.sum(adjoint_signal * direction))
     step = 1.0e-6
     finite_difference = (
-        objective(signal + step * direction)
-        - objective(signal - step * direction)
+        objective(signal + step * direction) - objective(signal - step * direction)
     ) / (2.0 * step)
 
     assert np.allclose(
@@ -886,13 +890,9 @@ def test_custom_band_fom_and_scalarization_match_directional_finite_difference(
 ):
     rng = np.random.default_rng(20260727)
     dt = 0.075
-    signals = (
-        rng.standard_normal((29, 2))
-        + 1j * rng.standard_normal((29, 2))
-    )
-    direction = (
-        rng.standard_normal(signals.shape)
-        + 1j * rng.standard_normal(signals.shape)
+    signals = rng.standard_normal((29, 2)) + 1j * rng.standard_normal((29, 2))
+    direction = rng.standard_normal(signals.shape) + 1j * rng.standard_normal(
+        signals.shape
     )
     kernels = [
         np.array([0.2, -0.4, 0.7, 0.1, 0.3])[:kernel_length],
@@ -920,14 +920,16 @@ def test_custom_band_fom_and_scalarization_match_directional_finite_difference(
     obj.weighted_kernels = kernels
 
     def filtered(values):
-        return np.column_stack([
-            multi_tda_module.temporal_convolve_signal(
-                values[:, band_index],
-                kernels[band_index],
-                dt,
-            )
-            for band_index in range(values.shape[1])
-        ])
+        return np.column_stack(
+            [
+                multi_tda_module.temporal_convolve_signal(
+                    values[:, band_index],
+                    kernels[band_index],
+                    dt,
+                )
+                for band_index in range(values.shape[1])
+            ]
+        )
 
     filtered_signals = filtered(signals)
     band_objectives, filtered_adjoint_signals = (
@@ -944,21 +946,20 @@ def test_custom_band_fom_and_scalarization_match_directional_finite_difference(
         filtered_adjoint_signals,
         band_coeffs,
     )
-    adjoint_derivative = dt * np.real(
-        np.sum(monitor_adjoint_signals * direction)
-    )
+    adjoint_derivative = dt * np.real(np.sum(monitor_adjoint_signals * direction))
 
     def objective(values):
-        values_by_band = np.array([
-            float(fom_fn(filtered(values)[:, band_index], dt))
-            for band_index in range(values.shape[1])
-        ])
+        values_by_band = np.array(
+            [
+                float(fom_fn(filtered(values)[:, band_index], dt))
+                for band_index in range(values.shape[1])
+            ]
+        )
         return scalarization_fn(values_by_band)
 
     step = 1.0e-6
     finite_difference = (
-        objective(signals + step * direction)
-        - objective(signals - step * direction)
+        objective(signals + step * direction) - objective(signals - step * direction)
     ) / (2.0 * step)
 
     assert np.allclose(
@@ -975,13 +976,9 @@ def test_mixed_custom_and_default_band_foms_match_directional_finite_difference(
 ):
     rng = np.random.default_rng(20260801)
     dt = 0.075
-    signals = (
-        rng.standard_normal((31, 2))
-        + 1j * rng.standard_normal((31, 2))
-    )
-    direction = (
-        rng.standard_normal(signals.shape)
-        + 1j * rng.standard_normal(signals.shape)
+    signals = rng.standard_normal((31, 2)) + 1j * rng.standard_normal((31, 2))
+    direction = rng.standard_normal(signals.shape) + 1j * rng.standard_normal(
+        signals.shape
     )
     kernels = (
         np.array([0.2, -0.4, 0.7, 0.1, 0.3])[:kernel_length],
@@ -1034,22 +1031,21 @@ def test_mixed_custom_and_default_band_foms_match_directional_finite_difference(
         filtered_adjoint_signals,
         band_coeffs,
     )
-    adjoint_derivative = dt * np.real(
-        np.sum(monitor_adjoint_signals * direction)
-    )
+    adjoint_derivative = dt * np.real(np.sum(monitor_adjoint_signals * direction))
 
     def objective(values):
         filtered_values = filtered(values)
-        objectives = np.asarray([
-            first_fom(filtered_values[:, 0], dt),
-            0.5 * dt * np.sum(np.abs(filtered_values[:, 1]) ** 2),
-        ])
+        objectives = np.asarray(
+            [
+                first_fom(filtered_values[:, 0], dt),
+                0.5 * dt * np.sum(np.abs(filtered_values[:, 1]) ** 2),
+            ]
+        )
         return objectives[0] + 0.4 * objectives[1]
 
     step = 1.0e-6
     finite_difference = (
-        objective(signals + step * direction)
-        - objective(signals - step * direction)
+        objective(signals + step * direction) - objective(signals - step * direction)
     ) / (2.0 * step)
 
     assert np.allclose(
@@ -1083,30 +1079,23 @@ def test_multi_tda_flux_filter_pullback_matches_directional_finite_difference():
     obj.kernel_length = kernel.size
     obj.kernels = [kernel]
     obj.weighted_kernels = [kernel]
-    signals = (
-        rng.standard_normal((23, len(obj._flat_target_positions)))
-        + 1j
-        * rng.standard_normal((23, len(obj._flat_target_positions)))
-    )
-    direction = (
-        rng.standard_normal(signals.shape)
-        + 1j * rng.standard_normal(signals.shape)
+    signals = rng.standard_normal(
+        (23, len(obj._flat_target_positions))
+    ) + 1j * rng.standard_normal((23, len(obj._flat_target_positions)))
+    direction = rng.standard_normal(signals.shape) + 1j * rng.standard_normal(
+        signals.shape
     )
 
     filtered = obj.filter_monitor_signals(signals)
-    band_objectives, filtered_covectors = (
-        obj._band_fom_values_and_adjoint_signals(
-            filtered,
-            need_gradient=True,
-        )
+    band_objectives, filtered_covectors = obj._band_fom_values_and_adjoint_signals(
+        filtered,
+        need_gradient=True,
     )
     monitor_covectors = obj._filter_transpose_adjoint_signals(
         filtered_covectors,
         np.ones(1),
     )
-    adjoint_derivative = dt * np.real(
-        np.sum(monitor_covectors * direction)
-    )
+    adjoint_derivative = dt * np.real(np.sum(monitor_covectors * direction))
 
     def objective(values):
         return float(
@@ -1118,8 +1107,7 @@ def test_multi_tda_flux_filter_pullback_matches_directional_finite_difference():
 
     step = 1.0e-6
     finite_difference = (
-        objective(signals + step * direction)
-        - objective(signals - step * direction)
+        objective(signals + step * direction) - objective(signals - step * direction)
     ) / (2.0 * step)
 
     assert np.isfinite(band_objectives[0])
@@ -1211,12 +1199,12 @@ def test_native_tabulated_cubic_matches_legacy_interp1d(source_factory):
     legacy_custom_source = mp.CustomSource(
         src_func=lambda time: complex(reference(time))
     )
-    native_currents = np.asarray([
-        native_custom_source.swigobj.current(time, 0.01) for time in query
-    ])
-    legacy_currents = np.asarray([
-        legacy_custom_source.swigobj.current(time, 0.01) for time in query
-    ])
+    native_currents = np.asarray(
+        [native_custom_source.swigobj.current(time, 0.01) for time in query]
+    )
+    legacy_currents = np.asarray(
+        [legacy_custom_source.swigobj.current(time, 0.01) for time in query]
+    )
     assert np.allclose(native_currents, legacy_currents, rtol=2.0e-14, atol=2.0e-14)
 
 
@@ -1275,8 +1263,7 @@ def test_multi_tda_max_frequency_must_cover_band_upper_edges(
     max_frequency,
 ):
     monitor_positions = [
-        mp.Vector3(0.1 * index)
-        for index in range(len(wavelength_bands))
+        mp.Vector3(0.1 * index) for index in range(len(wavelength_bands))
     ]
 
     with pytest.raises(ValueError, match="highest wavelength-band frequency"):
@@ -1388,6 +1375,7 @@ def test_multi_tda_objective_requires_design_only_for_gradients(monkeypatch):
 
 class _FakeSimulation:
     eps_averaging = False
+
     def __init__(self, dt, samples, actual_time=None):
         self.dt = dt
         self.fields = _FakeFields(dt)
@@ -1439,9 +1427,7 @@ class _FluxFakeSimulation(_FakeSimulation):
     }
 
     def get_field_point(self, component, position):
-        return self._component_scales[component] * np.exp(
-            1j * 0.1 * self.index
-        )
+        return self._component_scales[component] * np.exp(1j * 0.1 * self.index)
 
 
 class _CylindricalFluxFakeSimulation(_FakeSimulation):
@@ -1461,13 +1447,12 @@ class _CylindricalFluxFakeSimulation(_FakeSimulation):
         self.m = 0
 
     def get_field_point(self, component, position):
-        return self._component_scales[component] * np.exp(
-            1j * 0.1 * self.index
-        )
+        return self._component_scales[component] * np.exp(1j * 0.1 * self.index)
 
 
 class _FakeSimulationSpec:
     eps_averaging = False
+
     def __init__(self, factory, *, dimensions=2, m=0):
         self.factory = factory
         self.resolution = 10
@@ -1482,9 +1467,7 @@ class _FakeSimulationSpec:
 
     def make(self, sources=None, *, m=None):
         selected_m = self.m if m is None else m
-        self.make_calls.append(
-            sources if m is None else (sources, selected_m)
-        )
+        self.make_calls.append(sources if m is None else (sources, selected_m))
         simulation = self.factory(sources)
         simulation.dimensions = self.dimensions
         simulation.is_cylindrical = self.is_cylindrical
@@ -1580,8 +1563,7 @@ class _FakeAdaptiveBalancer:
             "SourceBoundaryDecision",
             (),
             {
-                "source_sizes": (adjoint_source_size,)
-                * len(adjoint_source_positions),
+                "source_sizes": (adjoint_source_size,) * len(adjoint_source_positions),
                 "source_amplitudes": (adjoint_source_amplitude,)
                 * len(adjoint_source_positions),
             },
@@ -1633,15 +1615,11 @@ class _FakeNativeHistorySet:
         width = int(np.prod(self.design.shape))
         sample_values = getattr(sim, "forward_history_values", None)
         sample_value = (
-            sim.index + 1.0
-            if sample_values is None
-            else sample_values[sim.index]
+            sim.index + 1.0 if sample_values is None else sample_values[sim.index]
         )
         for component in self.components:
             if component not in self.states:
-                history, path = self.make_history_memmap(
-                    (row_capacity, max(width, 1))
-                )
+                history, path = self.make_history_memmap((row_capacity, max(width, 1)))
                 self.states[component] = {
                     "array": history,
                     "path": path,
@@ -1654,7 +1632,7 @@ class _FakeNativeHistorySet:
         histories = {}
         for component, state in self.states.items():
             state["array"].flush()
-            histories[component] = state["array"][:row_count, :state["width"]]
+            histories[component] = state["array"][:row_count, : state["width"]]
         return histories
 
     def width(self, component):
@@ -1663,8 +1641,7 @@ class _FakeNativeHistorySet:
     @property
     def signatures(self):
         return {
-            component: state["signature"]
-            for component, state in self.states.items()
+            component: state["signature"] for component, state in self.states.items()
         }
 
     def release_forward(self):
@@ -1675,7 +1652,7 @@ class _FakeNativeHistorySet:
             history = state["array"]
             if history is not None:
                 self.cleaned_histories[component] = np.array(
-                    history[:self.sample_calls, :state["width"]],
+                    history[: self.sample_calls, : state["width"]],
                     copy=True,
                 )
                 history.flush()
@@ -1755,6 +1732,7 @@ def _fake_native_path():
 
 class _RaisingSimulation:
     eps_averaging = False
+
     def __init__(self):
         self.index = 0
 
@@ -1852,10 +1830,9 @@ def test_multi_tda_value_only_uses_custom_band_fom_without_adjoint_callback(
 
     value, gradient = obj.evaluate(np.array([0.0]), need_gradient=False)
 
-    expected = np.array([
-        fom_fn(filtered[:, band_index], dt)
-        for band_index in range(filtered.shape[1])
-    ])
+    expected = np.array(
+        [fom_fn(filtered[:, band_index], dt) for band_index in range(filtered.shape[1])]
+    )
     assert gradient is None
     assert np.allclose(obj.last_band_objectives, expected)
     assert value == np.sum(expected)
@@ -2056,18 +2033,12 @@ def test_multi_tda_cylindrical_builds_indexed_source_for_each_target():
     adjoint_sources, adjoint_mode = simulation.make_calls[1]
     assert adjoint_mode == -1
     assert len(adjoint_sources) == 2
-    assert all(
-        isinstance(source, mp.IndexedSource)
-        for source in adjoint_sources
-    )
+    assert all(isinstance(source, mp.IndexedSource) for source in adjoint_sources)
     assert all(
         np.array_equal(source.amp_arr, np.array([amplitude]))
         for source in adjoint_sources
     )
-    assert (
-        adjoint_sources[0].srcdata
-        is not adjoint_sources[1].srcdata
-    )
+    assert adjoint_sources[0].srcdata is not adjoint_sources[1].srcdata
 
 
 def test_multi_tda_cylindrical_maps_grouped_stencils_to_target_order(
@@ -2200,11 +2171,7 @@ def test_multi_tda_cylindrical_gradient_components_follow_mode_polarization(
         dt=0.05,
     )
 
-    expected = (
-        m0_components
-        if forward_mode == 0
-        else (mp.Er, mp.Ep, mp.Ez)
-    )
+    expected = m0_components if forward_mode == 0 else (mp.Er, mp.Ep, mp.Ez)
     assert obj.gradient_components == expected
 
 
@@ -2394,9 +2361,7 @@ def test_filter_monitor_signals_requires_expected_channel_width(channel_count):
     obj = _make_minimal_multi_tda()
 
     with pytest.raises(ValueError, match=r"signals.*channel"):
-        obj.filter_monitor_signals(
-            np.zeros((4, channel_count), dtype=np.complex128)
-        )
+        obj.filter_monitor_signals(np.zeros((4, channel_count), dtype=np.complex128))
 
 
 @pytest.mark.parametrize("component", (mp.Ez, mp.Hy))
@@ -2438,15 +2403,14 @@ def test_multi_tda_objective_adjoint_source_uses_reversed_forward_sample_times(
     expected_forward_times = sample_start + dt * np.arange(4)
     magnetic = component == mp.Hy
     source_times = (
-        actual_time + (dt if magnetic else 0.5 * dt)
-        - expected_forward_times[::-1]
+        actual_time + (dt if magnetic else 0.5 * dt) - expected_forward_times[::-1]
     )
     # Meep samples J at (m + 1/2) dt and M at m dt.
     current_steps = source_times / dt - (0.0 if magnetic else 0.5)
     assert np.allclose(current_steps, np.round(current_steps))
-    actual = sources[0].amplitude * np.array([
-        sources[0].src.src_func(time) for time in source_times
-    ])
+    actual = sources[0].amplitude * np.array(
+        [sources[0].src.src_func(time) for time in source_times]
+    )
     expected = (-1.0 if magnetic else 1.0) * raw_covector[::-1]
     np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
     assert _FakeNativeAccumulator.instances[-1].midpoint is False
@@ -2469,9 +2433,7 @@ def test_multi_tda_objective_stores_real_meep_histories_as_float64():
     with _fake_native_path():
         obj.evaluate(np.array([0.0]), need_gradient=True)
 
-    assert _FakeNativeHistorySet.instances[0].history_dtype == np.dtype(
-        np.float64
-    )
+    assert _FakeNativeHistorySet.instances[0].history_dtype == np.dtype(np.float64)
 
 
 @pytest.mark.parametrize("regional_target", (False, True))
@@ -2634,6 +2596,7 @@ def test_multi_tda_objective_cleans_history_memmaps_when_forward_run_raises():
     history_paths = []
 
     with tempfile.TemporaryDirectory() as tmpdir:
+
         def make_history_memmap(shape, *, dtype=None):
             fd, path = tempfile.mkstemp(
                 prefix="tama_test_history_",
@@ -2642,12 +2605,15 @@ def test_multi_tda_objective_cleans_history_memmaps_when_forward_run_raises():
             )
             os.close(fd)
             history_paths.append(path)
-            return np.memmap(
+            return (
+                np.memmap(
+                    path,
+                    dtype=obj.history_dtype if dtype is None else dtype,
+                    mode="w+",
+                    shape=shape,
+                ),
                 path,
-                dtype=obj.history_dtype if dtype is None else dtype,
-                mode="w+",
-                shape=shape,
-            ), path
+            )
 
         obj._make_history_memmap = make_history_memmap
         try:
@@ -2692,6 +2658,7 @@ def test_multi_tda_objective_cleans_reused_simulation_when_adjoint_run_raises():
     history_paths = []
 
     with tempfile.TemporaryDirectory() as tmpdir:
+
         def make_history_memmap(shape, *, dtype=None):
             fd, path = tempfile.mkstemp(
                 prefix="tama_test_history_",
@@ -2700,12 +2667,15 @@ def test_multi_tda_objective_cleans_reused_simulation_when_adjoint_run_raises():
             )
             os.close(fd)
             history_paths.append(path)
-            return np.memmap(
+            return (
+                np.memmap(
+                    path,
+                    dtype=obj.history_dtype if dtype is None else dtype,
+                    mode="w+",
+                    shape=shape,
+                ),
                 path,
-                dtype=obj.history_dtype if dtype is None else dtype,
-                mode="w+",
-                shape=shape,
-            ), path
+            )
 
         obj._make_history_memmap = make_history_memmap
         try:
@@ -2802,10 +2772,7 @@ def test_multi_tda_objective_uses_automatic_scalarization_coefficients():
         return tuple(_FakeInterp() for _ in range(np.asarray(values).shape[1]))
 
     def scalarization_fn(band_objectives):
-        return (
-            2.0 * band_objectives[0]
-            + 1.5 * band_objectives[1] ** 2
-        )
+        return 2.0 * band_objectives[0] + 1.5 * band_objectives[1] ** 2
 
     obj = tm.MultiTDAObjective(
         update_design=lambda _: None,
@@ -2827,10 +2794,12 @@ def test_multi_tda_objective_uses_automatic_scalarization_coefficients():
         np.array([1.0, 2.0, 3.0]),
         np.array([4.0, 5.0, 6.0]),
     ]
-    filtered = np.column_stack([
-        np.linspace(1.0, 2.0, 10) + 1j * np.linspace(0.2, 0.9, 10),
-        np.linspace(3.0, 4.0, 10) - 1j * np.linspace(0.4, 1.1, 10),
-    ]).astype(np.complex128)
+    filtered = np.column_stack(
+        [
+            np.linspace(1.0, 2.0, 10) + 1j * np.linspace(0.2, 0.9, 10),
+            np.linspace(3.0, 4.0, 10) - 1j * np.linspace(0.4, 1.1, 10),
+        ]
+    ).astype(np.complex128)
     obj._distributed_filter_monitor_signals = lambda _: filtered
 
     original_tabulated_sources = multi_tda_module._tabulated_cubic_sources
@@ -2901,10 +2870,12 @@ def test_multi_tda_objective_uses_custom_per_band_adjoint_signals():
         np.array([1.0, 2.0, 3.0]),
         np.array([4.0, 5.0, 6.0]),
     ]
-    filtered = np.column_stack([
-        np.linspace(1.0, 2.0, 10) + 1j * np.linspace(0.2, 0.9, 10),
-        np.linspace(3.0, 4.0, 10) - 1j * np.linspace(0.4, 1.1, 10),
-    ]).astype(np.complex128)
+    filtered = np.column_stack(
+        [
+            np.linspace(1.0, 2.0, 10) + 1j * np.linspace(0.2, 0.9, 10),
+            np.linspace(3.0, 4.0, 10) - 1j * np.linspace(0.4, 1.1, 10),
+        ]
+    ).astype(np.complex128)
     obj._distributed_filter_monitor_signals = lambda _: filtered
 
     original_tabulated_sources = multi_tda_module._tabulated_cubic_sources
@@ -2915,10 +2886,9 @@ def test_multi_tda_objective_uses_custom_per_band_adjoint_signals():
     finally:
         multi_tda_module._tabulated_cubic_sources = original_tabulated_sources
 
-    expected_objectives = np.array([
-        fom_fn(filtered[:, band_index], dt)
-        for band_index in range(filtered.shape[1])
-    ])
+    expected_objectives = np.array(
+        [fom_fn(filtered[:, band_index], dt) for band_index in range(filtered.shape[1])]
+    )
     assert np.allclose(obj.last_band_objectives, expected_objectives)
     assert len(seen["adjoint_values"]) == 1
     for band_index, coefficient in enumerate((2.0, 3.0)):
@@ -2983,13 +2953,16 @@ def test_multi_tda_objective_rejects_dense_history_with_one_sample():
 
 
 def test_multi_tda_objective_auto_pixel_chunk():
-    assert tm.auto_pixel_chunk(
-        20,
-        nproc=1,
-        target_chunks_per_rank=10,
-        min_pixel_chunk=3,
-        max_pixel_chunk=7,
-    ) == 3
+    assert (
+        tm.auto_pixel_chunk(
+            20,
+            nproc=1,
+            target_chunks_per_rank=10,
+            min_pixel_chunk=3,
+            max_pixel_chunk=7,
+        )
+        == 3
+    )
 
     obj = tm.MultiTDAObjective(
         update_design=lambda _: None,
@@ -3139,9 +3112,7 @@ def test_multi_tda_field_regions_preserve_each_band_history_shape_and_sources():
             adjoint_source_amplitude=1.0,
         ),
     ]
-    simulation = _FakeSimulationSpec(
-        lambda sources=None: _FakeSimulation(dt, 8)
-    )
+    simulation = _FakeSimulationSpec(lambda sources=None: _FakeSimulation(dt, 8))
     fom_shapes = []
     adjoint_shapes = []
 
@@ -3185,8 +3156,7 @@ def test_multi_tda_field_regions_preserve_each_band_history_shape_and_sources():
     assert len(sources) == 6
     assert all(isinstance(source, mp.IndexedSource) for source in sources)
     assert [
-        complex(np.asarray(source.amp_arr).reshape(-1)[0])
-        for source in sources
+        complex(np.asarray(source.amp_arr).reshape(-1)[0]) for source in sources
     ] == [1.0] * 6
 
 
@@ -3238,9 +3208,7 @@ def test_multi_tda_field_regions_preserve_distinct_source_operators():
     )
     changed_amplitude = (
         tm.FieldRegionTarget(**common),
-        tm.FieldRegionTarget(
-            **{**common, "adjoint_source_amplitude": 2.0}
-        ),
+        tm.FieldRegionTarget(**{**common, "adjoint_source_amplitude": 2.0}),
     )
     changed_component = (
         tm.FieldRegionTarget(**common),
@@ -3359,18 +3327,14 @@ def test_multi_tda_deduplicated_regional_pullback_matches_logical_channels():
         fom_fn=(None, second_fom),
         scalarization_fn=lambda values: values[0] + 0.3 * values[1] ** 2,
     )
-    unique_history = (
-        rng.standard_normal((23, len(obj._monitor_target_positions)))
-        + 1j
-        * rng.standard_normal((23, len(obj._monitor_target_positions)))
-    )
+    unique_history = rng.standard_normal(
+        (23, len(obj._monitor_target_positions))
+    ) + 1j * rng.standard_normal((23, len(obj._monitor_target_positions)))
     logical_history = unique_history[:, obj._flat_to_monitor_indices]
     filtered = obj.filter_monitor_signals(logical_history)
-    expected_objectives, filtered_adjoint = (
-        obj._band_fom_values_and_adjoint_signals(
-            filtered,
-            need_gradient=True,
-        )
+    expected_objectives, filtered_adjoint = obj._band_fom_values_and_adjoint_signals(
+        filtered,
+        need_gradient=True,
     )
     expected_total, band_coeffs, _ = obj._evaluate_scalarization(
         expected_objectives,
@@ -3381,26 +3345,20 @@ def test_multi_tda_deduplicated_regional_pullback_matches_logical_channels():
         band_coeffs,
     )
     expected_unique_adjoint = np.zeros_like(unique_history)
-    for logical_index, monitor_index in enumerate(
-        obj._flat_to_monitor_indices
-    ):
+    for logical_index, monitor_index in enumerate(obj._flat_to_monitor_indices):
         expected_unique_adjoint[:, monitor_index] += logical_adjoint[
             :,
             logical_index,
         ]
 
-    actual_objectives = obj._distributed_deduplicated_band_objectives(
-        unique_history
-    )
+    actual_objectives = obj._distributed_deduplicated_band_objectives(unique_history)
     actual_total, actual_coeffs, _ = obj._evaluate_scalarization(
         actual_objectives,
         need_gradient=True,
     )
-    actual_unique_adjoint = (
-        obj._distributed_deduplicated_adjoint_signals(
-            unique_history,
-            actual_coeffs,
-        )
+    actual_unique_adjoint = obj._distributed_deduplicated_adjoint_signals(
+        unique_history,
+        actual_coeffs,
     )
 
     assert np.allclose(actual_objectives, expected_objectives)
@@ -3568,10 +3526,9 @@ def test_multi_tda_flux_targets_sample_only_unique_overlapping_channels(
     assert len(obj._flat_target_positions) == 16
     assert len(obj._monitor_target_positions) == 12
     assert len(RecordingPointMonitor.instances) == 4
-    assert {
-        len(monitor.positions)
-        for monitor in RecordingPointMonitor.instances
-    } == {3}
+    assert {len(monitor.positions) for monitor in RecordingPointMonitor.instances} == {
+        3
+    }
     assert len(history_shapes) == 1
     assert history_shapes[0][1] == 12
 
@@ -3595,18 +3552,14 @@ def test_multi_tda_deduplicated_flux_pullback_matches_logical_channels():
         pixel_chunk=1,
         dt=0.05,
     )
-    unique_history = (
-        rng.standard_normal((23, len(obj._monitor_target_positions)))
-        + 1j
-        * rng.standard_normal((23, len(obj._monitor_target_positions)))
-    )
+    unique_history = rng.standard_normal(
+        (23, len(obj._monitor_target_positions))
+    ) + 1j * rng.standard_normal((23, len(obj._monitor_target_positions)))
     logical_history = unique_history[:, obj._flat_to_monitor_indices]
     filtered = obj.filter_monitor_signals(logical_history)
-    expected_objectives, filtered_adjoint = (
-        obj._band_fom_values_and_adjoint_signals(
-            filtered,
-            need_gradient=True,
-        )
+    expected_objectives, filtered_adjoint = obj._band_fom_values_and_adjoint_signals(
+        filtered,
+        need_gradient=True,
     )
     band_coeffs = np.array([0.7, -0.3])
     logical_adjoint = obj._filter_transpose_adjoint_signals(
@@ -3614,22 +3567,16 @@ def test_multi_tda_deduplicated_flux_pullback_matches_logical_channels():
         band_coeffs,
     )
     expected_unique_adjoint = np.zeros_like(unique_history)
-    for logical_index, monitor_index in enumerate(
-        obj._flat_to_monitor_indices
-    ):
+    for logical_index, monitor_index in enumerate(obj._flat_to_monitor_indices):
         expected_unique_adjoint[:, monitor_index] += logical_adjoint[
             :,
             logical_index,
         ]
 
-    actual_objectives = obj._distributed_deduplicated_band_objectives(
-        unique_history
-    )
-    actual_unique_adjoint = (
-        obj._distributed_deduplicated_adjoint_signals(
-            unique_history,
-            band_coeffs,
-        )
+    actual_objectives = obj._distributed_deduplicated_band_objectives(unique_history)
+    actual_unique_adjoint = obj._distributed_deduplicated_adjoint_signals(
+        unique_history,
+        band_coeffs,
     )
 
     assert np.allclose(actual_objectives, expected_objectives)
@@ -3733,9 +3680,7 @@ def test_multi_tda_overlapping_flux_targets_sum_shared_adjoint_sources():
         lambda sources=None: _FluxFakeSimulation(dt, 8)
     )
     separate_simulations = [
-        _FakeSimulationSpec(
-            lambda sources=None: _FluxFakeSimulation(dt, 8)
-        )
+        _FakeSimulationSpec(lambda sources=None: _FluxFakeSimulation(dt, 8))
         for _ in targets
     ]
     combined = make_objective(
@@ -3765,10 +3710,7 @@ def test_multi_tda_overlapping_flux_targets_sum_shared_adjoint_sources():
         for objective in separate:
             objective.evaluate(np.array([0.0]), need_gradient=True)
 
-    assert [
-        len(sources)
-        for sources in combined_simulation.make_calls[1:]
-    ] == [12]
+    assert [len(sources) for sources in combined_simulation.make_calls[1:]] == [12]
     times = np.array([0.15, 0.2, 0.25])
 
     def source_signals(simulation):
@@ -3800,9 +3742,7 @@ def test_multi_tda_overlapping_flux_targets_sum_shared_adjoint_sources():
 
 def test_multi_tda_flux_target_combines_electric_and_magnetic_adjoint_sources():
     dt = 0.05
-    simulation = _FakeSimulationSpec(
-        lambda sources=None: _FluxFakeSimulation(dt, 8)
-    )
+    simulation = _FakeSimulationSpec(lambda sources=None: _FluxFakeSimulation(dt, 8))
     callback_shapes = []
 
     def fom_fn(power, sample_dt):
@@ -3845,8 +3785,7 @@ def test_multi_tda_flux_target_combines_electric_and_magnetic_adjoint_sources():
         for source in sources
     )
     assert [
-        accumulator.midpoint
-        for accumulator in _FakeNativeAccumulator.instances
+        accumulator.midpoint for accumulator in _FakeNativeAccumulator.instances
     ] == [False]
     assert gradient.shape == (1,)
 
@@ -3854,9 +3793,7 @@ def test_multi_tda_flux_target_combines_electric_and_magnetic_adjoint_sources():
 def test_multi_tda_flux_target_reuses_simulation_for_combined_adjoint():
     dt = 0.05
     simulation_instance = _FluxFakeSimulation(dt, 8)
-    simulation = _FakeSimulationSpec(
-        lambda sources=None: simulation_instance
-    )
+    simulation = _FakeSimulationSpec(lambda sources=None: simulation_instance)
     obj = tm.MultiTDAObjective(
         design=_make_design(),
         simulation=simulation,
@@ -3897,9 +3834,7 @@ def test_multi_tda_flux_reuse_cleans_failed_adjoint_setup():
 
     dt = 0.05
     simulation_instance = _FailingRestartSimulation(dt, 8)
-    simulation = _FakeSimulationSpec(
-        lambda sources=None: simulation_instance
-    )
+    simulation = _FakeSimulationSpec(lambda sources=None: simulation_instance)
     obj = tm.MultiTDAObjective(
         design=_make_design(),
         simulation=simulation,
@@ -3951,9 +3886,7 @@ def test_multi_tda_flux_target_rejects_unsupported_gradient_paths():
     ):
         arbitrary_factory.evaluate(np.array([0.0]), need_gradient=True)
 
-    simulation = _FakeSimulationSpec(
-        lambda sources=None: _FluxFakeSimulation(0.05, 8)
-    )
+    simulation = _FakeSimulationSpec(lambda sources=None: _FluxFakeSimulation(0.05, 8))
     with pytest.raises(ValueError, match="source_boundary_mode='finite'"):
         tm.MultiTDAObjective(
             design=_make_design(),
@@ -3965,9 +3898,7 @@ def test_multi_tda_flux_target_rejects_unsupported_gradient_paths():
             kernel_length=3,
             pixel_chunk=1,
             dt=0.05,
-            chunk_balancer=_FakeAdaptiveBalancer(
-                source_boundary_mode="finite"
-            ),
+            chunk_balancer=_FakeAdaptiveBalancer(source_boundary_mode="finite"),
         )
     with pytest.raises(ValueError, match="x-y plane"):
         tm.MultiTDAObjective(
@@ -4129,9 +4060,7 @@ def test_multi_tda_cylindrical_eigenmode_value_plain_factory_uses_runtime_channe
         target.spatial_weights,
         cylindrical=True,
     )
-    assert value == pytest.approx(
-        np.sum(np.abs(expected_coefficients) ** 2) * dt
-    )
+    assert value == pytest.approx(np.sum(np.abs(expected_coefficients) ** 2) * dt)
     assert gradient is None
 
 
@@ -4146,9 +4075,7 @@ def test_multi_tda_plain_factory_rejects_surface_coordinate_change(
     dt = 0.05
     cylindrical_simulation = _CylindricalFluxFakeSimulation(dt, 8)
     cartesian_simulation = _FluxFakeSimulation(dt, 8)
-    simulations = iter(
-        (cylindrical_simulation, cartesian_simulation)
-    )
+    simulations = iter((cylindrical_simulation, cartesian_simulation))
     obj = tm.MultiTDAObjective(
         update_design=lambda values: None,
         sim_factory=lambda sources=None: next(simulations),
@@ -4351,9 +4278,7 @@ def test_multi_tda_objective_groups_forward_monitors_by_component(monkeypatch):
 
         def sample_history_into(self, destination):
             self.sample_calls += 1
-            destination[:] = (
-                10 * self.component + np.arange(len(self.positions))
-            )
+            destination[:] = 10 * self.component + np.arange(len(self.positions))
 
         def reduce_history(self, history):
             self.reduce_calls += 1
@@ -4407,9 +4332,10 @@ def test_multi_tda_objective_groups_forward_monitors_by_component(monkeypatch):
         (mp.Ey, (targets[1].position,)),
     ]
     assert all(monitor.sample_calls == 8 for monitor in _GroupedPointMonitor.instances)
-    assert [
-        monitor.reduce_calls for monitor in _GroupedPointMonitor.instances
-    ] == [1, 0]
+    assert [monitor.reduce_calls for monitor in _GroupedPointMonitor.instances] == [
+        1,
+        0,
+    ]
     assert _GroupedPointMonitor.instances[0].reduced_shape == (8, 3)
     assert np.array_equal(
         monitor_histories[0],
@@ -4488,9 +4414,7 @@ def test_multi_tda_objective_uses_each_target_for_adjoint_source(monkeypatch):
         amplitude,
         indexed_stencil,
     ):
-        source_calls.append(
-            (component, center, size, amplitude, indexed_stencil)
-        )
+        source_calls.append((component, center, size, amplitude, indexed_stencil))
         return [object()]
 
     monkeypatch.setattr(
@@ -4555,9 +4479,7 @@ def test_multi_tda_flux_does_not_enable_mixed_non_flux_gradient():
     dt = 0.05
     obj = tm.MultiTDAObjective(
         design=_make_design(),
-        simulation=_FakeSimulationSpec(
-            lambda sources=None: _FluxFakeSimulation(dt, 8)
-        ),
+        simulation=_FakeSimulationSpec(lambda sources=None: _FluxFakeSimulation(dt, 8)),
         targets=[
             tm.FluxTarget(
                 (mp.Vector3(),),
@@ -4585,9 +4507,7 @@ def test_multi_tda_flux_does_not_enable_mixed_non_flux_gradient():
 def test_multi_tda_objective_updates_simulation_spec_with_adaptive_layout():
     dt = 0.05
     simulation_instance = _FakeSimulation(dt, 8)
-    simulation = _FakeSimulationSpec(
-        lambda sources=None: simulation_instance
-    )
+    simulation = _FakeSimulationSpec(lambda sources=None: simulation_instance)
     balancer = _FakeAdaptiveBalancer()
     obj = tm.MultiTDAObjective(
         update_design=lambda _: None,
@@ -4639,17 +4559,13 @@ def test_multi_tda_flux_target_updates_adaptive_layout_after_combined_adjoint():
                 (),
                 {
                     "source_sizes": tuple(adjoint_source_sizes),
-                    "source_amplitudes": tuple(
-                        adjoint_source_amplitudes
-                    ),
+                    "source_amplitudes": tuple(adjoint_source_amplitudes),
                 },
             )()
 
     dt = 0.05
     simulation_instance = _FluxFakeSimulation(dt, 8)
-    simulation = _FakeSimulationSpec(
-        lambda sources=None: simulation_instance
-    )
+    simulation = _FakeSimulationSpec(lambda sources=None: simulation_instance)
     balancer = _FluxBalancer()
     obj = tm.MultiTDAObjective(
         design=_make_design(),
@@ -4686,9 +4602,7 @@ def test_multi_tda_flux_target_updates_adaptive_layout_after_combined_adjoint():
 def test_multi_tda_objective_uses_per_target_effective_adjoint_sources():
     dt = 0.05
     simulation_instance = _FakeSimulation(dt, 8)
-    simulation = _FakeSimulationSpec(
-        lambda sources=None: simulation_instance
-    )
+    simulation = _FakeSimulationSpec(lambda sources=None: simulation_instance)
     positions = [mp.Vector3(-0.1, 0.0), mp.Vector3(0.2, 0.1)]
     effective_sizes = (
         mp.Vector3(0.2, 0.0),

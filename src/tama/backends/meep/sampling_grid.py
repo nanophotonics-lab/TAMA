@@ -109,9 +109,7 @@ def _require_native_sampler() -> None:
 
 def _handle_native_sampler_failure(operation: str, exc: Exception) -> None:
     """Raise in serial or abort an MPI run after a native operation fails."""
-    message = (
-        f"TAMA native sampler {operation} failed on rank {mp.my_rank()}: {exc}"
-    )
+    message = f"TAMA native sampler {operation} failed on rank {mp.my_rank()}: {exc}"
     if mp.count_processors() > 1:
         print(message, file=sys.stderr, flush=True)
         abort = getattr(mp, "abort", None)
@@ -129,8 +127,7 @@ def history_storage_dtype(sim: mp.Simulation, requested_dtype) -> np.dtype:
     """Resolve a history dtype from Meep's initialized field representation."""
     dtype = np.dtype(requested_dtype)
     if not (
-        np.issubdtype(dtype, np.floating)
-        or np.issubdtype(dtype, np.complexfloating)
+        np.issubdtype(dtype, np.floating) or np.issubdtype(dtype, np.complexfloating)
     ):
         raise ValueError("history_dtype must be a real or complex floating dtype")
 
@@ -142,9 +139,7 @@ def history_storage_dtype(sim: mp.Simulation, requested_dtype) -> np.dtype:
             fields = getattr(sim, "fields", None)
     if fields is None or not hasattr(fields, "is_real"):
         if not np.issubdtype(dtype, np.complexfloating):
-            raise ValueError(
-                "a real history_dtype requires initialized Meep fields"
-            )
+            raise ValueError("a real history_dtype requires initialized Meep fields")
         return dtype
 
     fields_are_real = bool(fields.is_real)
@@ -161,9 +156,7 @@ def history_storage_dtype(sim: mp.Simulation, requested_dtype) -> np.dtype:
             return np.empty((), dtype=dtype).real.dtype
         return dtype
     if not np.issubdtype(dtype, np.complexfloating):
-        raise ValueError(
-            "complex Meep fields require a complex history_dtype"
-        )
+        raise ValueError("complex Meep fields require a complex history_dtype")
     return dtype
 
 
@@ -277,14 +270,23 @@ def _require_no_meep_symmetries(sim: mp.Simulation) -> None:
     symmetries = tuple(getattr(sim, "symmetries", ()))
     if not symmetries:
         return
-    if getattr(sim, "is_cylindrical", False) or getattr(sim, "dimensions", 2) == mp.CYLINDRICAL:
+    if (
+        getattr(sim, "is_cylindrical", False)
+        or getattr(sim, "dimensions", 2) == mp.CYLINDRICAL
+    ):
         raise ValueError("explicit Mirror symmetries require Cartesian simulations")
     directions = set()
     for symmetry in symmetries:
         if not isinstance(symmetry, mp.Mirror) or symmetry.phase not in (-1, 1):
-            raise ValueError("TAMA supports only mp.Mirror symmetries with phase +1 or -1")
-        if symmetry.direction not in ((mp.X, mp.Y) if getattr(sim, "dimensions", 2) == 2 else (mp.X, mp.Y, mp.Z)):
-            raise ValueError("Mirror direction must be an active Cartesian simulation axis")
+            raise ValueError(
+                "TAMA supports only mp.Mirror symmetries with phase +1 or -1"
+            )
+        if symmetry.direction not in (
+            (mp.X, mp.Y) if getattr(sim, "dimensions", 2) == 2 else (mp.X, mp.Y, mp.Z)
+        ):
+            raise ValueError(
+                "Mirror direction must be an active Cartesian simulation axis"
+            )
         if symmetry.direction in directions:
             raise ValueError("Mirror directions must be distinct")
         directions.add(symmetry.direction)
@@ -300,19 +302,33 @@ def _validate_mirror_design(sim, design) -> None:
     mirror_center = tuple(getattr(sim, "geometry_center", None) or mp.Vector3())
     for symmetry in symmetries:
         axis = int(symmetry.direction)
-        if (getattr(sim, "eps_averaging", False) and grid.do_averaging
-                and axis < weights.ndim and weights.shape[axis] > 1
-                and weights.shape[axis] % 2):
-            raise ValueError("averaged Mirror designs require an even grid size along each reflected axis (or size 1); an odd center interpolation knot has a one-sided interface normal")
+        if (
+            getattr(sim, "eps_averaging", False)
+            and grid.do_averaging
+            and axis < weights.ndim
+            and weights.shape[axis] > 1
+            and weights.shape[axis] % 2
+        ):
+            raise ValueError(
+                "averaged Mirror designs require an even grid size along each reflected axis (or size 1); an odd center interpolation knot has a one-sided interface normal"
+            )
         if not np.isclose(center[axis], mirror_center[axis], rtol=0, atol=1e-12):
-            raise ValueError("each design Block must be invariant under every Mirror; exchanging independent regions is unsupported")
-        if axis < weights.ndim and not np.allclose(weights, np.flip(weights, axis), rtol=0, atol=1e-12):
-            raise ValueError("MaterialGrid weights must obey the specified Mirror symmetry")
+            raise ValueError(
+                "each design Block must be invariant under every Mirror; exchanging independent regions is unsupported"
+            )
+        if axis < weights.ndim and not np.allclose(
+            weights, np.flip(weights, axis), rtol=0, atol=1e-12
+        ):
+            raise ValueError(
+                "MaterialGrid weights must obey the specified Mirror symmetry"
+            )
         for medium in (grid.medium1, grid.medium2):
             xy, xz, yz = tuple(medium.epsilon_offdiag)
             offdiag = np.asarray(((0, xy, xz), (xy, 0, yz), (xz, yz, 0)))
             if np.any(offdiag[axis] != 0):
-                raise ValueError("MaterialGrid endpoint tensors must be invariant under every Mirror")
+                raise ValueError(
+                    "MaterialGrid endpoint tensors must be invariant under every Mirror"
+                )
 
 
 class _NativePlanFieldsGuard:
@@ -325,11 +341,7 @@ class _NativePlanFieldsGuard:
     def _require_native_plan_fields(self) -> Any:
         sim = self._native_plan_sim_ref()
         fields = self._native_plan_fields_ref()
-        if (
-            sim is None
-            or fields is None
-            or getattr(sim, "fields", None) is not fields
-        ):
+        if sim is None or fields is None or getattr(sim, "fields", None) is not fields:
             _handle_native_sampler_failure(
                 "plan lifetime validation",
                 RuntimeError(
@@ -444,9 +456,7 @@ class FastPointMonitor(_NativePlanFieldsGuard):
         ):
             _handle_native_sampler_failure(
                 "point-monitor transpose validation",
-                RuntimeError(
-                    "native indexed point-monitor stencil is malformed"
-                ),
+                RuntimeError("native indexed point-monitor stencil is malformed"),
             )
 
         source_data = []
@@ -493,11 +503,11 @@ class FastPointMonitor(_NativePlanFieldsGuard):
             else self._history_indices.size
         )
         if destination_array.ndim != 1 or destination_array.size != history_width:
-            raise ValueError("point-monitor history destination must match the point count")
-        if not destination_array.flags.writeable:
             raise ValueError(
-                "local point-monitor history destination must be writable"
+                "point-monitor history destination must match the point count"
             )
+        if not destination_array.flags.writeable:
+            raise ValueError("local point-monitor history destination must be writable")
 
         native_destination = destination_array
         native_sampler_fn = native_sampler.sample_component_point_plan_local_into
@@ -657,16 +667,12 @@ class FastEigenmodeOverlapMonitor:
                 "eigenmode overlap history destination must have shape (2,)"
             )
         if not destination_array.flags.writeable:
-            raise ValueError(
-                "eigenmode overlap history destination must be writable"
-            )
+            raise ValueError("eigenmode overlap history destination must be writable")
         if not np.issubdtype(
             destination_array.dtype,
             np.complexfloating,
         ):
-            raise ValueError(
-                "eigenmode overlap history destination must be complex"
-            )
+            raise ValueError("eigenmode overlap history destination must be complex")
         native_destination = destination_array
         if (
             destination_array.dtype != np.complex128
@@ -727,13 +733,10 @@ class FastFieldGrid(_NativePlanFieldsGuard):
         _require_native_sampler()
         if getattr(sim, "symmetries", None):
             raise ValueError("FastFieldGrid does not support Meep symmetries")
-        if (
-            getattr(sim, "dimensions", 2) != 2
-            or bool(getattr(sim, "is_cylindrical", False))
+        if getattr(sim, "dimensions", 2) != 2 or bool(
+            getattr(sim, "is_cylindrical", False)
         ):
-            raise ValueError(
-                "FastFieldGrid requires a 2D Cartesian Meep simulation"
-            )
+            raise ValueError("FastFieldGrid requires a 2D Cartesian Meep simulation")
         if not hasattr(getattr(sim, "fields", None), "this"):
             raise RuntimeError(
                 "native field-grid sampling requires initialized Meep fields"
@@ -770,9 +773,7 @@ class FastFieldGrid(_NativePlanFieldsGuard):
         """
         plan = self.ensure_plan()
         try:
-            return native_sampler.sample_component_grid_plan_allreduced(
-                plan
-            )
+            return native_sampler.sample_component_grid_plan_allreduced(plan)
         except Exception as exc:
             _handle_native_sampler_failure("planned all-reduced sampling", exc)
             raise
@@ -831,7 +832,9 @@ class FastFieldGrid(_NativePlanFieldsGuard):
             raise
         return self._history_sampling_indices
 
-    def sample_history_values(self, local_indices, boundary_indices) -> NDArray[np.complex128]:
+    def sample_history_values(
+        self, local_indices, boundary_indices
+    ) -> NDArray[np.complex128]:
         """Sample forward values for a history row using ownership metadata.
 
         In MPI, this method is collective over the native support
@@ -848,12 +851,16 @@ class FastFieldGrid(_NativePlanFieldsGuard):
 
         try:
             local_values = (
-                native_sampler.sample_component_grid_plan_points_local(sample_plan, local_indices)
+                native_sampler.sample_component_grid_plan_points_local(
+                    sample_plan, local_indices
+                )
                 if local_indices.size
                 else self._empty_complex_values()
             )
             boundary_values = (
-                native_sampler.sample_component_grid_plan_points_support_reduced(sample_plan, boundary_indices)
+                native_sampler.sample_component_grid_plan_points_support_reduced(
+                    sample_plan, boundary_indices
+                )
                 if boundary_indices.size
                 else self._empty_complex_values()
             )
@@ -861,10 +868,12 @@ class FastFieldGrid(_NativePlanFieldsGuard):
             _handle_native_sampler_failure("indexed history sampling", exc)
             raise RuntimeError("native history sampling failed") from exc
 
-        return np.concatenate([
-            np.asarray(local_values, dtype=np.complex128),
-            np.asarray(boundary_values, dtype=np.complex128),
-        ])
+        return np.concatenate(
+            [
+                np.asarray(local_values, dtype=np.complex128),
+                np.asarray(boundary_values, dtype=np.complex128),
+            ]
+        )
 
     def sample_history_values_into(
         self,
@@ -883,7 +892,9 @@ class FastFieldGrid(_NativePlanFieldsGuard):
         destination_array = np.asarray(destination)
         expected_width = local_indices.size + boundary_indices.size
         if destination_array.ndim != 1 or destination_array.size != expected_width:
-            raise ValueError("history destination must match local and boundary index count")
+            raise ValueError(
+                "history destination must match local and boundary index count"
+            )
 
         sample_plan = self.ensure_plan()
         configured_indices_match = (
@@ -1199,21 +1210,33 @@ def _validate_native_material_grid(grid) -> None:
             dtype=np.complex128,
         )
         if not np.all(np.isfinite(epsilon)) or np.any(epsilon.imag != 0):
-            raise ValueError("native material gradients require finite real permittivity tensors")
+            raise ValueError(
+                "native material gradients require finite real permittivity tensors"
+            )
         try:
             np.linalg.cholesky(epsilon.real)
         except np.linalg.LinAlgError as exc:
-            raise ValueError("native material gradients require positive-definite permittivity") from exc
+            raise ValueError(
+                "native material gradients require positive-definite permittivity"
+            ) from exc
         if medium.E_susceptibilities or medium.H_susceptibilities:
-            raise ValueError("native material gradients require nondispersive endpoints")
+            raise ValueError(
+                "native material gradients require nondispersive endpoints"
+            )
         if any(
             np.any(np.asarray(tuple(getattr(medium, attribute))) != 0)
             for attribute in (
-                "E_chi2_diag", "E_chi3_diag", "H_chi2_diag", "H_chi3_diag",
-                "D_conductivity_diag", "B_conductivity_diag",
+                "E_chi2_diag",
+                "E_chi3_diag",
+                "H_chi2_diag",
+                "H_chi3_diag",
+                "D_conductivity_diag",
+                "B_conductivity_diag",
             )
         ):
-            raise ValueError("native material gradients require linear lossless endpoints")
+            raise ValueError(
+                "native material gradients require linear lossless endpoints"
+            )
         mu = np.asarray(tuple(medium.mu_diag), dtype=np.complex128)
         offdiagonal_mu = np.asarray(tuple(medium.mu_offdiag), dtype=np.complex128)
         if (
@@ -1237,7 +1260,9 @@ def _prepare_native_material(sim, design) -> None:
     designs = () if design is None else tuple(getattr(design, "designs", (design,)))
     for region in designs:
         _validate_mirror_design(sim, region)
-    active_designs = tuple(region for region in designs if _uses_material_jacobian(sim, region))
+    active_designs = tuple(
+        region for region in designs if _uses_material_jacobian(sim, region)
+    )
     if not active_designs:
         return
     for region in active_designs:
@@ -1248,7 +1273,11 @@ def _prepare_native_material(sim, design) -> None:
             )
     sim.force_all_components = True
     grids = tuple(region.material_grid for region in active_designs)
-    if sim.eps_averaging and any(grid.do_averaging for grid in grids) and sim.subpixel_tol > 1.0e-8:
+    if (
+        sim.eps_averaging
+        and any(grid.do_averaging for grid in grids)
+        and sim.subpixel_tol > 1.0e-8
+    ):
         if sim.structure is not None or sim.fields is not None:
             raise ValueError(
                 "MaterialGrid averaging requires an uninitialized Simulation "
@@ -1256,13 +1285,14 @@ def _prepare_native_material(sim, design) -> None:
             )
         # The material FD step is 1e-5; loose quadrature can dominate its signal.
         sim.subpixel_tol = 1.0e-8
-    tensor_averaging = (
-        bool(sim.eps_averaging)
-        and any(grid.do_averaging and (
+    tensor_averaging = bool(sim.eps_averaging) and any(
+        grid.do_averaging
+        and (
             sim._infer_dimensions(sim.k_point) == 3
             or not _is_isotropic_design_medium(grid.medium1)
             or not _is_isotropic_design_medium(grid.medium2)
-        ) for grid in grids)
+        )
+        for grid in grids
     )
     if not tensor_averaging:
         if sim.fields is not None:
@@ -1301,7 +1331,9 @@ def _native_design_components(sim, design, components):
 
 
 def _native_design_gradient_scale(sim, design) -> float:
-    return 1.0 if _uses_material_jacobian(sim, design) else float(design.material_factor)
+    return (
+        1.0 if _uses_material_jacobian(sim, design) else float(design.material_factor)
+    )
 
 
 class NativeDesignField(_NativePlanFieldsGuard):
@@ -1323,9 +1355,7 @@ class NativeDesignField(_NativePlanFieldsGuard):
         expected_signature: Optional[NDArray[np.int64]] = None,
     ) -> None:
         _require_native_sampler()
-        design_is_cylindrical = bool(
-            getattr(design, "is_cylindrical", False)
-        )
+        design_is_cylindrical = bool(getattr(design, "is_cylindrical", False))
         simulation_is_cylindrical = bool(
             getattr(sim, "is_cylindrical", False)
             or getattr(sim, "dimensions", None) == mp.CYLINDRICAL
@@ -1335,17 +1365,19 @@ class NativeDesignField(_NativePlanFieldsGuard):
                 "DesignGrid coordinate system must match the Meep simulation"
             )
         if design_is_cylindrical and component not in (mp.Er, mp.Ep, mp.Ez):
-            raise ValueError(
-                "cylindrical native design plans require Er, Ep, or Ez"
-            )
+            raise ValueError("cylindrical native design plans require Er, Ep, or Ez")
         _require_no_meep_symmetries(sim)
         _prepare_native_material(sim, design)
         k_point = getattr(sim, "k_point", None)
-        if k_point is not None and k_point is not False and not np.allclose(
-            (k_point.x, k_point.y, k_point.z),
-            (0.0, 0.0, 0.0),
-            rtol=0.0,
-            atol=1e-12,
+        if (
+            k_point is not None
+            and k_point is not False
+            and not np.allclose(
+                (k_point.x, k_point.y, k_point.z),
+                (0.0, 0.0, 0.0),
+                rtol=0.0,
+                atol=1e-12,
+            )
         ):
             raise ValueError("exact native design sampling requires k_point=0")
         material_jacobian = _uses_material_jacobian(sim, design)
@@ -1353,11 +1385,10 @@ class NativeDesignField(_NativePlanFieldsGuard):
             getattr(sim, "fields", None) is not None
             and int(getattr(sim, "dimensions", design.dimensions)) != design.dimensions
         ):
-            raise ValueError(
-                "DesignGrid dimensionality must match the Meep simulation"
-            )
+            raise ValueError("DesignGrid dimensionality must match the Meep simulation")
         matching_objects = [
-            obj for obj in getattr(sim, "geometry", ())
+            obj
+            for obj in getattr(sim, "geometry", ())
             if getattr(obj, "material", None) is design.material_grid
         ]
         if len(matching_objects) != 1 or not isinstance(matching_objects[0], mp.Block):
@@ -1374,7 +1405,9 @@ class NativeDesignField(_NativePlanFieldsGuard):
             not np.allclose((axis.x, axis.y, axis.z), expected, rtol=0.0, atol=1e-12)
             for axis, expected in expected_vectors
         ):
-            raise ValueError("exact native design sampling requires an axis-aligned Block")
+            raise ValueError(
+                "exact native design sampling requires an axis-aligned Block"
+            )
         if design_is_cylindrical:
             active_axes = (("x", mp.R), ("z", mp.Z))
         elif design.dimensions == 3:
@@ -1420,11 +1453,7 @@ class NativeDesignField(_NativePlanFieldsGuard):
                 clearance = 0.5 / sim.resolution if material_jacobian else 0.0
                 overlaps_low = (
                     side in (mp.ALL, mp.Low)
-                    and (
-                        not design_is_cylindrical
-                        or axis != "x"
-                        or domain_low > 1e-12
-                    )
+                    and (not design_is_cylindrical or axis != "x" or domain_low > 1e-12)
                     and block_low < domain_low + thickness + clearance - 1e-12
                 )
                 overlaps_high = (
@@ -1439,8 +1468,8 @@ class NativeDesignField(_NativePlanFieldsGuard):
                     )
         medium_1 = design.material_grid.medium1
         medium_2 = design.material_grid.medium2
-        expected_material_factor = (
-            float(medium_2.epsilon_diag.x) - float(medium_1.epsilon_diag.x)
+        expected_material_factor = float(medium_2.epsilon_diag.x) - float(
+            medium_1.epsilon_diag.x
         )
         if not material_jacobian and not np.isclose(
             float(design.material_factor),
@@ -1453,7 +1482,9 @@ class NativeDesignField(_NativePlanFieldsGuard):
             )
         geps = getattr(sim, "geps", None)
         if geps is None:
-            raise RuntimeError("Meep geom_epsilon is unavailable after simulation initialization")
+            raise RuntimeError(
+                "Meep geom_epsilon is unavailable after simulation initialization"
+            )
 
         self.component = component
         self.shape = tuple(design.shape)
@@ -1500,9 +1531,12 @@ class NativeDesignField(_NativePlanFieldsGuard):
         except Exception:
             self.plan = None
             raise
-        local_signature_mismatch = expected_signature is not None and not np.array_equal(
-            self.signature,
-            np.asarray(expected_signature, dtype=np.int64),
+        local_signature_mismatch = (
+            expected_signature is not None
+            and not np.array_equal(
+                self.signature,
+                np.asarray(expected_signature, dtype=np.int64),
+            )
         )
         signature_mismatch = local_signature_mismatch
         if expected_signature is not None and mp.count_processors() > 1:
@@ -1565,7 +1599,11 @@ class NativeDesignField(_NativePlanFieldsGuard):
             dtype=np.float64 if self.fields_are_real else np.complex128,
         )
         _native_design_call(
-            "exact real design sampling" if self.fields_are_real else "exact design sampling",
+            (
+                "exact real design sampling"
+                if self.fields_are_real
+                else "exact design sampling"
+            ),
             (
                 native_sampler.sample_native_design_plan_real_into
                 if self.fields_are_real
