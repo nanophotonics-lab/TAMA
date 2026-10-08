@@ -6998,7 +6998,7 @@ PyMODINIT_FUNC PyInit_native_sampler(void) {
     if (!module) {
         return nullptr;
     }
-    if (PyModule_AddIntConstant(module, "API_VERSION", 15) < 0) {
+    if (PyModule_AddIntConstant(module, "API_VERSION", 16) < 0) {
         Py_DECREF(module);
         return nullptr;
     }

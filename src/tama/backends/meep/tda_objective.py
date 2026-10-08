@@ -536,7 +536,9 @@ class TDAObjective:
         if design is None:
             self.gradient_components = ()
         elif near2far_target:
-            self.gradient_components = (mp.Ex, mp.Ey, mp.Ez)
+            self.gradient_components = (
+                (mp.Er, mp.Ep, mp.Ez) if self._is_cylindrical else (mp.Ex, mp.Ey, mp.Ez)
+            )
         elif mixed_surface_target:
             required = set()
             for electric, magnetic, _ in flux_component_pairs(
@@ -1195,7 +1197,7 @@ class TDAObjective:
                 )
 
             if self._reuse_simulation_for_adjoint:
-                if is_cylindrical:
+                if is_cylindrical and forward_mode != 0:
                     sim_fwd.change_m(-forward_mode)
                 sim_fwd.restart_fields()
                 sim_fwd.clear_dft_monitors()
@@ -1728,7 +1730,7 @@ class TDAObjective:
                 gc.collect()
 
                 if self._reuse_simulation_for_adjoint:
-                    if is_cylindrical:
+                    if is_cylindrical and forward_mode != 0:
                         sim_fwd.change_m(-forward_mode)
                     sim_fwd.restart_fields()
                     sim_fwd.clear_dft_monitors()

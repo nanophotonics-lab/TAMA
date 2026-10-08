@@ -23,6 +23,10 @@ resolve to this same module, including the original native API capability check.
 Builds are tied to the selected Python, Meep, MPI and NumPy ABI; do not distribute
 a locally built wheel as a universal binary.
 
+Native API 16 adds cylindrical near-to-far source transposes with radial
+quadrature and the actual cylindrical Yee-cell volume. Reinstall the Python
+core and extension together after updating.
+
 Native API 15 uses the discrete Yee forward difference in adjoint accumulation
 and preserves source endpoints within floating-point roundoff. Reinstall the
 Python core and extension together to keep the source timing and accumulator

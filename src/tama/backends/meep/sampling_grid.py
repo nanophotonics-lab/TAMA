@@ -10,7 +10,7 @@ from typing import Any, Mapping, Optional, Sequence
 
 from . import native_sampler
 
-_NATIVE_API_VERSION = 15
+_NATIVE_API_VERSION = 16
 _REQUIRED_NATIVE_OPERATIONS = (
     "create_component_grid_plan",
     "sample_component_grid_plan_allreduced",
