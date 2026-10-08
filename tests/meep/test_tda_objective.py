@@ -1206,7 +1206,7 @@ def test_tda_cylindrical_reuse_flips_mode(
     assert simulation.make_calls == [None]
     assert simulation_instance.events == [
         "run",
-        ("change_m", -forward_mode),
+        *([("change_m", -forward_mode)] if forward_mode != 0 else []),
         "restart_fields",
         "clear_dft_monitors",
         "change_sources",

@@ -485,6 +485,40 @@ def test_cylindrical_reuse_matches_two_simulation_path(
     )
 
 
+@pytest.mark.mpi2
+@pytest.mark.parametrize(
+    ("objective_kind", "surface_target"),
+    [("tda", None), ("tda", "flux"), ("multi", None)],
+)
+def test_cylindrical_m_zero_reuse_preserves_complex_fields(
+    monkeypatch, objective_kind, surface_target
+):
+    mp.verbosity(0)
+    make = tm.SimulationSpec.make
+
+    def make_complex(spec, *args, **kwargs):
+        simulation = make(spec, *args, **kwargs)
+        simulation.force_complex_fields = True
+        return simulation
+
+    monkeypatch.setattr(tm.SimulationSpec, "make", make_complex)
+    common = dict(
+        m=0,
+        objective_kind=objective_kind,
+        target_component=mp.Er,
+        surface_target=surface_target,
+    )
+    separate = _make_cylindrical_problem(**common)
+    reused = _make_cylindrical_problem(**common, reuse_simulation=True)
+    design = np.linspace(0.25, 0.75, 9)
+    separate_fom, separate_gradient = separate.fom_and_grad(design)
+    reused_fom, reused_gradient = reused.fom_and_grad(design)
+    np.testing.assert_allclose(reused_fom, separate_fom, rtol=2e-12, atol=2e-12)
+    np.testing.assert_allclose(
+        reused_gradient, separate_gradient, rtol=2e-10, atol=2e-12
+    )
+
+
 @pytest.mark.parametrize(
     ("objective_kind", "m", "target_component", "target_radius"),
     [

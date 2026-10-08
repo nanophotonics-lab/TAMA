@@ -37,8 +37,10 @@ def farfield_intensity(fields, dt):
 
 
 def _validate_simulation(sim, chunk_layout):
-    if sim._infer_dimensions(sim.k_point) not in (2, 3) or sim.is_cylindrical:
-        raise ValueError("Near2FarTarget supports Cartesian 2D and 3D only")
+    if sim._infer_dimensions(sim.k_point) not in (2, 3, mp.CYLINDRICAL):
+        raise ValueError(
+            "Near2FarTarget requires Cartesian 2D/3D or cylindrical coordinates"
+        )
     _require_no_meep_symmetries(sim)
     if sim.symmetries and chunk_layout is not None:
         raise ValueError(
@@ -53,20 +55,39 @@ def _validate_simulation(sim, chunk_layout):
 
 def _validate_surfaces(sim, targets):
     dimensions = sim._infer_dimensions(sim.k_point)
+    cylindrical = dimensions == mp.CYLINDRICAL or sim.is_cylindrical
+    axes = [0, 2] if cylindrical else list(range(dimensions))
+    directions = [mp.R, mp.Z] if cylindrical else axes
     center = np.asarray(tuple(sim.geometry_center or mp.Vector3()))
     half_size = np.asarray(tuple(sim.cell_size)) / 2
     low, high = center - half_size, center + half_size
+    if cylindrical:
+        low[0], high[0] = center[0], center[0] + sim.cell_size.x
+    includes_axis = cylindrical and low[0] == 0
     for layer in sim.boundary_layers:
-        for axis in range(dimensions):
-            if layer.direction not in (mp.ALL, axis):
+        for axis, direction in zip(axes, directions):
+            if layer.direction not in (mp.ALL, direction):
                 continue
-            if layer.side in (mp.ALL, mp.Low):
+            if layer.side in (mp.ALL, mp.Low) and not (includes_axis and axis == 0):
                 low[axis] += layer.thickness
             if layer.side in (mp.ALL, mp.High):
                 high[axis] -= layer.thickness
     clearance = 0.5 / sim.resolution
+    low += clearance
+    high -= clearance
+    if includes_axis:
+        # A cap may reach the axis, where there is neither a boundary nor PML.
+        low[0] = 0
     for target in targets:
-        if dimensions == 2 and any(point.z != 0 for point in target.far_points):
+        if cylindrical and any(
+            point.x < 0 or point.y != 0 for point in target.far_points
+        ):
+            raise ValueError("cylindrical far points must use (r, 0, z) with r >= 0")
+        if (
+            not cylindrical
+            and dimensions == 2
+            and any(point.z != 0 for point in target.far_points)
+        ):
             raise ValueError("2D far points must lie in the x-y plane")
         for region in target.near_regions:
             c, s = np.asarray(tuple(region.center)), np.asarray(tuple(region.size))
@@ -74,22 +95,21 @@ def _validate_surfaces(sim, targets):
                 not np.all(np.isfinite(c))
                 or not np.all(np.isfinite(s))
                 or np.any(s < 0)
-                or np.count_nonzero(s[:dimensions] == 0) != 1
-                or (dimensions == 2 and (c[2] != 0 or s[2] != 0))
+                or np.count_nonzero(s[axes] == 0) != 1
+                or (cylindrical and (c[1] != 0 or s[1] != 0))
+                or (not cylindrical and dimensions == 2 and (c[2] != 0 or s[2] != 0))
                 or not np.isfinite(region.weight)
             ):
                 raise ValueError(
-                    "near regions must be finite Cartesian surfaces with one zero extent"
+                    "near regions must be finite axis-aligned surfaces with one zero extent"
                 )
-            normal = int(np.flatnonzero(s[:dimensions] == 0)[0])
+            normal = directions[int(np.flatnonzero(s[axes] == 0)[0])]
             if region.direction not in (mp.AUTOMATIC, normal):
                 raise ValueError(
                     "near-region direction must match its zero-extent axis"
                 )
-            if np.any(
-                c[:dimensions] - s[:dimensions] / 2 < low[:dimensions] + clearance
-            ) or np.any(
-                c[:dimensions] + s[:dimensions] / 2 > high[:dimensions] - clearance
+            if np.any(c[axes] - s[axes] / 2 < low[axes]) or np.any(
+                c[axes] + s[axes] / 2 > high[axes]
             ):
                 raise ValueError(
                     "near regions require half a grid cell of clearance from PML and cell boundaries"
@@ -105,11 +125,12 @@ def farfield_sources(sim, monitor, target, covector, actual_time):
     Meep's near_sourcedata includes surface quadrature and flips electric
     components. TAMA's time reversal flips magnetic components instead, hence
     the common minus sign. Indexed amplitudes are current densities, so divide
-    by the Cartesian Yee-cell volume. No frequency-domain i*omega scale is used.
+    by the Yee-cell volume. The native cylindrical transpose also corrects
+    Meep's radial normalization. No frequency-domain i*omega scale is used.
     """
     frequencies = np.asarray(target.frequencies)
     points = np.asarray([tuple(p) for p in target.far_points]).reshape(-1)
-    point0 = py_v3_to_vec(sim.dimensions, target.far_points[0], False)
+    point0 = py_v3_to_vec(sim.dimensions, target.far_points[0], sim.is_cylindrical)
     raw_data = monitor.swigobj.near_sourcedata(
         point0,
         points,
@@ -121,9 +142,11 @@ def farfield_sources(sim, monitor, target, covector, actual_time):
     # the native pullback reads their addresses.
     data = tuple(raw_data)
     sources = []
-    scale = -sim.resolution**sim.dimensions / np.sqrt(2 * np.pi)
+    scale = -(1 if sim.is_cylindrical else sim.resolution**sim.dimensions) / np.sqrt(
+        2 * np.pi
+    )
     source_end_time = actual_time + 0.5 * sim.fields.dt
-    if sim.symmetries:
+    if sim.symmetries or sim.is_cylindrical:
         groups = native_sampler.fold_near2far_sources(
             int(sim.fields.this),
             int(monitor.swigobj.this),
@@ -289,6 +312,14 @@ def evaluate_near2far(
     history = accumulator = None
     try:
         sim = objective._make_forward_simulation(forward_sources)
+        if (
+            need_gradient
+            and (sim.is_cylindrical or sim.dimensions == mp.CYLINDRICAL)
+            and sim.m not in (-1, 0, 1)
+        ):
+            raise ValueError(
+                "cylindrical gradient evaluation currently supports m=-1, 0, or +1"
+            )
         multiple = targets is not None
         targets = tuple(targets) if multiple else (objective.objective,)
         fom_fns = tuple(fom_fns) if multiple else (objective.fom_fn,)
@@ -379,6 +410,8 @@ def evaluate_near2far(
             dt,
         )
         # Keep the exact forward chunk/index ownership used by near_sourcedata.
+        if sim.is_cylindrical and sim.m != 0:
+            sim.change_m(-sim.m)
         sim.restart_fields()
         sim.clear_dft_monitors()
         sim.change_sources(sources)

@@ -39,7 +39,7 @@ def test_cartesian_3d_point_plan_matches_meep():
 
         offsets, source_data, amplitudes = monitor.indexed_transpose_stencil()
 
-        assert native_sampler.API_VERSION == 15
+        assert native_sampler.API_VERSION == 16
         assert np.allclose(monitor.sample(), expected, rtol=2e-14, atol=2e-14)
         assert np.allclose(deferred_values, expected, rtol=2e-14, atol=2e-14)
         assert offsets.shape == (len(positions) + 1,)

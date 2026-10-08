@@ -317,10 +317,15 @@ class Near2FarTarget:
     """Discrete-frequency far fields from Meep near-surface monitors.
 
     The objective receives complex fields of shape `(points, frequencies, 6)`,
-    ordered Ex, Ey, Ez, Hx, Hy, Hz. Frequencies and points retain input order.
+    ordered Ex, Ey, Ez, Hx, Hy, Hz in Cartesian coordinates and
+    Er, Ep, Ez, Hr, Hp, Hz in cylindrical coordinates.
+    Frequencies and points retain input order.
     The near surfaces and propagation region must share a homogeneous,
-    isotropic, lossless medium. The initial implementation uses Cartesian
-    coordinates and accumulates every time step (DFT decimation factor 1).
+    isotropic, lossless medium. Cartesian 2D/3D and cylindrical simulations
+    accumulate every time step (DFT decimation factor 1). Cylindrical near
+    regions are radial or axial lines in (r, 0, z); axial caps may reach r=0.
+    Cylindrical far points use (r, 0, z) with r >= 0. Design gradients support
+    angular modes m=-1, 0, +1.
     """
 
     near_regions: Sequence[mp.Near2FarRegion]

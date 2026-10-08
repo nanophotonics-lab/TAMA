@@ -110,6 +110,7 @@ static PyObject *fold_near2far_sources(PyObject *, PyObject *args) {
         reinterpret_cast<meep::fields *>(static_cast<uintptr_t>(fields_addr));
     auto *monitor =
         reinterpret_cast<meep::dft_near2far *>(static_cast<uintptr_t>(monitor_addr));
+    const bool cylindrical = fields->gv.dim == meep::Dcyl;
     const size_t nfreq = monitor->freq.size();
     NativeSourceNodes nodes;
     std::string local_error;
@@ -152,6 +153,15 @@ static PyObject *fold_near2far_sources(PyObject *, PyObject *args) {
                     continue;
                 phase *= dft->S.phase_shift(dft->c, dft->sn) *
                          static_cast<double>(dft->S.multiplicity(original_location));
+                if (cylindrical) {
+                    IVEC_LOOP_LOC(dft->fc->gv, source_location);
+                    source_location = dft->S.transform(source_location, dft->sn) +
+                                      meep::vec(dft->shift * (0.5 * dft->fc->gv.inva));
+                    // Undo near_sourcedata's extra 1/r. The NFF quadrature already
+                    // contains 2*pi*r, and its axis row has zero weight.
+                    if (source_location.r() != 0.0)
+                        phase *= source_location.r();
+                }
                 const double measure = native_mirror_measure(fields, location);
                 if (!(measure > 0.0))
                     throw std::runtime_error(
@@ -174,6 +184,13 @@ static PyObject *fold_near2far_sources(PyObject *, PyObject *args) {
                         if (!chunk || !chunk->gv.owns(image))
                             continue;
                         const auto index = chunk->gv.index(image_component, image);
+                        const double volume =
+                            cylindrical
+                                ? chunk->gv.dV(image_component, index).full_volume()
+                                : 1.0;
+                        if (!(volume > 0.0))
+                            throw std::runtime_error(
+                                "near2far source has a non-positive Yee-cell volume");
                         const NativeSourceNode key(static_cast<int>(image_component),
                                                    chunk_index, index);
                         if (images.insert(key).second) {
@@ -184,7 +201,7 @@ static PyObject *fold_near2far_sources(PyObject *, PyObject *args) {
                                 amplitudes[frequency] +=
                                     image_phase * phase *
                                     data->amp_arr[amplitude_offset + frequency] /
-                                    measure;
+                                    (measure * volume);
                         }
                         if (!symmetry)
                             found = true;

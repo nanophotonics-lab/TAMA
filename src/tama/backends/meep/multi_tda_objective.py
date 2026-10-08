@@ -1727,7 +1727,9 @@ class MultiTDAObjective:
                 or _uses_material_jacobian(self._simulation_spec, self.design)
             )
         ):
-            self.gradient_components = (mp.Ex, mp.Ey, mp.Ez)
+            self.gradient_components = (
+                (mp.Er, mp.Ep, mp.Ez) if self._is_cylindrical else (mp.Ex, mp.Ey, mp.Ez)
+            )
 
         monitor_groups = {}
         for monitor_index, target_component in enumerate(
@@ -4433,7 +4435,7 @@ class MultiTDAObjective:
             if self._near2far_targets:
                 adjoint_sources.extend(near_sources)
             if self._reuse_simulation_for_adjoint:
-                if is_cylindrical:
+                if is_cylindrical and forward_mode != 0:
                     sim_fwd.change_m(-forward_mode)
                 sim_adj = sim_fwd
                 sim_fwd = None

@@ -274,7 +274,9 @@ far_fields = problem.last_far_fields
 
 The callback argument and `last_far_fields` have shape
 `(n_far_points, n_frequencies, 6)`, with components
-`Ex, Ey, Ez, Hx, Hy, Hz` in the supplied point/frequency order. The default FoM
+`Ex, Ey, Ez, Hx, Hy, Hz` in Cartesian coordinates or
+`Er, Ep, Ez, Hr, Hp, Hz` in cylindrical coordinates, in the supplied
+point/frequency order. The default FoM
 is `0.5 * sum(abs(far_fields[..., :3])**2)`. This is summed electric-field
 intensity at discrete frequencies, not integrated radiated power, a normalized
 transmission efficiency, or a PC-FIR wavelength-band energy. Supply an
@@ -307,9 +309,18 @@ lie in the same homogeneous, isotropic,
 lossless exterior medium used by the Green function. The far points must be
 in that exterior region. This material condition is a user precondition;
 TAMA does not inspect the entire exterior geometry to prove it.
-Cartesian 2D/3D, independent design regions, and
-compatible mirror symmetries are supported. Nonzero Bloch wavevectors,
-cylindrical near-to-far gradients, and periodic-image sums are not supported.
+Cartesian 2D/3D, cylindrical coordinates, and independent design regions are
+supported. Cartesian simulations also support compatible mirror symmetries.
+Nonzero Bloch wavevectors and periodic-image sums are not supported.
+
+For cylindrical simulations, define radial or axial near-surface lines with
+`mp.R` or `mp.Z` normals. Use `mp.Vector3(r, 0, z)` for all coordinates and
+nonnegative radii. An axial cap may reach `r=0`; the axis needs no PML clearance.
+Far-field gradients support `m=-1, 0, +1`, including mixed temporal and
+near-to-far targets. The adjoint uses angular mode `-m`. Native API 16 applies
+the radial quadrature and cylindrical Yee-cell volume. Explicit cylindrical
+symmetries, tensor MaterialGrid media, and cylindrical subpixel averaging
+remain unsupported by the design-gradient backend.
 
 Near-to-far gradients require direct `SimulationSpec` use and restart-safe,
 time-invariant simulation state. The adjoint always restarts the forward
