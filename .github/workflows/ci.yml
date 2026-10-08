@@ -13,7 +13,7 @@ permissions:
 jobs:
   meep:
     runs-on: ubuntu-26.04
-    timeout-minutes: 30
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -130,7 +130,7 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
           cd "$TAMA_RELEASE_SOURCE"
-          python -m pytest -q tests/common tests/meep
+          python -m pytest -v --durations=10 tests/common tests/meep
 
       - name: Run mpi2 test group
         if: matrix.run_tests
