@@ -1,8 +1,8 @@
 """Cylindrical near-to-far values and discrete TAMA design derivatives.
 
 The R/Z surface arrangement follows Meep tests/near2far.cpp::check_cyl.
-These small finite-time scenes are not the long-running upstream adjoint
-fixture; tolerances follow TAMA's Cartesian near-to-far integration tests.
+These small finite-time scenes use tolerances from TAMA's Cartesian
+near-to-far integration tests.
 """
 
 import autograd.numpy as npa

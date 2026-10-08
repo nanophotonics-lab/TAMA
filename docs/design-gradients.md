@@ -16,8 +16,7 @@ coords_x, coords_y = tm.centered_grid_coords(
 These coordinates can be passed directly to `FastFieldGrid` or
 `FastGradientGrid`. Objective gradients instead require `DesignGrid`.
 The two low-level grid classes require an initialized, nonsymmetric 2D
-Cartesian simulation and sample a regular point grid; they are not the native
-MaterialGrid-gradient interface used by the objective classes.
+Cartesian simulation and sample a regular point grid.
 
 When `DesignGrid` is supplied, TAMA instead discovers the native Yee sites
 for every electric component required by the design gradient. The user supplies
@@ -26,7 +25,7 @@ shifts or pixel grouping. During the adjoint run, each Yee-site contribution is
 scattered into the raw MaterialGrid weights through the discrete transpose of
 Meep's MaterialGrid coordinate map or constitutive-operator Jacobian.
 
-The native path currently requires:
+The native path requires:
 
 - a 2D or 3D Cartesian simulation, or a 2D Meep cylindrical simulation;
 - one distinct MaterialGrid per independent design region, each used by one
@@ -56,11 +55,10 @@ Jacobian from the MaterialGrid endpoints and do not multiply by
 ## Independent Design Regions
 
 Both objective classes accept `designs=[design_a, design_b, ...]` instead of
-the existing `design=design_a`. Supply only one of these arguments. Each region
+`design=design_a`. Supply only one of these arguments. Each region
 has its own MaterialGrid, shape, endpoints, and projection/averaging settings.
 Regions must not overlap and must use the same dimensionality and coordinate
-system. Reusing one MaterialGrid object in several independent regions is
-rejected.
+system.
 
 The optimizer vector and returned gradient concatenate the flattened region
 arrays in list order:
@@ -86,7 +84,7 @@ different regions are not supported.
 Pass ordinary Meep objects through
 `SimulationSpec(symmetries=[mp.Mirror(mp.Y, phase=1)])`. Cartesian gradients
 support distinct mirror axes and phases `+1` or `-1`; rotations and cylindrical
-symmetries are not supported. Meep actually reduces the simulation domain.
+symmetries are not supported. Meep reduces the simulation domain.
 In 2D, the mirror axis must be `mp.X` or `mp.Y`; 3D also permits `mp.Z`.
 Mirror gradients require a direct `SimulationSpec` and exact indexed adjoint
 sources. Custom simulation factories and finite-size `PointTarget` sources
@@ -102,8 +100,8 @@ Each independent design Block must map onto itself under every mirror. Its
 density array must be reflection symmetric, and its fixed endpoint tensors
 must be invariant under the same reflection. TAMA checks these design
 conditions at evaluation. Mirrors that exchange two independent regions are
-rejected. The user must also ensure that fixed geometry and forward sources
-obey the requested symmetry and phase, as required by Meep.
+rejected. Fixed geometry and forward sources must also obey the requested
+symmetry and phase.
 
 When both `eps_averaging` and `MaterialGrid.do_averaging` are enabled, the
 design grid must have an even number of samples along each mirror axis
@@ -114,10 +112,9 @@ TAMA rejects this combination. Without MaterialGrid averaging, odd counts
 remain supported.
 
 The returned full-shaped density gradient is distributed over reflection
-orbits. Its dot product with a symmetry-preserving perturbation is the
-directional derivative. It does not describe perturbations that break the
-imposed symmetry. Filters, initialization, and optimizer updates must preserve
-that symmetry.
+orbits. Its dot product gives the directional derivative only for
+symmetry-preserving perturbations. Filters, initialization, and optimizer
+updates must preserve that symmetry.
 
 ## Supported Components
 
@@ -142,22 +139,23 @@ For a Meep cylindrical simulation, use
 `DesignGrid(coordinate_system="cylindrical", shape=(nr, nz))` with a
 `MaterialGrid` whose grid size is `mp.Vector3(nr, 1, nz)`. The matching
 `SimulationSpec` must use `dimensions=mp.CYLINDRICAL` and an integer `m`.
-Cylindrical gradient evaluation currently supports `m=-1`, `0`, and `+1` and
-requires `simulation=SimulationSpec(...)`; an arbitrary `sim_factory` is not
-sufficient because TAMA must construct the adjoint simulation with mode
+Cylindrical gradients support `m=-1`, `0`, and `+1` and require a direct
+`simulation=SimulationSpec(...)` to construct the adjoint simulation with mode
 `-m`.
 
 Both objective classes support `PointTarget`, `FieldRegionTarget`,
-`FluxTarget`, and `EigenmodeCoefficientTarget` in this coordinate system.
-The two surface targets are restricted to radial or axial surfaces and use
+`FluxTarget`, `EigenmodeCoefficientTarget`, and `Near2FarTarget` in this
+coordinate system.
+Flux and eigenmode targets are restricted to radial or axial surfaces and use
 explicit physical quadrature, as detailed in the [target guide](targets.md).
+Near-to-far targets use fixed chunks and always restart the forward simulation,
+as described in the [near-to-far target guide](targets.md#near-to-far-targets).
 
 Each `TDAObjective` or `MultiTDAObjective` evaluates one angular mode. The
 `Multi` in `MultiTDAObjective` refers to wavelength bands, not angular modes.
 Meep represents that mode by complex amplitudes multiplying `exp(i*m*phi)`.
-The adjoint simulation uses `-m` because the angular part of the bilinear
-forward/adjoint pairing must cancel; it is not a second forward-mode
-evaluation. Returned field, flux, and mode-overlap values are therefore
+The adjoint simulation uses `-m` to cancel the angular dependence in the
+bilinear forward/adjoint pairing. Returned field, flux, and mode-overlap values are
 single-`m` modal quantities under the supplied source and quadrature
 normalization. Run separate forward objectives and apply the required physical
 normalization and combination externally when a real three-dimensional result
@@ -181,8 +179,8 @@ For `m=±1`, the axis relations are `Ep = i m Er` and `Hp = i m Hr`.
 Components constrained to zero are rejected when a gradient is requested.
 Meep symmetries are not supported for cylindrical gradients. Cylindrical
 custom `sim_factory` results must therefore use `symmetries=[]`.
-The default `AdaptiveAdjointChunkBalancer` supports Meep's native cylindrical
-R-Z topology with zero-size indexed adjoint sources.
+For temporal targets, the default `AdaptiveAdjointChunkBalancer` supports
+Meep's native cylindrical R-Z topology with zero-size indexed adjoint sources.
 
 Both objective classes support the sparse Nyquist reconstruction path for
 these cylindrical modes. `reuse_simulation=True` is also supported for
@@ -201,8 +199,7 @@ mpirun -np 2 python examples/tda_cylindrical_mode.py --target eigenmode
 
 Each design variable remains a scalar density mixing two fixed dielectric
 tensors. The endpoint tensors may have unequal diagonal and nonzero real
-off-diagonal entries. Optimizing their independent tensor entries is not part
-of this interface.
+off-diagonal entries.
 
 The general path records displacement fields and contracts
 `-D_adjoint * (d M / d rho) * d D_forward / dt`, where `M` is Meep's discrete
@@ -244,16 +241,14 @@ preserving stricter factory settings. Forward initialization and the local
 material Jacobian use that same tolerance. Meep's default `1e-4` produced
 quadrature noise in high-beta derivative checks; the tighter integration adds
 setup cost. A factory must return an uninitialized simulation if this tolerance
-change is needed. This is an empirically tested accuracy setting, not a bound
-on every possible design's gradient error.
+change is needed.
 
 Gradient evaluation rejects material-derivative stencils that cross Meep's
 zero-normal averaging branch at mixed densities. Forward evaluation remains
 available, as do clamped points whose normal remains identically zero under
 the perturbation. Unsmooth infinite-beta projection at its threshold is also rejected
 for gradients. Use finite beta and a spatially varying design for averaged
-optimization. Tensor cylindrical, complex/Hermitian, dispersive, conductive,
-and nonlinear design media are outside this implementation's scope.
+optimization. Supported media are listed in the native-path requirements above.
 
 ## Gradient Output, Storage, and Inputs
 
@@ -348,7 +343,7 @@ For less repetitive objective setup, use the bundled input objects:
 | Object | Bundles |
 | --- | --- |
 | `DesignGrid` | `MaterialGrid`, native design-region center/size/shape, `d epsilon / d rho`, and geometric coordinate/area metadata. |
-| `SimulationSpec` | Common `mp.Simulation` constructor inputs such as cell size, PML layers, geometry, default sources, resolution, Courant factor, `geometry_center`, `chunk_layout`, dimensions, Gamma-point periodic boundaries, and cylindrical `m`. Leaving `chunk_layout` unset enables automatic mixed-topology balancing in the objective classes. |
+| `SimulationSpec` | Common `mp.Simulation` constructor inputs such as cell size, PML layers, geometry, default sources, resolution, Courant factor, `geometry_center`, `chunk_layout`, dimensions, Gamma-point periodic boundaries, and cylindrical `m`. See [MPI execution](mpi.md) for chunk-balancing conditions. |
 | `PointTarget` | Point-monitor position, field component, and matching adjoint-source size/amplitude. |
 | `FieldRegionTarget` | Ordered exact field-sample positions, their spatial output shape and quadrature weights, one field component, and a shared adjoint amplitude. |
 | `FluxTarget` | Ordered surface-sample positions, a signed axis-aligned normal, and explicit physical surface-quadrature weights. |

@@ -55,8 +55,7 @@ the physical area Jacobian described below.
 
 `FieldRegionTarget` exposes the field distribution at explicitly supplied
 physical points. It uses the same native Yee-grid point sampling as
-`PointTarget` and injects its exact transpose; no automatic volume grid, hidden
-alignment, or extra interpolation layer is introduced.
+`PointTarget` and injects its exact transpose.
 
 ```python
 regional_target = tm.FieldRegionTarget(
@@ -74,14 +73,13 @@ objective is the weighted regional intensity
 `0.5 * dt * sum(t,p) spatial_weights[p] * |u[t,p]|^2`; custom callbacks receive
 the unweighted raw fields. Reshape the public flat weights as
 `np.asarray(target.spatial_weights).reshape(target.sample_shape)` when using
-them in a callback. Weights default to one; TAMA does not infer `dx*dy`,
-`dV`, or a cylindrical `2*pi*r*dr*dz` measure.
+them in a callback. Weights default to one. Supply `dx*dy`, `dV`, or cylindrical
+`2*pi*r*dr*dz` weights explicitly when the objective uses those measures.
 
 Regional gradients require the direct `SimulationSpec.make` path. Each spatial
 sample receives its own time-domain adjoint waveform through the exact
 transpose of the native Yee-grid point sampler. Arbitrary `sim_factory`
-objects remain available for value-only regional evaluation, but approximate
-finite-volume regional adjoint sources are not used. Regional targets cannot
+objects support value-only regional evaluation. Regional targets cannot
 be combined with the legacy `monitor_position(s)`, `component`, or shared
 adjoint-source override arguments.
 
@@ -125,9 +123,9 @@ P[n] = sum(p) w[p] * Re{
 ```
 
 The averaging centers each magnetic-field history onto the electric-field
-time grid. `spatial_weights` defaults to one per point. TAMA does not infer
-a surface mesh, point spacing, line element, or area element; supply the
-appropriate quadrature weights explicitly. Cylindrical weights include the
+time grid. `spatial_weights` defaults to one per point. Supply the surface
+points and their line or area quadrature weights explicitly. Cylindrical
+weights include the
 full physical Jacobian exactly once: use `2*pi*r_i*dr_i` on an axial disk and
 `2*pi*r0*dz_i` on a radial cylinder. An axial sample at `r=0` must have zero
 weight.
@@ -168,9 +166,8 @@ temporaries.
 
 `FluxTarget` does not support azimuthal cylindrical normals,
 `source_boundary_mode="finite"`, automatic surface-grid construction, or mode
-decomposition. It is a time-domain point-quadrature target, not a
-wrapper around Meep's DFT `FluxRegion`; bitwise equivalence to Meep DFT flux is
-not claimed.
+decomposition. It computes time-domain point quadrature independently of
+Meep's DFT `FluxRegion`.
 
 ## Eigenmode Coefficient Targets
 
@@ -248,11 +245,10 @@ Meep does not solve cylindrical eigenmodes, so a cylindrical target supplies
 Use the same full `2*pi*r` quadrature weights described for `FluxTarget`. A
 solver-backed Cartesian mode region must be
 design-independent, reciprocal, dispersionless, and nonmagnetic; the cached
-reference mode is intentionally not differentiated or recomputed after design
+reference mode is not differentiated or recomputed after design
 updates. Oblique ports, azimuthal cylindrical normals, degenerate-mode
 subspaces, automatic port grids, and frequency-dependent broadband mode
-profiles are not supported. This is a fixed-reference time-domain overlap,
-not a wrapper around Meep's DFT `get_eigenmode_coefficients()`.
+profiles are not supported.
 
 ## Near-to-Far Targets
 
@@ -291,8 +287,8 @@ the same shape as `far_fields`.
 
 Meep supplies the forward DFT, Green-function transform, and spatial source
 pullback. TAMA transposes the finite-time Fourier sum into time-domain electric
-and magnetic currents, then uses its native design-history gradient. It does
-not call `meep.adjoint.OptimizationProblem`. Near-field DFTs remain full rate
+and magnetic currents, then uses its native design-history gradient.
+Near-field DFTs remain full rate
 (`decimation_factor=1`); `sampling_interval` only reduces stored design-field
 history.
 
@@ -307,8 +303,8 @@ The near surfaces must be finite axis-aligned lines in 2D or planes in 3D,
 with half a grid cell of clearance from PML and cell boundaries. They must
 lie in the same homogeneous, isotropic,
 lossless exterior medium used by the Green function. The far points must be
-in that exterior region. This material condition is a user precondition;
-TAMA does not inspect the entire exterior geometry to prove it.
+in that exterior region. Check this material condition when constructing the
+simulation. TAMA does not inspect the exterior geometry.
 Cartesian 2D/3D, cylindrical coordinates, and independent design regions are
 supported. Cartesian simulations also support compatible mirror symmetries.
 Nonzero Bloch wavevectors and periodic-image sums are not supported.
@@ -368,7 +364,5 @@ Callback sequences, scalarization inputs, and `last_band_*` arrays retain the
 complete target order. Near-to-far callbacks receive the spectral array above;
 temporal callbacks receive their usual filtered histories. `last_far_fields`
 contains only the near-to-far arrays, in their relative target order. Mixed
-evaluation still uses one forward run and one combined adjoint run, with the
-same aligned recording endpoint for value-only and gradient calls. The direct
-`SimulationSpec`, mandatory restart, fixed-layout, and physical near-to-far
-constraints above also apply to mixed objectives.
+objectives use the same aligned recording endpoint and near-to-far constraints
+described above.

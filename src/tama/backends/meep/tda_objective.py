@@ -217,22 +217,25 @@ class TDAObjective:
                 exposes the complex time-domain overlap with one fixed,
                 power-normalized reference mode and uses the same
                 combined-adjoint structure. A near-to-far target exposes complex
-                fields shaped `(far_points, frequencies, 6)` in Ex/Ey/Ez/Hx/Hy/Hz
-                order. Its default FoM sums electric-field intensity over points
+                fields shaped `(far_points, frequencies, 6)`. Component order
+                is Ex/Ey/Ez/Hx/Hy/Hz in Cartesian coordinates and
+                Er/Ep/Ez/Hr/Hp/Hz in cylindrical coordinates.
+                Its default FoM sums electric-field intensity over points
                 and frequencies. It uses fixed chunks and always restarts the
                 forward simulation for exact indexed adjoint-source ownership.
             history_dtype: Real or complex floating dtype requested for
                 temporary forward field histories. Its real counterpart is
                 used automatically when Meep initializes real forward fields;
                 complex forward fields require a complex dtype.
-            chunk_balancer: Adaptive balancer that updates the supplied
-                `SimulationSpec` chunk layout after each gradient evaluation.
+            chunk_balancer: Adaptive balancer for the supplied
+                `SimulationSpec` chunk layout.
                 The default `"auto"` creates one for a direct, concrete
-                `SimulationSpec` whose `chunk_layout` is unset. Pass `None` to
-                opt out, or supply a custom balancer. Ordinary forward sources
-                are protected automatically. Workload calibration uses three
-                to eight gradient evaluations and freezes the best measured
-                layout after the critical-rank work converges.
+                `SimulationSpec` whose `chunk_layout` is unset. Mirrors and
+                near-to-far targets disable it and reject explicit balancers.
+                Pass `None` to opt out, or supply a custom balancer. Ordinary
+                forward sources are protected automatically. Workload
+                calibration uses three to eight gradient evaluations and freezes
+                the best measured layout after the critical-rank work converges.
                 Exact indexed targets do not constrain chunk boundaries.
                 `source_boundary_mode="finite"` selects ordinary finite
                 Cartesian sources for eligible `PointTarget` entries and is

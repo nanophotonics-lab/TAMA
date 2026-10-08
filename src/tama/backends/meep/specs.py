@@ -180,8 +180,8 @@ class SimulationSpec:
         courant: Meep Courant factor. Defaults to Meep's default `0.5`.
         geometry_center: Optional Meep `geometry_center`.
         chunk_layout: Optional MPI chunk layout passed to Meep. Leaving this
-            unset enables the objectives' default automatic mixed-topology
-            chunk balancing; an explicit layout remains user-managed.
+            unset enables automatic chunk balancing for temporal targets
+            without mirrors. An explicit layout remains user-managed.
         dimensions: Optional simulation dimensionality, including
             `mp.CYLINDRICAL`.
         eps_averaging: Optional Meep subpixel averaging flag.
