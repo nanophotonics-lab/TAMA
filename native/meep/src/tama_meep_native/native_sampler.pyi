@@ -42,11 +42,15 @@ def configure_native_material_operator(
     ...
 
 def native_design_plan_local_size(plan: Any) -> int:
-    """Return the rank-local history entry count, including tensor stencils."""
+    """Return the rank-local history width; identical tensor samples share a column."""
     ...
 
 def native_design_plan_signature(plan: Any) -> NDArray[np.int64]:
-    """Return Yee coordinates; tensor plans append component and stencil node."""
+    """Return contribution coordinates and material stencil and history indices.
+
+    Material signatures include the field component, stencil node and history column.
+    Their row count can exceed the compact history width.
+    """
     ...
 
 def sample_native_design_plan_into(

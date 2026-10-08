@@ -27,6 +27,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -488,12 +489,24 @@ struct NativeDesignPlan {
     size_t stencil_capacity;
     std::vector<NativeDesignEntry> entries;
     std::vector<NativeDesignForwardSample> forward_samples;
+    std::vector<size_t> history_entries;
+    std::vector<size_t> history_indices;
     std::vector<size_t> design_indices;
     std::vector<double> design_weights;
     std::vector<std::int32_t> signatures;
     std::vector<std::complex<double>> previous_adjoint_values;
     std::vector<double> previous_real_adjoint_values;
     int adjoint_midpoint_kind = 0;
+
+    size_t history_size() const {
+        return history_entries.empty() ? entries.size() : history_entries.size();
+    }
+    size_t history_entry(size_t index) const {
+        return history_entries.empty() ? index : history_entries[index];
+    }
+    size_t history_index(size_t entry) const {
+        return history_indices.empty() ? entry : history_indices[entry];
+    }
 };
 
 static unsigned native_mirror_axes(const meep::fields *fields) {
@@ -2277,6 +2290,27 @@ static PyObject *create_native_design_plan(PyObject *, PyObject *args) {
                 std::swap(order[i], order[other]);
             }
         }
+        if (plan->material_jacobian) {
+            // Several constitutive rows can use the same forward D sample.
+            using SampleKey =
+                std::tuple<int, int, std::ptrdiff_t, std::ptrdiff_t, bool>;
+            std::map<SampleKey, size_t> samples;
+            std::vector<size_t> history_entries, history_indices;
+            for (size_t i = 0; i < plan->entries.size(); ++i) {
+                const auto &sample = plan->forward_samples[i];
+                const SampleKey key(
+                    plan->entries[i].chunk_idx, sample.component, sample.first_index,
+                    sample.sum_pair ? sample.second_index : 0, sample.sum_pair);
+                const auto inserted = samples.emplace(key, samples.size());
+                if (inserted.second)
+                    history_entries.push_back(i);
+                history_indices.push_back(inserted.first->second);
+            }
+            if (history_entries.size() < plan->entries.size()) {
+                plan->history_entries = std::move(history_entries);
+                plan->history_indices = std::move(history_indices);
+            }
+        }
     } catch (const std::bad_alloc &) {
         return PyErr_NoMemory();
     } catch (const std::exception &exc) {
@@ -2306,7 +2340,7 @@ static PyObject *native_design_plan_local_size(PyObject *, PyObject *args) {
     if (!plan) {
         return nullptr;
     }
-    return PyLong_FromSize_t(plan->entries.size());
+    return PyLong_FromSize_t(plan->history_size());
 }
 
 static PyObject *native_design_plan_signature(PyObject *, PyObject *args) {
@@ -2318,9 +2352,11 @@ static PyObject *native_design_plan_signature(PyObject *, PyObject *args) {
     if (!plan) {
         return nullptr;
     }
+    const int signature_width =
+        plan->signature_width + (plan->material_jacobian ? 1 : 0);
     npy_intp dims[2] = {
         static_cast<npy_intp>(plan->entries.size()),
-        static_cast<npy_intp>(plan->signature_width),
+        static_cast<npy_intp>(signature_width),
     };
     PyObject *array_obj = PyArray_SimpleNew(2, dims, NPY_INT64);
     if (!array_obj) {
@@ -2328,8 +2364,16 @@ static PyObject *native_design_plan_signature(PyObject *, PyObject *args) {
     }
     npy_int64 *data = reinterpret_cast<npy_int64 *>(
         PyArray_DATA(reinterpret_cast<PyArrayObject *>(array_obj)));
-    for (size_t i = 0; i < plan->signatures.size(); ++i) {
-        data[i] = static_cast<npy_int64>(plan->signatures[i]);
+    for (size_t i = 0; i < plan->entries.size(); ++i) {
+        for (int axis = 0; axis < plan->signature_width; ++axis) {
+            data[i * signature_width + axis] = static_cast<npy_int64>(
+                plan->signatures[i * plan->signature_width + axis]);
+        }
+        if (plan->material_jacobian) {
+            // Chunk boundaries can change shared-sample mappings without changing Yee points.
+            data[i * signature_width + plan->signature_width] =
+                static_cast<npy_int64>(plan->history_index(i));
+        }
     }
     return array_obj;
 }
@@ -2350,7 +2394,7 @@ static PyObject *sample_native_design_plan_into(PyObject *, PyObject *args) {
         return nullptr;
     }
     if (PyArray_NDIM(destination) != 1 ||
-        PyArray_DIM(destination, 0) != static_cast<npy_intp>(plan->entries.size())) {
+        PyArray_DIM(destination, 0) != static_cast<npy_intp>(plan->history_size())) {
         PyArray_DiscardWritebackIfCopy(destination);
         Py_DECREF(destination);
         PyErr_SetString(PyExc_ValueError,
@@ -2359,8 +2403,9 @@ static PyObject *sample_native_design_plan_into(PyObject *, PyObject *args) {
     }
     npy_cdouble *data = reinterpret_cast<npy_cdouble *>(PyArray_DATA(destination));
     try {
-        for (size_t i = 0; i < plan->entries.size(); ++i) {
-            set_npy_complex(data[i], native_design_forward_field_value(plan, i));
+        for (size_t i = 0; i < plan->history_size(); ++i) {
+            set_npy_complex(data[i], native_design_forward_field_value(
+                                         plan, plan->history_entry(i)));
         }
     } catch (const std::exception &exc) {
         PyArray_DiscardWritebackIfCopy(destination);
@@ -2399,7 +2444,7 @@ static PyObject *sample_native_design_plan_real_into(PyObject *, PyObject *args)
 
     PyArrayObject *destination = reinterpret_cast<PyArrayObject *>(destination_obj);
     if (PyArray_NDIM(destination) != 1 ||
-        PyArray_DIM(destination, 0) != static_cast<npy_intp>(plan->entries.size())) {
+        PyArray_DIM(destination, 0) != static_cast<npy_intp>(plan->history_size())) {
         PyErr_SetString(PyExc_ValueError,
                         "native design destination has the wrong shape");
         return nullptr;
@@ -2414,8 +2459,9 @@ static PyObject *sample_native_design_plan_real_into(PyObject *, PyObject *args)
 
     double *data = reinterpret_cast<double *>(PyArray_DATA(destination));
     try {
-        for (size_t i = 0; i < plan->entries.size(); ++i) {
-            data[i] = native_design_forward_real_field_value(plan, i);
+        for (size_t i = 0; i < plan->history_size(); ++i) {
+            data[i] =
+                native_design_forward_real_field_value(plan, plan->history_entry(i));
         }
     } catch (const std::exception &exc) {
         PyErr_SetString(PyExc_RuntimeError, exc.what());
@@ -2446,7 +2492,7 @@ static int native_design_accumulation_arrays(NativeDesignPlan *plan,
     }
     const bool shapes_ok =
         PyArray_NDIM(values) == 1 &&
-        PyArray_DIM(values, 0) == static_cast<npy_intp>(plan->entries.size()) &&
+        PyArray_DIM(values, 0) == static_cast<npy_intp>(plan->history_size()) &&
         PyArray_NDIM(accumulator) == 1 &&
         PyArray_DIM(accumulator, 0) ==
             static_cast<npy_intp>(plan->nx * plan->ny * plan->nz);
@@ -2547,7 +2593,7 @@ static int native_design_real_accumulation_arrays(NativeDesignPlan *plan,
     accumulator = reinterpret_cast<PyArrayObject *>(accumulator_obj);
     const bool shapes_ok =
         PyArray_NDIM(values) == 1 &&
-        PyArray_DIM(values, 0) == static_cast<npy_intp>(plan->entries.size()) &&
+        PyArray_DIM(values, 0) == static_cast<npy_intp>(plan->history_size()) &&
         PyArray_NDIM(accumulator) == 1 &&
         PyArray_DIM(accumulator, 0) ==
             static_cast<npy_intp>(plan->nx * plan->ny * plan->nz);
@@ -2600,10 +2646,11 @@ static PyObject *accumulate_native_design_product_local_inplace(PyObject *,
     try {
         for (size_t i = 0; i < plan->entries.size(); ++i) {
             const NativeDesignEntry &entry = plan->entries[i];
-            accumulate_native_design_entry(plan, i, entry,
-                                           npy_to_complex(value_data[i]) *
-                                               native_design_field_value(plan, entry),
-                                           accumulator_data);
+            accumulate_native_design_entry(
+                plan, i, entry,
+                npy_to_complex(value_data[plan->history_index(i)]) *
+                    native_design_field_value(plan, entry),
+                accumulator_data);
         }
     } catch (const std::exception &exc) {
         Py_DECREF(values);
@@ -2646,7 +2693,8 @@ static PyObject *accumulate_native_design_real_product_local_inplace(PyObject *,
             const NativeDesignEntry &entry = plan->entries[i];
             accumulate_native_design_entry_real(
                 plan, i, entry,
-                value_data[i] * native_design_real_field_value(plan, entry),
+                value_data[plan->history_index(i)] *
+                    native_design_real_field_value(plan, entry),
                 accumulator_data);
         }
     } catch (const std::exception &exc) {
@@ -2708,9 +2756,10 @@ accumulate_native_design_midpoint_product_local_inplace(PyObject *, PyObject *ar
             const std::complex<double> current = native_design_field_value(plan, entry);
             const std::complex<double> midpoint =
                 0.5 * (current + plan->previous_adjoint_values[i]);
-            accumulate_native_design_entry(plan, i, entry,
-                                           npy_to_complex(value_data[i]) * midpoint,
-                                           accumulator_data);
+            accumulate_native_design_entry(
+                plan, i, entry,
+                npy_to_complex(value_data[plan->history_index(i)]) * midpoint,
+                accumulator_data);
             plan->previous_adjoint_values[i] = current;
         }
     } catch (const std::bad_alloc &) {
@@ -2776,7 +2825,8 @@ accumulate_native_design_real_midpoint_product_local_inplace(PyObject *,
             const double midpoint =
                 0.5 * (current + plan->previous_real_adjoint_values[i]);
             accumulate_native_design_entry_real(
-                plan, i, entry, value_data[i] * midpoint, accumulator_data);
+                plan, i, entry, value_data[plan->history_index(i)] * midpoint,
+                accumulator_data);
             plan->previous_real_adjoint_values[i] = current;
         }
     } catch (const std::bad_alloc &) {
@@ -3095,10 +3145,11 @@ static void fill_native_derivative_block(PyArrayObject *history, long long coars
     const npy_intp width = PyArray_DIM(history, 1);
     const size_t physical_width =
         static_cast<size_t>(width) * (complex_output ? 2u : 1u);
-    destination.assign(static_cast<size_t>(stencils.sampling_interval) * physical_width,
-                       0.0);
+    destination.resize(static_cast<size_t>(stencils.sampling_interval) *
+                       physical_width);
     // No forward step exists after the final sample.
     if (physical_width == 0 || coarse_index == last_coarse_index) {
+        std::fill(destination.begin(), destination.end(), 0.0);
         return;
     }
 
@@ -3124,6 +3175,8 @@ static void fill_native_derivative_block(PyArrayObject *history, long long coars
                         stencils.forward.data() + weight_start,
                         static_cast<int>(stencils.support), history_data,
                         matrix_columns, 0.0, destination.data(), matrix_columns);
+        } else {
+            std::fill(destination.begin(), destination.end(), 0.0);
         }
     } else {
         for (int phase = 0; phase < stencils.sampling_interval; ++phase) {
@@ -3159,7 +3212,9 @@ static void accumulate_native_adjoint_real_row(NativeDesignPlan *plan,
             midpoint ? 0.5 * (current + plan->previous_real_adjoint_values[index])
                      : current;
         accumulate_native_design_entry_real(
-            plan, index, entry, forward_derivative[index] * adjoint_value, accumulator);
+            plan, index, entry,
+            forward_derivative[plan->history_index(index)] * adjoint_value,
+            accumulator);
         if (midpoint) {
             plan->previous_real_adjoint_values[index] = current;
         }
@@ -3189,11 +3244,12 @@ static void accumulate_native_adjoint_complex_row(NativeDesignPlan *plan,
         const std::complex<double> current = native_design_field_value(plan, entry);
         const std::complex<double> adjoint_value =
             midpoint ? 0.5 * (current + plan->previous_adjoint_values[index]) : current;
+        const size_t history_index = plan->history_index(index);
         const std::complex<double> derivative =
             derivative_is_complex
-                ? std::complex<double>(forward_derivative[2 * index],
-                                       forward_derivative[2 * index + 1])
-                : std::complex<double>(forward_derivative[index], 0.0);
+                ? std::complex<double>(forward_derivative[2 * history_index],
+                                       forward_derivative[2 * history_index + 1])
+                : std::complex<double>(forward_derivative[history_index], 0.0);
         accumulate_native_design_entry(plan, index, entry, derivative * adjoint_value,
                                        accumulator);
         if (midpoint) {
@@ -3450,7 +3506,7 @@ static PyObject *run_native_forward_segment(PyObject *, PyObject *args) {
             return nullptr;
         }
         if (!validate_native_forward_history(
-                history, design_rows, static_cast<npy_intp>(plan->entries.size()),
+                history, design_rows, static_cast<npy_intp>(plan->history_size()),
                 !fields->is_real,
                 "native forward design history has an incompatible dtype, shape, or layout")) {
             cleanup();
@@ -3517,17 +3573,18 @@ static PyObject *run_native_forward_segment(PyObject *, PyObject *args) {
                 const npy_intp design_row =
                     static_cast<npy_intp>(fine_index / sampling_interval);
                 for (const DesignBinding &design : designs) {
-                    for (size_t point = 0; point < design.plan->entries.size();
+                    for (size_t point = 0; point < design.plan->history_size();
                          ++point) {
                         write_native_history_value(
                             design.history, design_row, static_cast<npy_intp>(point),
                             fields->is_real
                                 ? std::complex<double>(
                                       native_design_forward_real_field_value(
-                                          design.plan, point),
+                                          design.plan,
+                                          design.plan->history_entry(point)),
                                       0.0)
-                                : native_design_forward_field_value(design.plan,
-                                                                    point));
+                                : native_design_forward_field_value(
+                                      design.plan, design.plan->history_entry(point)));
                     }
                 }
             }
@@ -3706,7 +3763,7 @@ static PyObject *run_native_design_adjoint_segment(PyObject *, PyObject *args) {
         if (!native_history_dtype_supported(history_type) ||
             PyArray_NDIM(history) != 2 ||
             PyArray_DIM(history, 0) != expected_history_rows ||
-            PyArray_DIM(history, 1) != static_cast<npy_intp>(plan->entries.size()) ||
+            PyArray_DIM(history, 1) != static_cast<npy_intp>(plan->history_size()) ||
             !PyArray_ISCARRAY_RO(history) || !PyArray_ISNOTSWAPPED(history)) {
             cleanup();
             PyErr_SetString(
@@ -3741,7 +3798,7 @@ static PyObject *run_native_design_adjoint_segment(PyObject *, PyObject *args) {
                 "native adjoint accumulator has the wrong design-grid size");
             return nullptr;
         }
-        const size_t physical_width = plan->entries.size() * (use_real ? 1u : 2u);
+        const size_t physical_width = plan->history_size() * (use_real ? 1u : 2u);
         if (physical_width > static_cast<size_t>(std::numeric_limits<int>::max())) {
             cleanup();
             PyErr_SetString(PyExc_OverflowError,
@@ -3841,7 +3898,7 @@ static PyObject *run_native_design_adjoint_segment(PyObject *, PyObject *args) {
                         coarse_index;
                 }
                 const size_t physical_width =
-                    plan->entries.size() * (use_real ? 1u : 2u);
+                    plan->history_size() * (use_real ? 1u : 2u);
                 if (physical_width == 0) {
                     continue;
                 }
@@ -6998,7 +7055,7 @@ PyMODINIT_FUNC PyInit_native_sampler(void) {
     if (!module) {
         return nullptr;
     }
-    if (PyModule_AddIntConstant(module, "API_VERSION", 16) < 0) {
+    if (PyModule_AddIntConstant(module, "API_VERSION", 17) < 0) {
         Py_DECREF(module);
         return nullptr;
     }

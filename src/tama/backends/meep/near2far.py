@@ -361,7 +361,7 @@ def evaluate_near2far(
                 fine_step_count=fine_steps,
             )
             fields = history.finish_forward(count)
-            history.release_forward()
+            history.release_forward(keep_material_plans=not sim.is_cylindrical)
         else:
             sim.run(until=run_until)
         actual_time = sim.round_time()
@@ -418,6 +418,8 @@ def evaluate_near2far(
         accumulator = _NativeDesignAccumulator(
             objective.design, components, history.signatures, False
         )
+        if not sim.is_cylindrical:
+            accumulator.fields.update(history.take_material_plans(sim))
         _run_native_adjoint_loop(
             sim,
             accumulator,

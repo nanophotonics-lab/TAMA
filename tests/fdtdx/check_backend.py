@@ -22,6 +22,7 @@ from tama.backends.fdtdx import (
     verify_fdtdx_compatibility,
 )
 from _scene import make_scene
+from tama.backends.fdtdx.targets import make_loss
 
 
 def relative(a, b):
@@ -30,11 +31,12 @@ def relative(a, b):
     return difference / norm if norm else (0.0 if difference == 0 else float("inf"))
 
 
-def native_reference(objective, scene):
+def native_reference(objective, scene, scalarization_fn):
     import fdtdx
 
     spec, design = objective.spec, objective.design
     start = np.asarray(scene["detector_start"])
+    loss = make_loss(objective.targets, objective.bands, spec.dt, scalarization_fn)
 
     def reference(rho):
         arrays = spec.arrays.aset(
@@ -56,7 +58,7 @@ def native_reference(objective, scene):
         for target in objective.targets:
             ix = np.asarray(target.indices) - start
             histories.append(fields[:, ix[:, 0], ix[:, 1], ix[:, 2], :])
-        return objective._loss(tuple(histories))
+        return loss(tuple(histories))
 
     return jax.jit(jax.value_and_grad(reference)), jax.jit(reference)
 
@@ -134,7 +136,7 @@ def run_case(
         )
     targets, bands = targets_and_bands(scene)
     objective = MultiTDAObjective(spec, design, targets, bands, scalarize)
-    native, native_value = native_reference(objective, scene)
+    native, native_value = native_reference(objective, scene, scalarize)
     v, g, info = objective.evaluate(rho, return_info=True)
     vn, gn = native(rho)
     vr, gr = objective.reference_value_and_grad(rho)

@@ -12,7 +12,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from .targets import Band, make_loss
+from .targets import Band, _COMPONENTS, make_loss
 from tama.nyquist import _windowed_sinc_stencils
 
 
@@ -137,7 +137,27 @@ class MultiTDAObjective:
         if type(cpu_offload) is not bool:
             raise TypeError("cpu_offload must be a Python bool")
         self.cpu_offload = cpu_offload
-        self._loss = make_loss(self.targets, self.bands, self.spec.dt, scalarization_fn)
+        callback_targets = {
+            band.target
+            for band in self.bands
+            if isinstance(band, Band) and band.fom_fn is not None
+        }
+        self._components = tuple(
+            (
+                _COMPONENTS[target.component]
+                if type(target) in (PointTarget, FieldRegionTarget)
+                and index not in callback_targets
+                else None
+            )
+            for index, target in enumerate(self.targets)
+        )
+        self._loss = make_loss(
+            self.targets,
+            self.bands,
+            self.spec.dt,
+            scalarization_fn,
+            _components=self._components,
+        )
         self._loss_grad = jax.jit(jax.value_and_grad(self._loss))
         self._kernels = {}
         self._material = jax.jit(self.design.inverse_permittivity)
@@ -212,7 +232,11 @@ class MultiTDAObjective:
                 pad_fields_for_boundaries(e, placed, config),
                 pad_fields_for_boundaries((hp + hn) / 2, placed, config),
             )
-            return tuple(target.sample(ee, hh) for target in self.targets)
+            samples = tuple(target.sample(ee, hh) for target in self.targets)
+            return tuple(
+                sample if component is None else sample[..., component : component + 1]
+                for sample, component in zip(samples, self._components)
+            )
 
         prototype, observe_pullback = jax.vjp(measurement, zero.E, zero.H, zero.H)
 
@@ -265,7 +289,7 @@ class MultiTDAObjective:
                 )
 
             def step(j, carry):
-                cot, gq = carry
+                cot, gq = carry[:2]
                 local_t = length - 1 - j
                 t = start + local_t
                 qe, qhp, qhn = observe_pullback(tuple(y[local_t] for y in dy))
@@ -278,14 +302,20 @@ class MultiTDAObjective:
                     t, current.aset("fields", fields), placed, config, True
                 ).fields
                 mid = jax.vjp(h_step, zero)[1](cot)[0]
-                delta = reconstructed(t + 1) - reconstructed(t)
+                current_e = reconstructed(t)
+                delta = (reconstructed(t + 1) if stride == 1 else carry[2]) - current_e
                 gq = gq + jnp.sum(
                     jnp.real(mid.E[region] * delta / q), axis=0, keepdims=True
                 )
                 prev = jax.vjp(e_step, zero)[1](mid)[0]
-                return prev.aset("H", prev.H + qhp), gq
+                result = (prev.aset("H", prev.H + qhp), gq)
+                return result if stride == 1 else (*result, current_e)
 
-            return jax.lax.fori_loop(0, length, step, (cot, gq))
+            carry = (cot, gq)
+            if stride > 1:
+                # Reuse E(t) as the next reverse step's E(t+1).
+                carry = (*carry, reconstructed(start + length))
+            return jax.lax.fori_loop(0, length, step, carry)[:2]
 
         # This independent AD reference differentiates the full native step state,
         # including PML, instead of using the E-increment contraction above.
@@ -375,8 +405,11 @@ class MultiTDAObjective:
             jnp.concatenate([block[t] for block in traces], axis=0)[:steps]
             for t in range(len(self.targets))
         )
+        del traces, trace
+        target_history_bytes = sum(v.nbytes for v in y)
         value, dy = self._loss_grad(y)
         jax.block_until_ready((value, dy))
+        del y
         loss_end = time.perf_counter()
         cot = kernels["zero"]
         gq = jnp.zeros_like(inv[self.design.region])
@@ -452,7 +485,7 @@ class MultiTDAObjective:
             loss_s=loss_end - started - forward_s,
             total_s=time.perf_counter() - started,
             fdtdx_api_compatible=True,
-            target_history_bytes=sum(v.nbytes for v in y),
+            target_history_bytes=target_history_bytes,
         )
         return value, gradient, info
 

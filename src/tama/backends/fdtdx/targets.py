@@ -100,14 +100,16 @@ class _Target:
             (E[(slice(None), *indices)].T, H[(slice(None), *indices)].T), axis=-1
         )
 
-    def _history(self, history):
+    def _history(self, history, components=6):
         history = jnp.asarray(history)
         if (
             history.ndim != 3
             or history.shape[0] == 0
-            or history.shape[1:] != (len(self.indices), 6)
+            or history.shape[1:] != (len(self.indices), components)
         ):
-            raise ValueError("history must have shape (Nt, N, 6), with Nt > 0")
+            raise ValueError(
+                f"history must have shape (Nt, N, {components}), with Nt > 0"
+            )
         if not jnp.issubdtype(history.dtype, jnp.inexact):
             raise TypeError(
                 "history must contain real or complex floating-point fields"
@@ -135,13 +137,15 @@ class FieldRegionTarget(_Target):
 
     def functional(self, history, dt):
         history = self._history(history)
+        return self._component_functional(history[..., _COMPONENTS[self.component]], dt)
+
+    def _component_functional(self, component, dt):
         dt = _real_scalar(dt, "dt", positive=True)
-        component = history[..., _COMPONENTS[self.component]]
         return (
             dt
             / 2
             * jnp.sum(
-                jnp.asarray(self.weights, dtype=history.real.dtype)
+                jnp.asarray(self.weights, dtype=component.real.dtype)
                 * jnp.abs(component) ** 2
             )
         )
@@ -308,7 +312,7 @@ class Band:
             raise TypeError("fom_fn must be callable")
 
 
-def make_loss(targets, bands, dt, scalarization_fn=None):
+def make_loss(targets, bands, dt, scalarization_fn=None, *, _components=None):
     """Build a differentiable real scalar objective of a tuple of histories.
 
     Each Band independently filters all constituent E/H histories before its
@@ -335,12 +339,14 @@ def make_loss(targets, bands, dt, scalarization_fn=None):
         raise ValueError("bands must contain Band objects indexing existing targets")
     if scalarization_fn is not None and not callable(scalarization_fn):
         raise TypeError("scalarization_fn must be callable")
+    components = (None,) * len(targets) if _components is None else _components
 
     def loss(traces):
         if len(traces) != len(targets):
             raise ValueError("one history is required per target")
         histories = tuple(
-            target._history(trace) for target, trace in zip(targets, traces)
+            target._history(trace, 6 if component is None else 1)
+            for target, trace, component in zip(targets, traces, components)
         )
         if len({h.shape[0] for h in histories}) != 1:
             raise ValueError("target histories must share one time grid")
@@ -360,8 +366,12 @@ def make_loss(targets, bands, dt, scalarization_fn=None):
                     lambda signal: jnp.convolve(signal, kernel, mode="full"), 1, 1
                 )(flat)
                 history = filtered.reshape(filtered.shape[0], *history.shape[1:])
-            functional = band.fom_fn or targets[band.target].functional
-            value = jnp.asarray(functional(history, dt))
+            target = targets[band.target]
+            if components[band.target] is None:
+                value = (band.fom_fn or target.functional)(history, dt)
+            else:
+                value = target._component_functional(history[..., 0], dt)
+            value = jnp.asarray(value)
             if value.shape != () or not jnp.issubdtype(value.dtype, jnp.floating):
                 raise ValueError(
                     "each band functional must return a real floating-point scalar"

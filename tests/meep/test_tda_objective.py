@@ -291,8 +291,11 @@ class _FakeNativeDesignHistorySet:
             for component in self.components
         }
 
-    def release_forward(self):
+    def release_forward(self, *, keep_material_plans=False):
         self.release_calls += 1
+
+    def take_material_plans(self, sim):
+        return {}
 
     def cleanup_memmaps(self):
         self.cleanup_calls += 1
@@ -306,6 +309,7 @@ class _FakeNativeDesignAccumulator:
         self.components = tuple(components)
         self.signatures = signatures
         self.midpoint = midpoint
+        self.fields = {}
         self.accumulated = []
         self.sample_steps = []
         self.release_calls = 0

@@ -401,6 +401,89 @@ def test_reused_tensor_simulation_matches_fresh_after_design_update(case):
     np.testing.assert_allclose(reused_gradient, fresh_gradient, rtol=1e-11, atol=1e-12)
 
 
+@pytest.mark.parametrize("case", ["tensor_hz", "tensor_xz_2d"])
+def test_reused_tensor_material_plans_are_built_once_per_evaluation(monkeypatch, case):
+    from tama.backends.meep import sampling_grid
+
+    objective = _make_problem(case, reuse_simulation=True)
+    weights, direction = _design_and_direction(objective)
+    create_plan = sampling_grid.native_sampler.create_native_design_plan
+    calls = []
+
+    def counted_plan(*args):
+        calls.append((args[0], args[11]))
+        return create_plan(*args)
+
+    monkeypatch.setattr(
+        sampling_grid.native_sampler, "create_native_design_plan", counted_plan
+    )
+    for density in (weights, weights + 0.01 * direction):
+        calls.clear()
+        value, gradient = objective.fom_and_grad(density)
+        assert np.isfinite(value) and np.all(np.isfinite(gradient))
+        assert len(calls) == 3
+        assert {component for _, component in calls} == {mp.Ex, mp.Ey, mp.Ez}
+
+
+def test_tensor_history_stores_shared_forward_samples_once():
+    from tama.backends.meep.sampling_grid import NativeDesignField
+
+    objective = _make_problem("tensor_hz")
+    weights, _ = _design_and_direction(objective)
+    objective.design.update_weights(weights)
+    sim = objective._make_forward_simulation()
+    fields = []
+    try:
+        sim.init_sim()
+        fields = [
+            NativeDesignField(sim, component, objective.design)
+            for component in (mp.Ex, mp.Ey, mp.Ez)
+        ]
+        history_width = sum(field.local_size for field in fields)
+        contribution_count = sum(field.signature.shape[0] for field in fields)
+        print(
+            f"tensor history samples={history_width}, contributions={contribution_count}"
+        )
+        assert 0 < history_width < contribution_count
+    finally:
+        for field in fields:
+            field.release()
+        sim.reset_meep()
+
+
+def test_tensor_history_rejects_different_shared_sample_mapping():
+    from tama.backends.meep.sampling_grid import NativeDesignField
+
+    mp.verbosity(0)
+    signature = None
+    for cut in (-0.15, 0.15):
+        objective = _make_problem("tensor_hz")
+        weights, _ = _design_and_direction(objective)
+        objective.design.update_weights(weights)
+        objective._simulation_spec.chunk_layout = mp.BinaryPartition(
+            data=[(mp.X, cut), 0, 0]
+        )
+        sim = objective._make_forward_simulation()
+        field = None
+        try:
+            sim.init_sim()
+            if signature is None:
+                field = NativeDesignField(sim, mp.Ex, objective.design)
+                signature = field.signature.copy()
+            else:
+                # Both layouts have the same contribution coordinates and width.
+                with pytest.raises(
+                    RuntimeError, match="different rank-local Yee layouts"
+                ):
+                    field = NativeDesignField(
+                        sim, mp.Ex, objective.design, expected_signature=signature
+                    )
+        finally:
+            if field is not None:
+                field.release()
+            sim.reset_meep()
+
+
 def test_tensor_gradient_requires_half_cell_clearance_from_pml():
     mp.verbosity(0)
     objective = _make_problem("smooth_ez")

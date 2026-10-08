@@ -145,10 +145,31 @@ class _NativeDesignHistorySet:
             for component in self.components
         }
 
-    def release_forward(self) -> None:
-        for native_field in self.forward_fields.values():
-            native_field.release()
-        self.forward_fields.clear()
+    def release_forward(self, *, keep_material_plans=False) -> None:
+        for component, native_field in tuple(self.forward_fields.items()):
+            if not (keep_material_plans and native_field.material_jacobian):
+                native_field.release()
+                del self.forward_fields[component]
+
+    def take_material_plans(self, sim) -> Dict[int, NativeDesignField]:
+        """Transfer retained plans only to the same evaluation's restarted fields."""
+
+        def checked_plans():
+            for component, field in self.forward_fields.items():
+                if field._require_native_plan_fields() is not sim.fields:
+                    raise RuntimeError(
+                        "cannot reuse material plans with different Meep fields"
+                    )
+                if not np.array_equal(
+                    field.signature, self.states[component]["signature"]
+                ):
+                    raise RuntimeError(
+                        "material plan reuse has a different forward signature"
+                    )
+            fields, self.forward_fields = self.forward_fields, {}
+            return fields
+
+        return _native_design_call("material plan reuse", checked_plans)
 
     def cleanup_memmaps(self) -> None:
         for state in self.states.values():

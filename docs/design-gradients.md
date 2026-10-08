@@ -226,7 +226,7 @@ describes the isotropic reduction and averaging controls.
 TAMA initializes this tensor operator before creating Meep fields. A custom
 `sim_factory` must return an uninitialized simulation when anisotropic
 MaterialGrid averaging is enabled. Rebuild the Meep native extension together
-with the Python package; this path requires native API 16.
+with the Python package; this path requires native API 17.
 
 In 3D, scalar-isotropic MaterialGrid averaging also uses TAMA's normalized
 volume-averaging kernel and requires an uninitialized simulation from a custom
@@ -240,6 +240,18 @@ preserving stricter factory settings. Forward initialization and the local
 material Jacobian use that same tolerance. This tighter tolerance increases
 material setup cost. A factory must return an uninitialized simulation if this tolerance
 change is needed.
+
+With `reuse_simulation=True`, Cartesian gradient evaluations reuse the forward
+material-Jacobian plans for the adjoint on the same Meep fields. The plans are
+discarded after that evaluation and rebuilt at the next density. Cartesian
+near-to-far evaluations also reuse these plans because they restart the same
+Meep fields. Cylindrical
+evaluations and evaluations with separate forward/adjoint simulations rebuild
+their plans as before.
+Separate forward/adjoint simulations must preserve the tensor-history sample
+mapping. A custom factory that changes chunk partitioning can change this mapping
+even when the owned coordinates match; TAMA rejects that mismatch before
+gradient accumulation.
 
 Gradient evaluation rejects material-derivative stencils that cross Meep's
 zero-normal averaging branch at mixed densities. Forward evaluation remains
@@ -274,8 +286,10 @@ single-precision histories nor arrays exceeding one MPI call's count limit
 require a full double-precision staging array. The per-rank design-history
 storage is approximately
 `resolved_dtype.itemsize * stored_rows *
-sum(local_history_entries_per_component)`. Tensor plans have additional
-entries for the mixed-component displacement stencils; their storage can
+sum(local_history_entries_per_component)`. Tensor plans store identical
+displacement-field samples once within each component plan, while retaining
+every material-Jacobian contribution. Mixed-component stencils can still
+require additional samples; their storage can
 exceed three scalar component histories. A scalar 3D gradient records `Ex`, `Ey`, and `Ez`
 histories and can therefore use substantially more temporary disk than a 2D
 TMz gradient. Set `TMPDIR` before launching Python or `mpirun` to select a

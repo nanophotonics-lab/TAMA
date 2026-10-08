@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 import tama.native_design as native_design
 
@@ -129,3 +130,36 @@ def test_finish_forward_preserves_memmap_values_after_discard(tmp_path):
     del result
     owner.cleanup_memmaps()
     assert not path.exists()
+
+
+def test_material_plan_transfer_checks_fields_and_signature(monkeypatch):
+    from types import SimpleNamespace
+
+    from tama.backends.meep.sampling_grid import NativeDesignField
+
+    class Simulation:
+        pass
+
+    class Fields:
+        pass
+
+    sim = Simulation()
+    sim.fields = Fields()
+    field = object.__new__(NativeDesignField)
+    field._bind_native_plan_fields(sim)
+    field.material_jacobian = True
+    field.signature = np.array([[1, 2, 0, -1]])
+    field.plan = object()
+    owner = native_design._NativeDesignHistorySet(None, (1,), np.float64, None)
+    owner.forward_fields[1] = field
+    owner.states[1] = {"signature": field.signature.copy()}
+    monkeypatch.setattr(native_design, "_native_design_call", lambda _, fn: fn())
+
+    with pytest.raises(RuntimeError, match="different Meep fields"):
+        owner.take_material_plans(SimpleNamespace(fields=Fields()))
+    owner.states[1]["signature"][0, 0] = 8
+    with pytest.raises(RuntimeError, match="signature"):
+        owner.take_material_plans(sim)
+    owner.states[1]["signature"] = field.signature.copy()
+    assert owner.take_material_plans(sim) == {1: field}
+    assert owner.forward_fields == {}
