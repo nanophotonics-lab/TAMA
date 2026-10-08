@@ -10,7 +10,7 @@ from typing import Any, Mapping, Optional, Sequence
 
 from . import native_sampler
 
-_NATIVE_API_VERSION = 16
+_NATIVE_API_VERSION = 17
 _REQUIRED_NATIVE_OPERATIONS = (
     "create_component_grid_plan",
     "sample_component_grid_plan_allreduced",
@@ -1488,6 +1488,7 @@ class NativeDesignField(_NativePlanFieldsGuard):
 
         self.component = component
         self.shape = tuple(design.shape)
+        self.material_jacobian = material_jacobian
         self.plan = None
         self._bind_native_plan_fields(sim)
         self.fields_are_real = bool(sim.fields.is_real)

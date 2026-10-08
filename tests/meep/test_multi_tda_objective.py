@@ -1644,8 +1644,11 @@ class _FakeNativeHistorySet:
             component: state["signature"] for component, state in self.states.items()
         }
 
-    def release_forward(self):
+    def release_forward(self, *, keep_material_plans=False):
         pass
+
+    def take_material_plans(self, sim):
+        return {}
 
     def cleanup_memmaps(self):
         for component, state in self.states.items():
@@ -1671,6 +1674,7 @@ class _FakeNativeAccumulator:
         self.components = tuple(components)
         self.signatures = signatures
         self.midpoint = midpoint
+        self.fields = {}
         self.local = np.zeros(design.shape, dtype=np.complex128)
         self.accumulated = []
         self.sample_steps = []

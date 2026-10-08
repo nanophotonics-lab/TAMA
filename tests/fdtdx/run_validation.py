@@ -32,7 +32,7 @@ def main():
     args = parser.parse_args()
     root, out = Path(__file__).resolve().parent, args.output
     out.mkdir(parents=True, exist_ok=True)
-    for name in ("specs", "functionals", "api", "adapter"):
+    for name in ("specs", "functionals", "api", "adapter", "histories"):
         result = subprocess.run(
             [sys.executable, str(root / f"check_{name}.py")],
             env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "JAX_PLATFORMS": "cpu"},

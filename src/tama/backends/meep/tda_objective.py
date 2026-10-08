@@ -1116,7 +1116,10 @@ class TDAObjective:
                         "forward callback count is not aligned with the "
                         "Nyquist sampling interval"
                     )
-                native_history.release_forward()
+                native_history.release_forward(
+                    keep_material_plans=self._reuse_simulation_for_adjoint
+                    and not is_cylindrical
+                )
 
             if self._is_eigenmode_target:
                 target_history = coefficient_history(
@@ -1237,6 +1240,10 @@ class TDAObjective:
                 native_history.signatures,
                 False,
             )
+            if self._reuse_simulation_for_adjoint and not is_cylindrical:
+                native_accumulator.fields.update(
+                    native_history.take_material_plans(sim_adj)
+                )
             balance_timing["extra_seconds"] += _run_native_adjoint_loop(
                 sim_adj,
                 native_accumulator,
@@ -1687,7 +1694,10 @@ class TDAObjective:
             )
             fwd_monitor["obj"] = None
             if native_history is not None:
-                native_history.release_forward()
+                native_history.release_forward(
+                    keep_material_plans=self._reuse_simulation_for_adjoint
+                    and not is_cylindrical
+                )
             if not (need_gradient and self._reuse_simulation_for_adjoint):
                 sim_fwd.reset_meep()
                 sim_fwd = None
@@ -1771,6 +1781,10 @@ class TDAObjective:
                     native_history.signatures,
                     False,
                 )
+                if self._reuse_simulation_for_adjoint and not is_cylindrical:
+                    native_accumulator.fields.update(
+                        native_history.take_material_plans(sim_adj)
+                    )
                 balance_timing["extra_seconds"] += _run_native_adjoint_loop(
                     sim_adj,
                     native_accumulator,

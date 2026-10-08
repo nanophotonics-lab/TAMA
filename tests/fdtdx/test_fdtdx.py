@@ -50,6 +50,15 @@ def test_fdtdx_cpu(name):
     _run(f"check_{name}.py")
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("fdtdx") is None,
+    reason="Install the fdtdx extra for CPU backend checks",
+)
+@pytest.mark.parametrize("case", ("float64", "float32", "complex128", "complex64"))
+def test_fdtdx_histories(case):
+    _run("check_histories.py", "--case", case)
+
+
 @pytest.mark.fdtdx_gpu
 @pytest.mark.parametrize("case", GPU_CASES)
 def test_fdtdx_gpu(case, tmp_path):

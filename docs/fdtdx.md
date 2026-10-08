@@ -35,6 +35,10 @@ Indices are native Cartesian integer triples. The engine interpolates E/H in
 space. The backend averages adjacent H time steps to align with E.
 Callbacks receive `(Nt, N, 6)` with component order
 `Ex, Ey, Ez, Hx, Hy, Hz`. Do not average H a second time.
+For default `PointTarget` and `FieldRegionTarget` objectives, TAMA stores and
+filters only the selected component internally. A target used by any custom
+`fom_fn` retains all six components. Public `sample()` and `functional()` calls
+keep their six-component contract.
 
 | Target | Default scalar objective |
 |---|---|
@@ -66,12 +70,18 @@ interval nor other densities.
 Multiple bands share the forward FDTD calculation and a scalarized adjoint,
 independently of sparse sampling. Target histories and FIR processing cost more
 memory and work as bands or observations grow.
+Completed forward trace blocks and objective histories are released before
+the reverse pass when they are no longer needed. `target_history_bytes` reports
+the stored target history, not peak process or device memory.
 
 `sampling_interval=M` saves the design electric-field history every M FDTD time
 steps. The FDTD step and target sampling are unchanged. M=1 is the default exact
 discrete adjoint path. For M>1, each evaluation runs only the requested sparse
 stride, without a dense reference comparison. Its gradient approximation error
 depends on the sampling interval and reconstruction.
+The reverse loop reuses the reconstructed electric field from the preceding
+reverse step within each block. This changes neither the reconstruction stencil
+nor the gradient formula.
 
 Both `block_steps` and `SimulationSpec.time_steps` must be divisible by M.
 The default `block_steps` is 64. For example, M=3 requires a different block

@@ -23,6 +23,11 @@ resolve to this same module, including the original native API capability check.
 Builds are tied to the selected Python, Meep, MPI and NumPy ABI; do not distribute
 a locally built wheel as a universal binary.
 
+Native API 17 stores identical tensor forward samples once while retaining every
+material-gradient contribution. Tensor plan signatures can have more rows than
+their history width and include each contribution's history-column index.
+Reinstall the Python core and extension together.
+
 Native API 16 adds cylindrical near-to-far source transposes with radial
 quadrature and the actual cylindrical Yee-cell volume. Reinstall the Python
 core and extension together after updating.
