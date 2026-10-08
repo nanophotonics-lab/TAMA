@@ -230,7 +230,7 @@ describes the isotropic reduction and averaging controls.
 TAMA initializes this tensor operator before creating Meep fields. A custom
 `sim_factory` must return an uninitialized simulation when anisotropic
 MaterialGrid averaging is enabled. Rebuild the Meep native extension together
-with the Python package; this path requires native API 14.
+with the Python package; this path requires native API 15.
 
 In 3D, scalar-isotropic MaterialGrid averaging also uses TAMA's normalized
 volume-averaging kernel and requires an uninitialized simulation from a custom

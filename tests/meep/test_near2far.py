@@ -57,10 +57,13 @@ def make_problem(*, component=mp.Ez, dimensions=2, averaging=False, courant=0.25
 
 @pytest.mark.parametrize("component", [mp.Ez, mp.Hz])
 @pytest.mark.parametrize("courant", [0.25, 0.5])
+@pytest.mark.parametrize("t_final", [12, 24])
 @pytest.mark.mpi2
-def test_farfield_gradient_matches_two_step_directional_fd(component, courant):
+def test_farfield_gradient_matches_two_step_directional_fd(component, courant, t_final):
     mp.verbosity(0)
     obj, x, _ = make_problem(component=component, courant=courant)
+    # The shorter run retains a large final field and exposes endpoint errors.
+    obj.t_final = t_final
     direction = np.random.default_rng(716).uniform(.2, 1., x.size)
     direction /= np.linalg.norm(direction)
     value, gradient = obj.fom_and_grad(x)

@@ -133,8 +133,8 @@ minimizer such as nlopt or `scipy.optimize.minimize`.
 to its corresponding band adjoint source. This is the discrete adjoint of the
 filtered objective and avoids cross-band terms. Point and regional targets
 retain one adjoint FDTD run. A gradient evaluation containing a flux or
-eigenmode target also uses one adjoint run by causally time-centering its
-magnetic-source waveforms before combining them with the electric sources.
+eigenmode target also uses one adjoint run. Electric and magnetic covectors
+use the source times required by Meep's staggered Yee updates.
 
 By default, each point-target band FoM is:
 
@@ -197,10 +197,12 @@ temporal filters, remain sampled at every Meep time step; only the stored
 design-grid forward history is sparse.
 During the adjoint run, TAMA reconstructs the forward field at every fine
 time step with configurable finite-windowed sinc interpolation. The native
-`DesignGrid` path then applies the same one-sided/centered time derivative used by its
-full-rate path and contracts at the native Yee sites. For magnetic monitor
-polarizations, adjacent adjoint electric fields are midpoint-centered on the
-corresponding time grid. The default reconstruction is a Kaiser window with
+`DesignGrid` path then applies the forward time difference `(E[n+1]-E[n])/dt`
+used by its full-rate path and contracts at the native Yee sites. Electric
+source profiles end at `T+dt/2`; raw magnetic source profiles end at `T+dt`.
+Near-to-far sources include the DFT magnetic half-step phase and use `T+dt/2`
+for both components. These shifts transpose the discrete field updates without
+an additional average of adjacent adjoint fields. The default reconstruction is a Kaiser window with
 beta 6 and a 64-sample half-width. Reconstructed rows are streamed rather than
 materialized as a second full-rate history.
 
@@ -331,7 +333,7 @@ scalarization, normalization, and simulation-restart requirements.
 | `design` / `designs` | One `DesignGrid`, or an ordered sequence of independent nonoverlapping regions. Supply only one argument. The design vector and gradient concatenate flattened region arrays in that order. Required when computing a gradient; optional for value-only evaluation. |
 | `simulation` | Optional `SimulationSpec`. Fills the simulation factory and resolution. Its direct `make` path enables exact indexed target transposes and is required for regional, flux, eigenmode, and near-to-far gradients. Cartesian tensor/averaging and mirror restrictions are described in the [design guide](design-gradients.md). It is also required for cylindrical gradients and supplies the one forward mode `m` shared by all bands. |
 | `reuse_simulation` | Reuse the forward `Simulation` for the adjoint run when explicitly set to `True`. Default is `False`; objectives containing near-to-far targets always reuse it. Requires restart-safe, time-invariant media. A cylindrical reuse changes the mode from `m` to `-m`. |
-| `targets` | Optional ordered list of `PointTarget`, `FieldRegionTarget`, `FluxTarget`, `EigenmodeCoefficientTarget`, and/or `Near2FarTarget` entries. Each temporal target has one wavelength band. Exact targets may contain different point counts and regional output shapes. Regional, surface, and near-to-far gradients require direct `SimulationSpec` use. Flux and eigenmode targets combine electric and time-centered magnetic sources in one adjoint run. Cylindrical surface targets use radial or axial normals and explicit `2*pi*r` physical quadrature; cylindrical eigenmode targets additionally require fixed reference fields and a matching `reference_m`. Near-to-far targets require Cartesian geometry. Mixed near-to-far objectives may include both electric and magnetic point/regional targets. Without near-to-far targets, temporal non-surface targets may mix electric components or mix magnetic components, but not both groups in one adjoint run. |
+| `targets` | Optional ordered list of `PointTarget`, `FieldRegionTarget`, `FluxTarget`, `EigenmodeCoefficientTarget`, and/or `Near2FarTarget` entries. Each temporal target has one wavelength band. Exact targets may contain different point counts and regional output shapes. Regional, surface, and near-to-far gradients require direct `SimulationSpec` use. Flux and eigenmode targets combine electric and magnetic sources in one adjoint run. Cylindrical surface targets use radial or axial normals and explicit `2*pi*r` physical quadrature; cylindrical eigenmode targets additionally require fixed reference fields and a matching `reference_m`. Near-to-far targets require Cartesian geometry. Mixed near-to-far objectives may include both electric and magnetic point/regional targets. Without near-to-far targets, temporal non-surface targets may mix electric components or mix magnetic components, but not both groups in one adjoint run. |
 | `update_design` | Same role as in `TDAObjective`: writes the design vector into the active Meep design object. |
 | `sim_factory` | Same role as in `TDAObjective`: returns forward or adjoint `mp.Simulation` objects. Arbitrary factories use ordinary Cartesian `mp.Source` injection and do not support cylindrical gradient evaluation. |
 | `t_final` | Physical FDTD recording duration. Choose it from source completion and response convergence, independently of filter length. |

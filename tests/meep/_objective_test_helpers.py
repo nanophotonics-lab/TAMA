@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from tama.native_design import _centered_derivative_into
+from tama.native_design import _forward_derivative_into
 from tama.nyquist import _WindowedSincReconstructor
 
 
@@ -56,7 +56,7 @@ def _run_fake_adjoint_loop(
         for component, history in field_histories.items():
             if sampling_interval > 1:
                 current, neighbor, derivative = buffers[component]
-                forward_derivative = _centered_derivative_into(
+                forward_derivative = _forward_derivative_into(
                     reconstructors[component].sample_into,
                     fine_index,
                     fine_step_count,
@@ -65,14 +65,12 @@ def _run_fake_adjoint_loop(
                     neighbor,
                     derivative,
                 )
-            elif fine_index == 0:
-                forward_derivative = (history[1] - history[0]) / dt
             elif fine_index == fine_step_count:
-                forward_derivative = (history[-1] - history[-2]) / dt
+                forward_derivative = np.zeros_like(history[-1])
             else:
                 forward_derivative = (
-                    history[fine_index + 1] - history[fine_index - 1]
-                ) / (2.0 * dt)
+                    history[fine_index + 1] - history[fine_index]
+                ) / dt
             accumulator.accumulate(
                 active_sim,
                 component,

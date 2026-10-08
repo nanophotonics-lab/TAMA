@@ -624,7 +624,7 @@ def test_tda_flux_target_combines_electric_and_magnetic_adjoint_sources(
     assert callback_shapes == [(5,), (5,)]
     assert obj.gradient_components == (mp.Ex, mp.Ey, mp.Ez)
     assert len(simulation.make_calls) == 2
-    assert len(simulation.make_calls[1]) == 6
+    assert len(simulation.make_calls[1]) == 4
     assert all(
         isinstance(source, mp.IndexedSource)
         for sources in simulation.make_calls[1:]
@@ -633,15 +633,17 @@ def test_tda_flux_target_combines_electric_and_magnetic_adjoint_sources(
     combined_sources = simulation.make_calls[1]
     assert np.allclose(
         [source.amp_arr[0] for source in combined_sources],
-        [1.0, 0.5, 0.5, 1.0, 0.5, 0.5],
+        [1.0, 1.0, 1.0, 1.0],
     )
-    sample_times = (0.2, 0.3, 0.4)
-    for base_index, delayed_index in ((1, 2), (4, 5)):
-        base_source = combined_sources[base_index].src.src_func
-        delayed_source = combined_sources[delayed_index].src.src_func
+    # Transpose E[n] * (H[n] + H[n+1])/2, including magnetic parity.
+    expected = ([4.5, 7.5, 10.5, 13.5, 16.5, 0],
+                [-1, -3, -5, -7, -9, -5],
+                [-10.5, -17.5, -24.5, -31.5, -38.5, 0],
+                [2.5, 7.5, 12.5, 17.5, 22.5, 12.5])
+    for source, covector, delay in zip(combined_sources, expected, (.05, .1, .05, .1)):
         assert np.allclose(
-            [delayed_source(time + 0.1) for time in sample_times],
-            [base_source(time) for time in sample_times],
+            [source.src.src_func(.6 + delay - n*.1) for n in range(1, 5)],
+            covector[1:5],
         )
     assert [
         accumulator.midpoint
@@ -1105,7 +1107,7 @@ def test_tda_objective_reuses_simulation_spec_for_adjoint_run(monkeypatch):
         simulation_instance.changed_sources[0][0],
         mp.IndexedSource,
     )
-    assert np.allclose(gradient, 12.0)
+    assert np.allclose(gradient, 10.0)
 
 
 def test_tda_objective_keeps_geometric_source_for_arbitrary_factory(monkeypatch):
@@ -1149,12 +1151,11 @@ def test_tda_cylindrical_separate_adjoint_uses_negative_forward_mode(monkeypatch
     obj.evaluate(np.zeros(4), need_gradient=True)
 
     assert obj.gradient_components == (mp.Er, mp.Ep, mp.Ez)
-    assert obj._native_adjoint_midpoint is True
     assert simulation.make_calls[0] is None
     assert simulation.make_calls[1][1] == -1
     assert simulation_instances[0].m == 1
     assert simulation_instances[1].m == -1
-    assert _FakeNativeDesignAccumulator.instances[-1].midpoint is True
+    assert _FakeNativeDesignAccumulator.instances[-1].midpoint is False
 
 
 @pytest.mark.parametrize("forward_mode", [-1, 0, 1])

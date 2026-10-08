@@ -33,9 +33,11 @@ wheel contents. Refer to each dependency's distributed license and notices.
 FDTDX and Meep remain separately installed dependencies. No FDTDX engine
 implementation is vendored or patched.
 
-The upstream-derived material validation tests in tests/meep/test_upstream_*.py
+The upstream-derived material and adjoint tests in tests/meep/test_upstream_*.py
 adapt Meep v1.34.0 tests and document comparisons with its material implementation,
 at commit 3e7b7fee0da4a9b91b07acd9f71d35d674396563. Meep copyright belongs to
 Massachusetts Institute of Technology; GPL-2.0-or-later notices and pinned source
 references are retained in the adapted files. The nondispersive analytic-wave
 adaptation removes the original Lorentz response and computes new reference values.
+The adjoint ports adapt test_adjoint_solver.py and the physical gradient cases
+in test_adjoint_jax.py. Their test files document temporal and modal adaptations.

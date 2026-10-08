@@ -164,7 +164,7 @@ class _NativeDesignHistorySet:
                 state["path"] = None
 
 
-def _centered_derivative_into(
+def _forward_derivative_into(
     sample_into: Callable[[int, np.ndarray], None],
     index: int,
     last_index: int,
@@ -173,24 +173,16 @@ def _centered_derivative_into(
     neighbor: np.ndarray,
     destination: np.ndarray,
 ) -> np.ndarray:
-    """Sample a history and write its endpoint/centered time derivative."""
+    """Write the forward time difference, or zero at the final sample."""
     if index < 0 or index > last_index:
         raise IndexError("forward derivative index is outside the time grid")
-    if index == 0:
-        sample_into(0, current)
-        sample_into(1, neighbor)
+    if index == last_index:
+        destination.fill(0)
+    else:
+        sample_into(index, current)
+        sample_into(index + 1, neighbor)
         np.subtract(neighbor, current, out=destination)
         np.divide(destination, dt, out=destination)
-    elif index == last_index:
-        sample_into(index, current)
-        sample_into(index - 1, neighbor)
-        np.subtract(current, neighbor, out=destination)
-        np.divide(destination, dt, out=destination)
-    else:
-        sample_into(index + 1, current)
-        sample_into(index - 1, neighbor)
-        np.subtract(current, neighbor, out=destination)
-        np.divide(destination, 2.0 * dt, out=destination)
     return destination
 
 

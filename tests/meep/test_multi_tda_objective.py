@@ -2025,7 +2025,7 @@ def test_multi_tda_cylindrical_separate_adjoint_uses_negative_forward_mode():
     assert simulation.make_calls[1][1] == 1
     assert simulation_instances[0].m == -1
     assert simulation_instances[1].m == 1
-    assert _FakeNativeAccumulator.instances[-1].midpoint is True
+    assert _FakeNativeAccumulator.instances[-1].midpoint is False
 
 
 def test_multi_tda_cylindrical_builds_indexed_source_for_each_target():
@@ -2399,27 +2399,28 @@ def test_filter_monitor_signals_requires_expected_channel_width(channel_count):
         )
 
 
-def test_multi_tda_objective_adjoint_source_uses_reversed_forward_sample_times():
+@pytest.mark.parametrize("component", (mp.Ez, mp.Hy))
+def test_multi_tda_objective_adjoint_source_uses_reversed_forward_sample_times(
+    component,
+):
     dt = 0.05
-    actual_time = 0.37
-    sample_start = 0.07
-    seen = {}
-    class _FakeInterp:
-        def __call__(self, _):
-            return 0.0
+    actual_time = 8 * dt
+    sample_start = 2 * dt
+    sources = []
+    raw_covector = np.array([2 + 1j, -3 + 0.5j, 5 - 2j, -7 - 0.8j])
 
-    def fake_tabulated_sources(times, values):
-        seen.setdefault("times", []).append(np.array(times, copy=True))
-        seen.setdefault("values", []).append(np.array(values, copy=True))
-        return tuple(_FakeInterp() for _ in range(np.asarray(values).shape[1]))
+    def make_simulation(adjoint_sources=None):
+        if adjoint_sources is not None:
+            sources.extend(adjoint_sources)
+        return _OffsetSampleSimulation(dt, 4, sample_start, actual_time)
 
     obj = tm.MultiTDAObjective(
         update_design=lambda _: None,
         design=_make_design(),
-        sim_factory=lambda sources=None: _OffsetSampleSimulation(dt, 4, sample_start, actual_time),
+        sim_factory=make_simulation,
         t_final=sample_start + 3 * dt,
         monitor_positions=[mp.Vector3()],
-        component=mp.Ez,
+        component=component,
         wavelength_bands=[(0.4, 0.5)],
         weights=[1.0],
         kernel_length=3,
@@ -2429,17 +2430,26 @@ def test_multi_tda_objective_adjoint_source_uses_reversed_forward_sample_times()
         dt=dt,
     )
 
-    original_tabulated_sources = multi_tda_module._tabulated_cubic_sources
-    try:
-        multi_tda_module._tabulated_cubic_sources = fake_tabulated_sources
-        with _fake_native_path():
-            obj.evaluate(np.array([0.0]), need_gradient=True)
-    finally:
-        multi_tda_module._tabulated_cubic_sources = original_tabulated_sources
+    obj._filter_transpose_adjoint_signals = lambda *_: raw_covector[:, None]
+    with _fake_native_path():
+        obj.evaluate(np.array([0.0]), need_gradient=True)
 
-    assert len(seen["times"]) == 1
+    assert len(sources) == 1
     expected_forward_times = sample_start + dt * np.arange(4)
-    assert np.allclose(seen["times"][0], actual_time - expected_forward_times[::-1])
+    magnetic = component == mp.Hy
+    source_times = (
+        actual_time + (dt if magnetic else 0.5 * dt)
+        - expected_forward_times[::-1]
+    )
+    # Meep samples J at (m + 1/2) dt and M at m dt.
+    current_steps = source_times / dt - (0.0 if magnetic else 0.5)
+    assert np.allclose(current_steps, np.round(current_steps))
+    actual = sources[0].amplitude * np.array([
+        sources[0].src.src_func(time) for time in source_times
+    ])
+    expected = (-1.0 if magnetic else 1.0) * raw_covector[::-1]
+    np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
+    assert _FakeNativeAccumulator.instances[-1].midpoint is False
 
 
 def test_multi_tda_objective_stores_real_meep_histories_as_float64():
@@ -2949,11 +2959,8 @@ def test_multi_tda_objective_dense_derivative_preserves_forward_history():
     accumulator = _FakeNativeAccumulator.instances[-1]
     expected_history = history_values[:, None]
     expected_derivative = np.empty_like(history_values)
-    expected_derivative[0] = (history_values[1] - history_values[0]) / dt
-    expected_derivative[-1] = (history_values[-1] - history_values[-2]) / dt
-    expected_derivative[1:-1] = (
-        history_values[2:] - history_values[:-2]
-    ) / (2.0 * dt)
+    expected_derivative[:-1] = np.diff(history_values) / dt
+    expected_derivative[-1] = 0
     expected_derivative = expected_derivative.reshape(
         samples,
         *obj.design.shape,
@@ -3761,7 +3768,7 @@ def test_multi_tda_overlapping_flux_targets_sum_shared_adjoint_sources():
     assert [
         len(sources)
         for sources in combined_simulation.make_calls[1:]
-    ] == [18]
+    ] == [12]
     times = np.array([0.15, 0.2, 0.25])
 
     def source_signals(simulation):
@@ -3831,7 +3838,7 @@ def test_multi_tda_flux_target_combines_electric_and_magnetic_adjoint_sources():
     assert callback_shapes == [(9,), (9,)]
     assert obj.gradient_components == (mp.Ex, mp.Ey, mp.Ez)
     assert len(simulation.make_calls) == 2
-    assert [len(sources) for sources in simulation.make_calls[1:]] == [6]
+    assert [len(sources) for sources in simulation.make_calls[1:]] == [4]
     assert all(
         isinstance(source, mp.IndexedSource)
         for sources in simulation.make_calls[1:]
@@ -4753,7 +4760,8 @@ if __name__ == "__main__":
     test_multi_tda_objective_simulation_reuse_is_opt_in()
     test_multi_tda_objective_reuses_simulation_spec_for_adjoint_run()
     test_multi_tda_objective_updates_time_grid_from_meep_fields_dt()
-    test_multi_tda_objective_adjoint_source_uses_reversed_forward_sample_times()
+    test_multi_tda_objective_adjoint_source_uses_reversed_forward_sample_times(mp.Ez)
+    test_multi_tda_objective_adjoint_source_uses_reversed_forward_sample_times(mp.Hy)
     test_multi_tda_objective_cleans_history_memmaps_when_forward_run_raises()
     test_multi_tda_objective_cleans_reused_simulation_when_adjoint_run_raises()
     test_multi_tda_objective_sampling_interval_subsamples_design_grid_only()

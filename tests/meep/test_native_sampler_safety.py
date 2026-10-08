@@ -288,12 +288,12 @@ def test_tabulated_bspline_bank_matches_scipy_and_shift(complex_values):
     assert all(source(times[0] - 0.01) == 0.0 for source in sources)
     assert all(source(times[-1] + 0.01) == 0.0 for source in sources)
     assert all(
-        source(np.nextafter(times[0], -np.inf)) == 0.0
-        for source in sources
+        source(np.nextafter(times[0], -np.inf)) == pytest.approx(values[0, channel])
+        for channel, source in enumerate(sources)
     )
     assert all(
-        source(np.nextafter(times[-1], np.inf)) == 0.0
-        for source in sources
+        source(np.nextafter(times[-1], np.inf)) == pytest.approx(values[-1, channel])
+        for channel, source in enumerate(sources)
     )
 
     time_shift = 0.037
@@ -308,6 +308,49 @@ def test_tabulated_bspline_bank_matches_scipy_and_shift(complex_values):
     )
     assert shifted(times[0] + time_shift - 0.01) == 0.0
     assert shifted(times[-1] + time_shift + 0.01) == 0.0
+
+
+@pytest.mark.parametrize("complex_values", [False, True])
+@pytest.mark.parametrize("compact", [False, True])
+@pytest.mark.parametrize("magnetic", [False, True])
+def test_tabulated_source_preserves_rounded_yee_endpoint(
+    complex_values, compact, magnetic,
+):
+    dt = 1.0 / 24.0
+    final_time = 12.0
+    shift = 0.5 * dt if magnetic else 0.0
+    times = (final_time + 0.5 * dt) - np.linspace(
+        0.0, final_time, 5 if compact else 3,
+    )[::-1]
+    values = np.arange(1.0, times.size + 1.0)
+    if complex_values:
+        values = values * (1.0 + 0.25j)
+    if compact:
+        spline = spi.make_interp_spline(times, values[:, None], k=3)
+        factory = (
+            native_sampler.create_tabulated_bspline_bank
+            if complex_values
+            else native_sampler.create_tabulated_real_bspline_bank
+        )
+        source = factory(spline.t, spline.c)[0]
+        source = native_sampler.shift_tabulated_bspline(source, shift)
+    else:
+        spline = spi.CubicSpline(times + shift, values)
+        source = (
+            native_sampler.create_tabulated_cubic(spline.x, spline.c)
+            if complex_values
+            else native_sampler.create_tabulated_real_cubic_bank(
+                spline.x, spline.c[:, :, None],
+            )[0]
+        )
+
+    # Subtraction at final_time must not discard the first Yee source sample.
+    first_time = 0.5 * dt + shift
+    last_time = final_time + 0.5 * dt + shift
+    assert source(first_time) == pytest.approx(values[0], rel=2.0e-13)
+    assert source(last_time) == pytest.approx(values[-1], rel=2.0e-13)
+    assert source(first_time - dt) == 0.0
+    assert source(last_time + dt) == 0.0
 
 
 def test_tabulated_bspline_shift_retains_shared_arrays():

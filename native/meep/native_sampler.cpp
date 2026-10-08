@@ -3201,9 +3201,7 @@ struct NativeDerivativeStencils {
     int sampling_interval;
     std::ptrdiff_t first_offset;
     size_t support;
-    std::vector<double> centered;
-    std::vector<double> first_endpoint;
-    std::vector<double> last_endpoint;
+    std::vector<double> forward;
 };
 
 static std::pair<long long, int> native_floor_divmod(
@@ -3265,16 +3263,13 @@ static NativeDerivativeStencils make_native_derivative_stencils(
 ) {
     NativeDerivativeStencils result;
     result.sampling_interval = sampling_interval;
-    result.first_offset = reconstruction_first_offset - 1;
-    result.support = reconstruction_support + 2;
-    result.centered.assign(
+    result.first_offset = reconstruction_first_offset;
+    result.support = reconstruction_support + 1;
+    result.forward.assign(
         static_cast<size_t>(sampling_interval) * result.support,
         0.0
     );
-    result.first_endpoint.assign(result.support, 0.0);
-    result.last_endpoint.assign(result.support, 0.0);
-
-    const double centered_scale = 0.5 / dt;
+    const double forward_scale = 1.0 / dt;
     for (int phase = 0; phase < sampling_interval; ++phase) {
         std::vector<double> row(result.support, 0.0);
         add_native_reconstruction_stencil(
@@ -3285,7 +3280,7 @@ static NativeDerivativeStencils make_native_derivative_stencils(
             reconstruction_first_offset,
             result.first_offset,
             static_cast<long long>(phase) + 1,
-            centered_scale
+            forward_scale
         );
         add_native_reconstruction_stencil(
             row,
@@ -3294,57 +3289,17 @@ static NativeDerivativeStencils make_native_derivative_stencils(
             reconstruction_support,
             reconstruction_first_offset,
             result.first_offset,
-            static_cast<long long>(phase) - 1,
-            -centered_scale
+            static_cast<long long>(phase),
+            -forward_scale
         );
         std::copy(
             row.begin(),
             row.end(),
-            result.centered.begin() +
+            result.forward.begin() +
                 static_cast<size_t>(phase) * result.support
         );
     }
 
-    add_native_reconstruction_stencil(
-        result.first_endpoint,
-        reconstruction_weights,
-        sampling_interval,
-        reconstruction_support,
-        reconstruction_first_offset,
-        result.first_offset,
-        1,
-        1.0 / dt
-    );
-    add_native_reconstruction_stencil(
-        result.first_endpoint,
-        reconstruction_weights,
-        sampling_interval,
-        reconstruction_support,
-        reconstruction_first_offset,
-        result.first_offset,
-        0,
-        -1.0 / dt
-    );
-    add_native_reconstruction_stencil(
-        result.last_endpoint,
-        reconstruction_weights,
-        sampling_interval,
-        reconstruction_support,
-        reconstruction_first_offset,
-        result.first_offset,
-        0,
-        1.0 / dt
-    );
-    add_native_reconstruction_stencil(
-        result.last_endpoint,
-        reconstruction_weights,
-        sampling_interval,
-        reconstruction_support,
-        reconstruction_first_offset,
-        result.first_offset,
-        -1,
-        -1.0 / dt
-    );
     return result;
 }
 
@@ -3645,7 +3600,8 @@ static void fill_native_derivative_block(
         static_cast<size_t>(stencils.sampling_interval) * physical_width,
         0.0
     );
-    if (physical_width == 0) {
+    // No forward step exists after the final sample.
+    if (physical_width == 0 || coarse_index == last_coarse_index) {
         return;
     }
 
@@ -3679,7 +3635,7 @@ static void fill_native_derivative_block(
                 matrix_columns,
                 shared_size,
                 1.0,
-                stencils.centered.data() + weight_start,
+                stencils.forward.data() + weight_start,
                 static_cast<int>(stencils.support),
                 history_data,
                 matrix_columns,
@@ -3694,30 +3650,13 @@ static void fill_native_derivative_block(
                 history,
                 coarse_index,
                 stencils,
-                stencils.centered.data() +
+                stencils.forward.data() +
                     static_cast<size_t>(phase) * stencils.support,
                 complex_output,
                 destination.data() +
                     static_cast<size_t>(phase) * physical_width
-            );
+                );
         }
-    }
-
-    const std::vector<double> *endpoint = nullptr;
-    if (coarse_index == 0) {
-        endpoint = &stencils.first_endpoint;
-    } else if (coarse_index == last_coarse_index) {
-        endpoint = &stencils.last_endpoint;
-    }
-    if (endpoint) {
-        apply_native_derivative_weights_manual(
-            history,
-            coarse_index,
-            stencils,
-            endpoint->data(),
-            complex_output,
-            destination.data()
-        );
     }
 }
 
@@ -7048,6 +6987,33 @@ static PyObject *reduce_grid_sum_inplace_for_testing(
     );
 }
 
+static bool normalize_tabulated_time(
+    double query_time,
+    double support_start,
+    double support_end,
+    double time_shift,
+    double &base_time
+) {
+    const double shifted_start = support_start + time_shift;
+    const double shifted_end = support_end + time_shift;
+    // Reversing a time grid can lose endpoint precision through cancellation.
+    const double tolerance = 4.0 * std::numeric_limits<double>::epsilon() *
+        std::max({
+            std::abs(support_start), std::abs(support_end), std::abs(time_shift)
+        });
+    if (
+        query_time < shifted_start - tolerance ||
+        query_time > shifted_end + tolerance
+    ) {
+        return false;
+    }
+    base_time = std::min(
+        support_end,
+        std::max(support_start, query_time - time_shift)
+    );
+    return true;
+}
+
 typedef struct {
     PyObject_HEAD
     PyArrayObject *breaks;
@@ -7087,7 +7053,9 @@ static PyObject *tabulated_cubic_call(
     TabulatedCubicObject *self = reinterpret_cast<TabulatedCubicObject *>(self_obj);
     const npy_intp n_breaks = PyArray_DIM(self->breaks, 0);
     const double *breaks = reinterpret_cast<const double *>(PyArray_DATA(self->breaks));
-    if (time < breaks[0] || time > breaks[n_breaks - 1]) {
+    if (!normalize_tabulated_time(
+        time, breaks[0], breaks[n_breaks - 1], 0.0, time
+    )) {
         return PyComplex_FromDoubles(0.0, 0.0);
     }
 
@@ -7237,7 +7205,9 @@ static PyObject *tabulated_real_cubic_call(
     const double *breaks = reinterpret_cast<const double *>(
         PyArray_DATA(self->breaks)
     );
-    if (time < breaks[0] || time > breaks[n_breaks - 1]) {
+    if (!normalize_tabulated_time(
+        time, breaks[0], breaks[n_breaks - 1], 0.0, time
+    )) {
         return PyFloat_FromDouble(0.0);
     }
 
@@ -7406,44 +7376,6 @@ static std::complex<double> bspline_coefficient_value(npy_cdouble value) {
     return npy_to_complex(value);
 }
 
-static bool normalize_shifted_bspline_time(
-    double query_time,
-    double support_start,
-    double support_end,
-    double time_shift,
-    double &base_time
-) {
-    const double shifted_start = support_start + time_shift;
-    const double shifted_end = support_end + time_shift;
-    const double accepted_start = (
-        time_shift == 0.0
-        ? shifted_start
-        : std::nextafter(
-            shifted_start,
-            -std::numeric_limits<double>::infinity()
-        )
-    );
-    const double accepted_end = (
-        time_shift == 0.0
-        ? shifted_end
-        : std::nextafter(
-            shifted_end,
-            std::numeric_limits<double>::infinity()
-        )
-    );
-    if (
-        query_time < accepted_start ||
-        query_time > accepted_end
-    ) {
-        return false;
-    }
-    base_time = std::min(
-        support_end,
-        std::max(support_start, query_time - time_shift)
-    );
-    return true;
-}
-
 template <typename Scalar, typename StoredScalar>
 static Scalar evaluate_cubic_bspline(
     double time,
@@ -7510,7 +7442,7 @@ static PyObject *tabulated_bspline_call(
         PyArray_DATA(self->knots)
     );
     const npy_intp coefficient_count = PyArray_DIM(self->coefficients, 0);
-    if (!normalize_shifted_bspline_time(
+    if (!normalize_tabulated_time(
             time,
             knots[3],
             knots[coefficient_count],
@@ -7606,7 +7538,7 @@ static PyObject *tabulated_real_bspline_call(
         PyArray_DATA(self->knots)
     );
     const npy_intp coefficient_count = PyArray_DIM(self->coefficients, 0);
-    if (!normalize_shifted_bspline_time(
+    if (!normalize_tabulated_time(
             time,
             knots[3],
             knots[coefficient_count],
@@ -8235,7 +8167,7 @@ PyMODINIT_FUNC PyInit_native_sampler(void) {
     if (!module) {
         return nullptr;
     }
-    if (PyModule_AddIntConstant(module, "API_VERSION", 14) < 0) {
+    if (PyModule_AddIntConstant(module, "API_VERSION", 15) < 0) {
         Py_DECREF(module);
         return nullptr;
     }
