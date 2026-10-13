@@ -3191,7 +3191,7 @@ static void fill_native_derivative_block(PyArrayObject *history, long long coars
 
 static void accumulate_native_adjoint_real_row(NativeDesignPlan *plan,
                                                const double *forward_derivative,
-                                               double *accumulator, bool midpoint) {
+                                               double *entry_products, bool midpoint) {
     if (midpoint && plan->adjoint_midpoint_kind == 0) {
         plan->previous_real_adjoint_values.resize(plan->entries.size());
         for (size_t index = 0; index < plan->entries.size(); ++index) {
@@ -3211,10 +3211,8 @@ static void accumulate_native_adjoint_real_row(NativeDesignPlan *plan,
         const double adjoint_value =
             midpoint ? 0.5 * (current + plan->previous_real_adjoint_values[index])
                      : current;
-        accumulate_native_design_entry_real(
-            plan, index, entry,
-            forward_derivative[plan->history_index(index)] * adjoint_value,
-            accumulator);
+        entry_products[index] +=
+            forward_derivative[plan->history_index(index)] * adjoint_value;
         if (midpoint) {
             plan->previous_real_adjoint_values[index] = current;
         }
@@ -3842,9 +3840,18 @@ static PyObject *run_native_design_adjoint_segment(PyObject *, PyObject *args) {
     }
 
     std::vector<std::vector<double>> derivative_blocks;
+    std::vector<std::vector<double>> entry_products;
     std::vector<long long> cached_coarse_indices;
     try {
         derivative_blocks.resize(static_cast<size_t>(component_count));
+        if (use_real) {
+            entry_products.resize(static_cast<size_t>(component_count));
+            for (size_t component_index = 0; component_index < entry_products.size();
+                 ++component_index) {
+                entry_products[component_index].assign(
+                    native_plans[component_index]->entries.size(), 0.0);
+            }
+        }
         cached_coarse_indices.assign(static_cast<size_t>(component_count),
                                      std::numeric_limits<long long>::min());
     } catch (const std::bad_alloc &) {
@@ -3907,8 +3914,7 @@ static PyObject *run_native_design_adjoint_segment(PyObject *, PyObject *args) {
                 if (use_real) {
                     accumulate_native_adjoint_real_row(
                         plan, derivative,
-                        reinterpret_cast<double *>(PyArray_DATA(accumulator)) +
-                            native_offsets[static_cast<size_t>(component_index)],
+                        entry_products[static_cast<size_t>(component_index)].data(),
                         midpoint != 0);
                 } else {
                     accumulate_native_adjoint_complex_row(
@@ -3939,6 +3945,25 @@ static PyObject *run_native_design_adjoint_segment(PyObject *, PyObject *args) {
         if (fields->t - initial_meep_step != sample_count - 1) {
             throw std::runtime_error(
                 "native adjoint segment advanced an unexpected number of Meep steps");
+        }
+        if (use_real) {
+            const auto work_start = std::chrono::steady_clock::now();
+            // Spatial weights are fixed throughout this time segment.
+            for (size_t component_index = 0; component_index < entry_products.size();
+                 ++component_index) {
+                NativeDesignPlan *plan = native_plans[component_index];
+                double *destination =
+                    reinterpret_cast<double *>(PyArray_DATA(accumulator)) +
+                    native_offsets[component_index];
+                for (size_t index = 0; index < plan->entries.size(); ++index) {
+                    accumulate_native_design_entry_real(
+                        plan, index, plan->entries[index],
+                        entry_products[component_index][index], destination);
+                }
+            }
+            extra_work_seconds += std::chrono::duration<double>(
+                                      std::chrono::steady_clock::now() - work_start)
+                                      .count();
         }
     } catch (const std::bad_alloc &) {
         cleanup();

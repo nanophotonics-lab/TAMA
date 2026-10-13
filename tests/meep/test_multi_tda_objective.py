@@ -1592,8 +1592,17 @@ class _OffsetSampleSimulation(_FakeSimulation):
     def __init__(self, dt, samples, sample_start, actual_time):
         super().__init__(dt, samples, actual_time=actual_time)
         self.sample_start = sample_start
+        self.run_finished = False
+
+    def run(self, callback, until):
+        self.run_finished = False
+        self.run_until = until
+        super().run(callback, until)
+        self.run_finished = True
 
     def meep_time(self):
+        if self.run_finished:
+            return self.actual_time
         return self.sample_start + self.index * self.dt
 
 
@@ -2369,19 +2378,26 @@ def test_filter_monitor_signals_requires_expected_channel_width(channel_count):
 
 
 @pytest.mark.parametrize("component", (mp.Ez, mp.Hy))
+@pytest.mark.parametrize("rounded_time", (False, True))
 def test_multi_tda_objective_adjoint_source_uses_reversed_forward_sample_times(
     component,
+    rounded_time,
 ):
     dt = 0.05
     actual_time = 8 * dt
     sample_start = 2 * dt
     sources = []
+    simulations = []
     raw_covector = np.array([2 + 1j, -3 + 0.5j, 5 - 2j, -7 - 0.8j])
 
     def make_simulation(adjoint_sources=None):
         if adjoint_sources is not None:
             sources.extend(adjoint_sources)
-        return _OffsetSampleSimulation(dt, 4, sample_start, actual_time)
+        sim = _OffsetSampleSimulation(dt, 4, sample_start, actual_time)
+        if rounded_time:
+            sim.round_time = lambda: float(np.float32(actual_time))
+        simulations.append(sim)
+        return sim
 
     obj = tm.MultiTDAObjective(
         update_design=lambda _: None,
@@ -2418,6 +2434,9 @@ def test_multi_tda_objective_adjoint_source_uses_reversed_forward_sample_times(
     expected = (-1.0 if magnetic else 1.0) * raw_covector[::-1]
     np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
     assert _FakeNativeAccumulator.instances[-1].midpoint is False
+    assert simulations[-1].run_until == (
+        float(np.float32(actual_time)) if rounded_time else actual_time
+    )
 
 
 def test_multi_tda_objective_stores_real_meep_histories_as_float64():

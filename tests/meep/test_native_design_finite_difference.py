@@ -7,6 +7,7 @@ import pytest
 import tama as tm
 import tama.multi_tda_objective as multi_tda_module
 import tama.tda_objective as tda_module
+from tama import native_sampler
 from tama.native_design import _forward_derivative_into
 from tama.nyquist import _WindowedSincReconstructor
 from tama.sampling_grid import NativeDesignField
@@ -398,6 +399,54 @@ def test_native_tda_reuse_matches_separate_simulations():
         rtol=1.0e-11,
         atol=1.0e-12,
     )
+
+
+@pytest.mark.parametrize("midpoint", [False, True])
+def test_native_real_adjoint_segments_preserve_existing_accumulator(midpoint):
+    mp.verbosity(0)
+    fine_step_count = 400
+
+    def run_segments(segment_sizes):
+        objective = _make_problem("tda", mp.Ez)
+        sim = objective._simulation_spec.make()
+        field = None
+        try:
+            sim.init_sim()
+            field = NativeDesignField(sim, mp.Ez, objective.design)
+            assert field.fields_are_real
+            history = np.arange(fine_step_count + 1, dtype=float)[:, None] * (
+                np.linspace(0.5, 1.5, field.local_size)[None, :]
+            )
+            accumulator = np.full(np.prod(objective.design.shape), 0.25)
+            start = fine_step_count
+            for count in segment_sizes:
+                native_sampler.run_native_design_adjoint_segment(
+                    (field.ensure_plan(),),
+                    (history,),
+                    np.ones((1, 1)),
+                    accumulator,
+                    1,
+                    0,
+                    fine_step_count,
+                    start,
+                    count,
+                    sim.fields.dt,
+                    midpoint,
+                )
+                start -= count
+                if start >= 0:
+                    sim.fields.step()
+            assert start == -1
+            return accumulator
+        finally:
+            if field is not None:
+                field.release()
+            sim.reset_meep()
+
+    whole = run_segments([fine_step_count + 1])
+    split = run_segments([151, 250])
+    assert mp.sum_to_all(float(np.linalg.norm(whole - 0.25))) > 1.0e-8
+    np.testing.assert_allclose(split, whole, rtol=1.0e-11, atol=1.0e-12)
 
 
 @pytest.mark.parametrize(

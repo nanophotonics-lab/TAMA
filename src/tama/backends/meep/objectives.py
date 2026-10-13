@@ -123,6 +123,12 @@ def _sample_time_from_simulation(
     return float(sample_index) * sample_dt
 
 
+def _adjoint_source_time(sim: mp.Simulation) -> float:
+    # round_time is for termination; its float32 rounding shifts source samples.
+    meep_time = getattr(sim, "meep_time", None)
+    return float(meep_time() if callable(meep_time) else sim.round_time())
+
+
 def _epsilon_from_medium(medium: mp.Medium) -> float:
     epsilon_diag = getattr(medium, "epsilon_diag", None)
     if epsilon_diag is None:

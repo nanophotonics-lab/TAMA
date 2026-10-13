@@ -10,6 +10,7 @@ from scipy.fft import fft, ifft, irfft, next_fast_len, rfft
 from scipy.signal import firwin2
 
 from .objectives import (
+    _adjoint_source_time,
     _adjoint_indexed_profile_sources,
     _adjoint_point_sources,
     _electric_components,
@@ -4093,6 +4094,7 @@ class MultiTDAObjective:
 
                 sim_fwd.run(record_fwd, until=run_until)
             actual_time = sim_fwd.round_time()
+            source_time = _adjoint_source_time(sim_fwd)
             if not distributed_history_active:
                 monitor_history = monitor_history[: sample_count["value"]]
             if distributed_history_active:
@@ -4277,7 +4279,7 @@ class MultiTDAObjective:
                         near_fns,
                         near_signals,
                         np.asarray(band_coeffs)[list(self._near2far_indices)],
-                        actual_time,
+                        source_time,
                         dt,
                     )
                     band_coeffs = np.asarray(band_coeffs)[list(self._temporal_indices)]
@@ -4338,7 +4340,7 @@ class MultiTDAObjective:
                     distributed_adjoint_histories,
                     adjoint_indexed_stencils,
                     monitor_times,
-                    actual_time,
+                    source_time,
                     dt,
                     effective_adjoint_source_sizes,
                     effective_adjoint_source_amplitudes,
@@ -4350,7 +4352,7 @@ class MultiTDAObjective:
                     adjoint_indexed_stencils,
                     adj_signals,
                     monitor_times,
-                    actual_time,
+                    source_time,
                     dt,
                     effective_adjoint_source_amplitudes,
                 )
@@ -4364,7 +4366,7 @@ class MultiTDAObjective:
                     ]
                 )
                 adj_signals = source_parity[np.newaxis, :] * adj_signals[::-1]
-                t_array = float(actual_time) + 0.5 * dt - monitor_times[::-1]
+                t_array = source_time + 0.5 * dt - monitor_times[::-1]
                 active_source_indices = [
                     sample_index
                     for sample_index in range(len(self._monitor_target_positions))
