@@ -1467,16 +1467,63 @@ def test_tda_objective_value_only_reuse_resets_without_restart():
     assert simulation_instance.events == ["run", "reset_meep"]
 
 
-def test_tda_objective_cleans_reused_simulation_when_adjoint_run_raises(monkeypatch):
+@pytest.mark.parametrize("reuse_simulation", [False, True])
+@pytest.mark.parametrize("need_gradient, collection_limit", [(False, 2), (True, 3)])
+def test_tda_objective_collects_only_at_resource_transitions(
+    monkeypatch, reuse_simulation, need_gradient, collection_limit
+):
+    _install_fake_native_backend(monkeypatch)
+    simulations = []
+    collections = []
+    collect = tda_module.gc.collect
+
+    def make_simulation(sources=None):
+        simulation = _ReusableSimulation(0.1, 6)
+        simulations.append(simulation)
+        return simulation
+
+    def record_collection():
+        collections.append(
+            tuple(
+                history.cleanup_calls
+                for history in _FakeNativeDesignHistorySet.instances
+            )
+        )
+        return collect()
+
+    monkeypatch.setattr(tda_module.gc, "collect", record_collection)
+    obj = _make_minimal_tda(
+        sim_factory=None,
+        simulation=_FakeSimulationSpec(make_simulation),
+        reuse_simulation=reuse_simulation,
+    )
+
+    value, gradient = obj.evaluate(np.zeros(4), need_gradient=need_gradient)
+
+    assert np.isfinite(value)
+    assert all(simulation.events[-1] == "reset_meep" for simulation in simulations)
+    if need_gradient:
+        assert np.allclose(gradient, 10.0)
+        assert collections[-1] == (1,)
+        assert _FakeNativeDesignAccumulator.instances[0].release_calls >= 1
+    else:
+        assert gradient is None
+    assert 1 <= len(collections) <= collection_limit
+
+
+@pytest.mark.parametrize("failing_run", [1, 2])
+def test_tda_objective_cleans_reused_simulation_when_run_raises(
+    monkeypatch, failing_run
+):
     _install_fake_native_backend(monkeypatch)
 
     class _FailingAdjointSimulation(_ReusableSimulation):
         def run(self, callback, until):
             self.events.append("run")
-            if self.events.count("run") == 2:
+            if self.events.count("run") == failing_run:
                 self.step = 0
                 callback(self)
-                raise RuntimeError("adjoint simulation failed")
+                raise RuntimeError("simulation failed")
             _MultiSampleSimulation.run(self, callback, until)
 
     simulation_instance = _FailingAdjointSimulation(0.1, 6)
@@ -1490,18 +1537,25 @@ def test_tda_objective_cleans_reused_simulation_when_adjoint_run_raises(monkeypa
     try:
         obj.evaluate(np.zeros(4), need_gradient=True)
     except RuntimeError as exc:
-        assert "adjoint simulation failed" in str(exc)
+        assert "simulation failed" in str(exc)
     else:
-        raise AssertionError("expected adjoint simulation failure")
+        raise AssertionError("expected simulation failure")
 
-    assert simulation_instance.events == [
-        "run",
-        "restart_fields",
-        "clear_dft_monitors",
-        "change_sources",
-        "run",
-        "reset_meep",
-    ]
+    if failing_run == 1:
+        assert simulation_instance.events == ["run", "reset_meep"]
+    else:
+        assert simulation_instance.events == [
+            "run",
+            "restart_fields",
+            "clear_dft_monitors",
+            "change_sources",
+            "run",
+            "reset_meep",
+        ]
+        assert _FakeNativeDesignAccumulator.instances[0].release_calls >= 1
+    history = _FakeNativeDesignHistorySet.instances[0]
+    assert history.release_calls >= 1
+    assert history.cleanup_calls == 1
 
 
 def test_tda_objective_prefers_meep_fields_dt_over_resolution_fallback():
@@ -1970,6 +2024,66 @@ def test_point_target_adjoint_source_uses_reversed_forward_sample_times():
 
     assert np.allclose(seen["times"], [0.15, 0.4, 0.65])
     assert np.allclose(seen["values"], [3.0, 2.0, 1.0])
+
+
+@pytest.mark.parametrize("kind", ("point", "regional", "flux"))
+def test_adjoint_source_origin_keeps_precision_without_changing_stop_time(
+    monkeypatch, kind
+):
+    _install_fake_native_backend(monkeypatch)
+    dt, steps = 0.05, 8
+    precise_time = (steps - 1) * dt
+    rounded_time = float(np.float32(precise_time))
+    assert precise_time != rounded_time
+    simulations, origins = [], []
+
+    class Simulation(_FluxSampleSimulation):
+        def run(self, callback, until):
+            self.run_until = until
+            super().run(callback, until)
+
+        def meep_time(self):
+            return self.step * dt
+
+        def round_time(self):
+            return rounded_time
+
+    def make_simulation(sources=None):
+        sim = Simulation(dt, steps)
+        simulations.append(sim)
+        return sim
+
+    def capture_sources(target, signal, times, source_time, **kwargs):
+        origins.append((target.component, source_time, np.array(times)))
+        return []
+
+    for target_type in (
+        objectives_module._PointTarget,
+        objectives_module._FieldRegionTarget,
+    ):
+        monkeypatch.setattr(target_type, "adjoint_sources", capture_sources)
+    if kind == "flux":
+        target = tm.FluxTarget((mp.Vector3(),), normal=mp.Vector3(1))
+    elif kind == "regional":
+        target = tm.FieldRegionTarget((mp.Vector3(),), mp.Hz)
+    else:
+        target = tm.PointTarget(mp.Vector3(), mp.Ez)
+    objective = tm.TDAObjective(
+        design=_FakeDesign(),
+        target=target,
+        simulation=_FakeSimulationSpec(make_simulation),
+        t_final=0.3,
+        dt=dt,
+        chunk_balancer=None,
+    )
+    objective.fom_and_grad(np.zeros(4))
+
+    assert origins
+    for component, source_time, times in origins:
+        delay = dt if objectives_module._is_magnetic_component(component) else 0.5 * dt
+        assert source_time == precise_time + delay
+        assert times[-1] < precise_time
+    assert simulations[-1].run_until == rounded_time
 
 
 def test_point_target_magnetic_adjoint_source_has_opposite_parity():

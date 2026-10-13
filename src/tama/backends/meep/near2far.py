@@ -28,6 +28,7 @@ from .design_collection import (
     _collection_gradient_scale as _native_design_gradient_scale,
 )
 from . import native_sampler
+from .objectives import _adjoint_source_time
 from ...nyquist import _aligned_run_until
 
 
@@ -365,6 +366,7 @@ def evaluate_near2far(
         else:
             sim.run(until=run_until)
         actual_time = sim.round_time()
+        source_time = _adjoint_source_time(sim)
         objective.last_actual_time = actual_time
         far_fields, values = farfield_values(sim, monitors, targets, fom_fns, dt)
         objective.last_far_fields = (
@@ -406,7 +408,7 @@ def evaluate_near2far(
             fom_fns,
             adjoint_signal_fns,
             coefficients,
-            actual_time,
+            source_time,
             dt,
         )
         # Keep the exact forward chunk/index ownership used by near_sourcedata.

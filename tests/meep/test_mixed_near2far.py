@@ -65,6 +65,52 @@ def _scalarize(values):
 
 
 @pytest.mark.mpi2
+@pytest.mark.parametrize("mixed_targets", (False, True))
+def test_farfield_source_origin_keeps_precision_without_changing_stop_time(
+    monkeypatch, mixed_targets
+):
+    temporal, far, common = _problem()
+    common["t_final"] = 24.01
+    if mixed_targets:
+        objective = tm.MultiTDAObjective(
+            targets=[temporal, far],
+            wavelength_bands=[(1.1, 2.0), None],
+            weights=[1.0, 1.0],
+            kernel_length=31,
+            **common,
+        )
+        module = multi_module
+    else:
+        objective = tm.TDAObjective(target=far, **common)
+        module = far_module
+    original_sources = far_module.farfield_adjoint_sources
+    original_loop = module._run_native_adjoint_loop
+    terminal_times = []
+
+    def sources(sim, monitors, targets, fields, fns, signals, coeffs, source_time, dt):
+        precise, rounded = sim.meep_time(), sim.round_time()
+        assert precise != rounded
+        assert source_time == precise
+        terminal_times.append(rounded)
+        return original_sources(
+            sim, monitors, targets, fields, fns, signals, coeffs, source_time, dt
+        )
+
+    def adjoint_loop(*args, **kwargs):
+        assert kwargs["actual_time"] == terminal_times[-1]
+        return original_loop(*args, **kwargs)
+
+    monkeypatch.setattr(far_module, "farfield_adjoint_sources", sources)
+    monkeypatch.setattr(module, "_run_native_adjoint_loop", adjoint_loop)
+    x = np.random.default_rng(821).uniform(0.25, 0.75, 9)
+    value, gradient = objective.fom_and_grad(x)
+    assert terminal_times
+    assert objective.last_actual_time == terminal_times[-1]
+    assert np.isfinite(value) and np.all(np.isfinite(gradient))
+    np.testing.assert_allclose(objective.fom(x), value, rtol=1e-12)
+
+
+@pytest.mark.mpi2
 @pytest.mark.parametrize("kind", ["field", "magnetic", "flux", "eigenmode"])
 def test_mixed_targets_match_separate_nonlinear_objectives_and_fd(kind):
     mp.verbosity(0)

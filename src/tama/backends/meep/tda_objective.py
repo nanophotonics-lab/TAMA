@@ -29,6 +29,7 @@ from .native_design import (
     _native_forward_step_count,
 )
 from .objectives import (
+    _adjoint_source_time,
     _FieldRegionTarget,
     _PointTarget,
     _electric_components,
@@ -1051,6 +1052,7 @@ class TDAObjective:
 
                 sim_fwd.run(record_fwd, until=run_until)
             actual_time = sim_fwd.round_time()
+            source_time = _adjoint_source_time(sim_fwd)
             monitor_history = monitor_history[: sample_count["count"]]
             monitor_history_shape = monitor_history.shape
             monitor_history = (
@@ -1202,7 +1204,7 @@ class TDAObjective:
                 component_amplitudes = amplitudes_by_component[component]
                 # Meep evaluates electric currents halfway through a step;
                 # raw magnetic monitor samples precede E by half a step.
-                source_end_time = actual_time + dt * (
+                source_end_time = source_time + dt * (
                     1.0 if _is_magnetic_component(component) else 0.5
                 )
                 adjoint_sources.extend(
@@ -1639,6 +1641,7 @@ class TDAObjective:
                 sim_fwd.run(record_fwd, until=run_until)
 
             actual_time = sim_fwd.round_time()
+            source_time = _adjoint_source_time(sim_fwd)
             monitor_history = monitor_history[: sample_count["count"]]
             monitor_history = fwd_monitor["obj"].reduce_history(monitor_history)
             full_monitor_times = np.asarray(monitor_times, dtype=float)
@@ -1723,7 +1726,7 @@ class TDAObjective:
                         "for cubic adjoint-source interpolation; increase t_final"
                     )
 
-                source_end_time = actual_time + dt * (
+                source_end_time = source_time + dt * (
                     1.0 if _is_magnetic_component(self.objective.component) else 0.5
                 )
                 if self._is_regional_target:
@@ -1748,7 +1751,6 @@ class TDAObjective:
                         ),
                     )
                 del monitor_history
-                gc.collect()
 
                 if self._reuse_simulation_for_adjoint:
                     if is_cylindrical and forward_mode != 0:
@@ -1799,7 +1801,6 @@ class TDAObjective:
                 )
                 grad_grid = native_accumulator.reduce()
                 native_accumulator.release()
-                gc.collect()
                 if balance_enabled:
                     self._simulation_spec.chunk_layout = self.chunk_balancer.rebalance(
                         sim_adj,
@@ -1816,10 +1817,8 @@ class TDAObjective:
 
                 gradient = grad_grid.real.flatten() * dt * gradient_scale
                 del grad_grid
-                gc.collect()
             else:
                 del monitor_history
-                gc.collect()
 
             return objective_value, gradient
         finally:
@@ -1829,7 +1828,8 @@ class TDAObjective:
                 native_history.release_forward()
             if fwd_monitor is not None:
                 fwd_monitor["obj"] = None
-            gc.collect()
+            if sim_fwd is not None or sim_adj is not None:
+                gc.collect()
             try:
                 try:
                     if sim_adj is not None:
