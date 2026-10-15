@@ -1216,12 +1216,19 @@ static void build_native_material_jacobian_plan(NativeDesignPlan *plan,
                                                 const std::array<double, 3> &size,
                                                 double tol, int maxeval, double step) {
     NativeMaterialVolumeRestore restore_volume{geps};
+    const bool is_cylindrical = plan->fields->gv.dim == meep::Dcyl;
     const std::array<int, 3> shape = {
         static_cast<int>(plan->nx),
-        static_cast<int>(plan->ny),
-        static_cast<int>(plan->nz),
+        static_cast<int>(is_cylindrical ? 1 : plan->ny),
+        static_cast<int>(is_cylindrical ? plan->ny : plan->nz),
     };
     const meep::direction a = meep::component_direction(plan->component);
+    const int diagonal_axis = static_cast<int>(a) % 3;
+    const std::array<meep::direction, 3> directions = {
+        is_cylindrical ? meep::R : meep::X,
+        is_cylindrical ? meep::P : meep::Y,
+        meep::Z,
+    };
     const meep::component adjoint_component = meep::direction_component(meep::Dx, a);
     for (int chunk_idx = 0; chunk_idx < plan->fields->num_chunks; ++chunk_idx) {
         meep::fields_chunk *chunk = plan->fields->chunks[chunk_idx];
@@ -1237,13 +1244,20 @@ static void build_native_material_jacobian_plan(NativeDesignPlan *plan,
         const std::ptrdiff_t stride_a = chunk->gv.stride(a);
         LOOP_OVER_VOL_OWNED(chunk->gv, plan->component, idx) {
             IVEC_LOOP_ILOC(chunk->gv, iloc);
+            IVEC_LOOP_LOC(chunk->gv, location);
             const double mirror_weight = native_mirror_measure(plan->fields, iloc);
-            if (mirror_weight == 0.0) {
+            const bool at_axis = is_cylindrical && std::abs(location.r()) <= 1e-10;
+            if (mirror_weight == 0.0 ||
+                (at_axis && !(plan->fields->m == 0 && plan->component == meep::Ez))) {
                 continue;
             }
             // Diagonal coefficients live at the Yee point; off-diagonals live
             // at the two shared vertices in Meep's electric OFFDIAG stencil.
             for (int node = -1; node < 2; ++node) {
+                // Meep applies only the diagonal constitutive update at r=0.
+                if (at_axis && node != -1) {
+                    continue;
+                }
                 const meep::ivec coefficient_location =
                     node == -1 ? iloc : (node == 0 ? iloc - shift : iloc + shift);
                 const meep::volume voxel = chunk->gv.dV(coefficient_location, 1.0);
@@ -1258,7 +1272,7 @@ static void build_native_material_jacobian_plan(NativeDesignPlan *plan,
                                                 voxel, indices, count, tol, maxeval,
                                                 step, derivatives);
                 for (int b = 0; b < 3; ++b) {
-                    if ((node == -1) != (b == static_cast<int>(a))) {
+                    if ((node == -1) != (b == diagonal_axis)) {
                         continue;
                     }
                     NativeDesignBuildRecord record;
@@ -1267,7 +1281,7 @@ static void build_native_material_jacobian_plan(NativeDesignPlan *plan,
                     record.entry.integration_weight =
                         mirror_weight *
                         chunk->gv.dV(plan->component, idx).full_volume();
-                    record.signature = native_design_signature(iloc, false);
+                    record.signature = native_design_signature(iloc, is_cylindrical);
                     record.signature[plan->dimensions] = b;
                     record.signature[plan->dimensions + 1] = node;
                     for (size_t j = 0; j < count; ++j) {
@@ -1280,11 +1294,11 @@ static void build_native_material_jacobian_plan(NativeDesignPlan *plan,
                     }
                     NativeDesignForwardSample sample;
                     sample.component = meep::direction_component(
-                        meep::Dx, static_cast<meep::direction>(b));
+                        meep::Dx, directions[b]);
                     sample.first_index = idx + (node == 1 ? stride_a : 0);
                     sample.second_index =
                         sample.first_index -
-                        chunk->gv.stride(static_cast<meep::direction>(b));
+                        chunk->gv.stride(directions[b]);
                     sample.sum_pair = node != -1;
                     if (!chunk->f[sample.component][0]) {
                         throw std::runtime_error(
@@ -1940,12 +1954,12 @@ static PyObject *create_native_design_plan(PyObject *, PyObject *args) {
     const bool is_3d = fields->gv.dim == meep::D3;
     const bool is_cylindrical = fields->gv.dim == meep::Dcyl;
     if (material_jacobian &&
-        (is_cylindrical || !std::isfinite(subpixel_tol) || subpixel_tol <= 0.0 ||
+        (!std::isfinite(subpixel_tol) || subpixel_tol <= 0.0 ||
          subpixel_maxeval <= 0 || !std::isfinite(material_derivative_step) ||
          material_derivative_step <= 0.0 || material_derivative_step > 0.25)) {
         PyErr_SetString(
             PyExc_ValueError,
-            "material Jacobian plans require Cartesian geometry and valid subpixel/derivative controls");
+            "material Jacobian plans require valid subpixel/derivative controls");
         return nullptr;
     }
     if (!is_2d && !is_3d && !is_cylindrical) {
@@ -2171,8 +2185,10 @@ static PyObject *create_native_design_plan(PyObject *, PyObject *args) {
                     NativeDesignBuildRecord record;
                     record.entry.chunk_idx = chunk_idx;
                     record.entry.field_index = idx;
+                    // The m=0 Ez axis cell has finite volume and an independent update.
                     record.entry.integration_weight =
-                        is_cylindrical && std::abs(location.r()) <= coordinate_tolerance
+                        is_cylindrical && std::abs(location.r()) <= coordinate_tolerance &&
+                                !(fields->m == 0 && component == meep::Ez)
                             ? 0.0
                             : mirror_weight *
                                   chunk->gv.dV(component, idx).full_volume();
@@ -3256,6 +3272,164 @@ static void accumulate_native_adjoint_complex_row(NativeDesignPlan *plan,
     }
 }
 
+struct NativeCylindricalAdjointCorrection {
+    int chunk_idx;
+    meep::component output_component;
+    meep::component input_component;
+    std::ptrdiff_t output_index;
+    std::array<std::ptrdiff_t, 4> input_indices;
+    std::array<double, 4> coefficients;
+};
+
+static bool native_constitutive_point_has_pml(const meep::fields_chunk *chunk,
+                                            meep::component component,
+                                            std::ptrdiff_t index) {
+    const meep::ivec location = chunk->gv.iloc(component, index);
+    for (const auto direction : {meep::R, meep::Z}) {
+        if (chunk->s->sigsize[direction] <= 1) {
+            continue;
+        }
+        const int k = location.in_direction(direction) -
+                      chunk->gv.little_corner().in_direction(direction);
+        if (chunk->s->sig[direction][k] != 0.0 ||
+            chunk->s->kap[direction][k] != 1.0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static std::vector<NativeCylindricalAdjointCorrection>
+build_native_cylindrical_adjoint_corrections(meep::fields *fields) {
+    std::vector<NativeCylindricalAdjointCorrection> corrections;
+    const std::array<meep::direction, 3> directions = {meep::R, meep::P, meep::Z};
+    bool integrated_sources = false;
+    for (const meep::src_time *source = fields->sources; source; source = source->next) {
+        integrated_sources = integrated_sources || source->is_integrated;
+    }
+    for (int chunk_idx = 0; chunk_idx < fields->num_chunks; ++chunk_idx) {
+        meep::fields_chunk *chunk = fields->chunks[chunk_idx];
+        if (!chunk || !chunk->is_mine()) {
+            continue;
+        }
+        for (const auto a : directions) {
+            const meep::component ea = meep::direction_component(meep::Ex, a);
+            const meep::component da = meep::direction_component(meep::Dx, a);
+            if (!chunk->f[ea][0]) {
+                continue;
+            }
+            const std::ptrdiff_t stride_a = chunk->gv.stride(a);
+            LOOP_OVER_VOL_OWNED(chunk->gv, ea, idx) {
+                const bool output_axis = std::abs(chunk->gv.loc(ea, idx).r()) <= 1e-10;
+                const double output_volume = chunk->gv.dV(ea, idx).full_volume();
+                for (const auto b : directions) {
+                    if (a == b) {
+                        continue;
+                    }
+                    const meep::component eb = meep::direction_component(meep::Ex, b);
+                    const meep::component db = meep::direction_component(meep::Dx, b);
+                    const meep::realnum *forward = chunk->s->chi1inv[ea][b];
+                    const meep::realnum *transpose = chunk->s->chi1inv[eb][a];
+                    if ((!forward && !transpose) || !chunk->f[db][0]) {
+                        continue;
+                    }
+                    const std::ptrdiff_t stride_b = chunk->gv.stride(b);
+                    NativeCylindricalAdjointCorrection correction{
+                        chunk_idx, ea, db, idx,
+                        {idx, idx - stride_b, idx + stride_a,
+                         idx + stride_a - stride_b},
+                        {0.0, 0.0, 0.0, 0.0}};
+                    bool nonzero = false;
+                    for (size_t k = 0; k < 4; ++k) {
+                        const std::ptrdiff_t input_index = correction.input_indices[k];
+                        const std::ptrdiff_t coefficient_index =
+                            idx + (k >= 2 ? stride_a : 0);
+                        if (coefficient_index < 0 ||
+                            static_cast<size_t>(coefficient_index) >= chunk->gv.ntot()) {
+                            throw std::runtime_error(
+                                "cylindrical adjoint constitutive stencil exceeds its field halo");
+                        }
+                        if ((!forward || output_axis || forward[coefficient_index] == 0.0) &&
+                            (!transpose || transpose[coefficient_index] == 0.0)) {
+                            continue;
+                        }
+                        if (input_index < 0 ||
+                            static_cast<size_t>(input_index) >= chunk->gv.ntot()) {
+                            throw std::runtime_error(
+                                "cylindrical adjoint constitutive stencil exceeds its field halo");
+                        }
+                        const double input_radius = chunk->gv.loc(eb, input_index).r();
+                        const double forward_coefficient =
+                            forward && !output_axis ? forward[coefficient_index] : 0.0;
+                        const double transpose_coefficient =
+                            transpose && input_radius > 1e-10
+                                ? transpose[coefficient_index]
+                                : 0.0;
+                        // The component/index overload returns zero for MPI halo points.
+                        const double input_volume =
+                            chunk->gv.dV(chunk->gv.iloc(eb, input_index)).full_volume();
+                        // The radial Yee volumes differ across off-diagonal pairs.
+                        correction.coefficients[k] =
+                            0.25 * (transpose_coefficient * input_volume / output_volume -
+                                    forward_coefficient);
+                        if (correction.coefficients[k] == 0.0) {
+                            continue;
+                        }
+                        nonzero = true;
+                        if (native_constitutive_point_has_pml(chunk, ea, idx) ||
+                            native_constitutive_point_has_pml(chunk, eb, input_index)) {
+                            throw std::runtime_error(
+                                "cylindrical off-diagonal adjoint correction does not support material overlapping PML");
+                        }
+                    }
+                    if (!nonzero) {
+                        continue;
+                    }
+                    if (chunk->pol[meep::E_stuff] || chunk->f_minus_p[da][0] ||
+                        chunk->f_minus_p[db][0]) {
+                        throw std::runtime_error(
+                            "cylindrical off-diagonal adjoint correction requires displacement fields without polarization subtraction");
+                    }
+                    if (integrated_sources) {
+                        throw std::runtime_error(
+                            "cylindrical off-diagonal adjoint correction does not support integrated adjoint sources");
+                    }
+                    if (chunk->f[ea][0] == chunk->f[da][0]) {
+                        throw std::runtime_error(
+                            "cylindrical off-diagonal adjoint correction requires separate electric and displacement arrays");
+                    }
+                    corrections.push_back(correction);
+                }
+            }
+        }
+    }
+    return corrections;
+}
+
+static void apply_native_cylindrical_adjoint_corrections(
+    meep::fields *fields,
+    const std::vector<NativeCylindricalAdjointCorrection> &corrections) {
+    // E boundary exchange can overwrite D halos in chunks whose E/D arrays alias.
+    fields->step_boundaries(meep::D_stuff);
+    for (const auto &correction : corrections) {
+        meep::fields_chunk *chunk = fields->chunks[correction.chunk_idx];
+        for (int part = 0; part < (fields->is_real ? 1 : 2); ++part) {
+            const meep::realnum *input = chunk->f[correction.input_component][part];
+            double delta = 0.0;
+            for (size_t k = 0; k < 4; ++k) {
+                if (correction.coefficients[k] != 0.0) {
+                    delta += correction.coefficients[k] * input[correction.input_indices[k]];
+                }
+            }
+            chunk->f[correction.output_component][part][correction.output_index] += delta;
+            if (chunk->f_w[correction.output_component][part]) {
+                chunk->f_w[correction.output_component][part][correction.output_index] += delta;
+            }
+        }
+    }
+    fields->step_boundaries(meep::E_stuff);
+}
+
 static PyObject *native_forward_step_count(PyObject *, PyObject *args) {
     unsigned long long fields_addr = 0;
     double run_until = 0.0;
@@ -3873,6 +4047,33 @@ static PyObject *run_native_design_adjoint_segment(PyObject *, PyObject *args) {
     }
     const long long initial_meep_step = fields->t;
     const int processor_count = meep::count_processors();
+    std::vector<NativeCylindricalAdjointCorrection> cylindrical_corrections;
+    bool correct_cylindrical_material =
+        fields->gv.dim == meep::Dcyl &&
+        std::any_of(native_plans.begin(), native_plans.end(),
+                    [](const NativeDesignPlan *plan) { return plan->material_jacobian; });
+    if (correct_cylindrical_material) {
+        const auto correction_setup_start = std::chrono::steady_clock::now();
+        try {
+            cylindrical_corrections = build_native_cylindrical_adjoint_corrections(fields);
+        } catch (const std::bad_alloc &) {
+            PyErr_NoMemory();
+        } catch (const std::exception &exc) {
+            PyErr_SetString(PyExc_RuntimeError, exc.what());
+        }
+        if (meep::or_to_all(PyErr_Occurred() != nullptr)) {
+            if (!PyErr_Occurred()) {
+                PyErr_SetString(PyExc_RuntimeError,
+                                "cylindrical adjoint material correction failed on another MPI rank");
+            }
+            cleanup();
+            return nullptr;
+        }
+        correct_cylindrical_material = meep::or_to_all(!cylindrical_corrections.empty());
+        extra_work_seconds += std::chrono::duration<double>(
+                                  std::chrono::steady_clock::now() - correction_setup_start)
+                                  .count();
+    }
     try {
         for (long long sample_index = 0; sample_index < sample_count; ++sample_index) {
             const bool interrupted =
@@ -3885,6 +4086,9 @@ static PyObject *run_native_design_adjoint_segment(PyObject *, PyObject *args) {
                 return nullptr;
             }
             const auto work_start = std::chrono::steady_clock::now();
+            if (correct_cylindrical_material) {
+                apply_native_cylindrical_adjoint_corrections(fields, cylindrical_corrections);
+            }
             const long long fine_index = start_fine_index - sample_index;
             const long long coarse_index = fine_index / sampling_interval;
             const int phase = static_cast<int>(fine_index % sampling_interval);

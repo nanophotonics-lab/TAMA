@@ -91,7 +91,7 @@ inline double projected(double value, double beta, double eta) {
 inline number projection_integrand(integer, number *x, void *data) {
     const auto &p = *static_cast<ProjectionAverage *>(data);
     double position = x[0], weight;
-    if (p.dim == meep::D2) {
+    if (p.dim == meep::D2 || p.dim == meep::Dcyl) {
         position = std::sin(x[0]);
         const double cosine = std::cos(x[0]);
         weight = 2 * cosine * cosine / meep::pi;
@@ -114,13 +114,13 @@ inline double projected_average(ProjectionAverage p, double tol, int maxeval) {
             return 1;
         if (s >= 1)
             return 0;
-        if (p.dim == meep::D2)
+        if (p.dim == meep::D2 || p.dim == meep::Dcyl)
             return 0.5 - (s * std::sqrt(1 - s * s) + std::asin(s)) / meep::pi;
         if (p.dim == meep::D3)
             return 0.5 - 0.75 * s + 0.25 * s * s * s;
         return 0.5 * (1 - s);
     }
-    number lo[1] = {p.dim == meep::D2 ? -meep::pi / 2 : -1.0};
+    number lo[1] = {(p.dim == meep::D2 || p.dim == meep::Dcyl) ? -meep::pi / 2 : -1.0};
     number hi[1] = {-lo[0]}, error;
     integer status;
     return adaptive_integration(projection_integrand, lo, hi, 1, &p, 0, tol, maxeval,
@@ -131,7 +131,7 @@ inline void generalized_material_row(meep_geom::geom_epsilon *geps, meep::compon
                                      double row[3], const meep::volume &v, double tol,
                                      int maxeval) {
     using namespace meep_geom;
-    if (maxeval == 0 || !meep::is_electric(c) || v.dim == meep::Dcyl) {
+    if (maxeval == 0 || !meep::is_electric(c)) {
         geps->eff_chi1inv_row(c, row, v, tol, maxeval);
         return;
     }
