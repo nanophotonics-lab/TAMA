@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Support cylindrical permittivity tensors, subpixel averaging, and MaterialGrid
+  projection in Meep gradients. Apply the volume-weighted constitutive transpose
+  with MPI halo volumes, and reject unsupported off-diagonal PML/polarization
+  combinations. Rebuild the native extension with the Python package.
+
 ## 0.6.0a1 — integrated Meep and FDTDX alpha
 
 This alpha introduces the combined backend package following TAMA 0.5.0a3.

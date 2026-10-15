@@ -44,13 +44,13 @@ The native path requires:
 - equal, fixed isotropic permeability in the two endpoint media; and
 - identical rank-local Yee layouts in the forward and adjoint simulations.
 
-Cartesian 2D/3D supports `Simulation.eps_averaging`,
+Cartesian 2D/3D and cylindrical simulations support `Simulation.eps_averaging`,
 `MaterialGrid.do_averaging`, and internal `beta`/`eta` projection. The scalar
 path with `eps_averaging=False`, `do_averaging=False`, and `beta=0` retains its
 direct interpolation transpose and requires `material_factor` to equal the
-endpoint permittivity contrast. Other Cartesian cases derive the material
+endpoint permittivity contrast. Other cases derive the material
 Jacobian from the MaterialGrid endpoints and do not multiply by
-`material_factor`. Cylindrical gradients retain the scalar restrictions below.
+`material_factor`.
 
 ## Independent Design Regions
 
@@ -124,6 +124,7 @@ simulation dimensionality and monitored polarization:
 | Simulation / monitor polarization | Electric components used for the design gradient |
 | --- | --- |
 | Cartesian tensor, projection, or averaging path | All three constitutive rows, using `Dx`, `Dy`, and `Dz` histories |
+| Cylindrical tensor, projection, or averaging path | All three constitutive rows, using `Dr`, `Dp`, and `Dz` histories |
 | 2D TMz (`Ez`, `Hx`, or `Hy`) | `Ez` |
 | 2D TEz (`Hz`, `Ex`, or `Ey`) | `Ex` and `Ey` |
 | 2D Cartesian `FluxTarget` or `EigenmodeCoefficientTarget` | `Ex`, `Ey`, and `Ez` because both tangential E/H pairs are sampled |
@@ -161,10 +162,17 @@ normalization. Run separate forward objectives and apply the required physical
 normalization and combination externally when a real three-dimensional result
 needs contributions from multiple values of `m`.
 
-Cylindrical gradients require linear, scalar-isotropic, nondispersive
-permittivity, fixed and equal endpoint permeability, `eps_averaging=False`,
-`MaterialGrid(do_averaging=False, beta=0)`, and `material_factor` equal to the
-endpoint permittivity contrast. The design region may touch `r=0` but must not extend below it.
+Cylindrical gradients support real symmetric positive-definite permittivity
+tensors in the `(r, phi, z)` basis, subpixel averaging, and internal projection.
+The endpoint media must be linear, lossless, and nondispersive, with fixed and
+equal isotropic permeability. `material_factor` is used only for isotropic
+endpoints with `eps_averaging=False`, `do_averaging=False`, and `beta=0`.
+The adjoint applies the volume-weighted transpose of the discrete constitutive
+operator. This includes radial off-diagonal couplings and MPI boundary samples.
+Off-diagonal material must not overlap PML. Polarization-subtracted displacement
+fields, including dispersive media in the same field chunk, are not supported
+by this correction. Integrated adjoint sources are also unsupported.
+The design region may touch `r=0` but must not extend below it.
 Point and regional targets use zero-size indexed adjoint sources. Their samples
 may lie on or near `r=0`; the native transpose folds each Yee interpolation
 entry through Meep's cylindrical modal parity. Exactly on the axis, regularity
@@ -195,7 +203,7 @@ python examples/tda_cylindrical_mode.py --target point
 mpirun -np 2 python examples/tda_cylindrical_mode.py --target eigenmode
 ```
 
-## Cartesian Tensor Gradients and Averaging
+## Tensor Gradients and Averaging
 
 Each design variable remains a scalar density mixing two fixed dielectric
 tensors. The endpoint tensors may have unequal diagonal and nonzero real

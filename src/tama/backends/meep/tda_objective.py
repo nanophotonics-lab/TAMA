@@ -590,7 +590,9 @@ class TDAObjective:
             and simulation is not None
             and _uses_material_jacobian(simulation, design)
         ):
-            self.gradient_components = (mp.Ex, mp.Ey, mp.Ez)
+            self.gradient_components = (
+                (mp.Er, mp.Ep, mp.Ez) if self._is_cylindrical else (mp.Ex, mp.Ey, mp.Ez)
+            )
 
     def _make_history_memmap(self, shape, *, dtype=None):
         tmp = tempfile.NamedTemporaryFile(

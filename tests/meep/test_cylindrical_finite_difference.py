@@ -208,6 +208,50 @@ def _directional_derivatives(objective):
     return adjoint_derivative, finite_difference, relative_error
 
 
+@pytest.mark.mpi2
+@pytest.mark.mpi4
+@pytest.mark.mpi8
+@pytest.mark.parametrize("component", [mp.Ez, mp.Hp], ids=["Ez", "Hp"])
+@pytest.mark.parametrize("reuse", [False, True], ids=["separate", "reuse"])
+@pytest.mark.parametrize("complex_fields", [False, True], ids=["real", "complex"])
+def test_cylindrical_m_zero_axis_design_matches_two_step_fd(
+    monkeypatch, component, reuse, complex_fields
+):
+    mp.verbosity(0)
+    make = tm.SimulationSpec.make
+
+    def make_fields(spec, *args, **kwargs):
+        simulation = make(spec, *args, **kwargs)
+        simulation.force_complex_fields = complex_fields
+        return simulation
+
+    monkeypatch.setattr(tm.SimulationSpec, "make", make_fields)
+    objective = _make_cylindrical_problem(
+        m=0,
+        axis_design=True,
+        target_component=component,
+        reuse_simulation=reuse,
+    )
+    weights = np.linspace(0.25, 0.75, 9)
+    # Perturb only the innermost radial row to expose missing axis contributions.
+    direction = np.zeros((3, 3))
+    direction[0] = [1.0, 0.7, 1.3]
+    direction = direction.ravel()
+    direction /= np.linalg.norm(direction)
+    value, gradient = objective.fom_and_grad(weights)
+    differences = [
+        (objective.fom(weights + h * direction) - objective.fom(weights - h * direction))
+        / (2 * h)
+        for h in (2e-4, 1e-4)
+    ]
+    assert np.isfinite(value)
+    assert np.all(np.isfinite(gradient))
+    assert abs(differences[-1]) > 1e-10
+    np.testing.assert_allclose(differences[0], differences[1], rtol=1e-5, atol=0)
+    np.testing.assert_allclose(gradient @ direction, differences[-1], rtol=1e-5, atol=0)
+    print("Cylindrical axis FD:", value, gradient @ direction, differences)
+
+
 @pytest.mark.parametrize(
     ("m", "axis_design"),
     [(0, False), (1, True), (-1, True)],

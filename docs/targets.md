@@ -314,9 +314,9 @@ For cylindrical simulations, define radial or axial near-surface lines with
 nonnegative radii. An axial cap may reach `r=0`; the axis needs no PML clearance.
 Far-field gradients support `m=-1, 0, +1`, including mixed temporal and
 near-to-far targets. The adjoint uses angular mode `-m`. Native API 16 applies
-the radial quadrature and cylindrical Yee-cell volume. Explicit cylindrical
-symmetries, tensor MaterialGrid media, and cylindrical subpixel averaging
-remain unsupported by the design-gradient backend.
+the radial quadrature and cylindrical Yee-cell volume. Tensor MaterialGrid
+media, subpixel averaging, and internal projection are supported. Explicit
+cylindrical symmetries remain unsupported by the design-gradient backend.
 
 Near-to-far gradients require direct `SimulationSpec` use and restart-safe,
 time-invariant simulation state. The adjoint always restarts the forward

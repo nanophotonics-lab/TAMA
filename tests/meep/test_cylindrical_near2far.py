@@ -222,15 +222,18 @@ def test_cylindrical_farfield_gradient_rejects_unsupported_angular_mode():
 
 
 @pytest.mark.mpi2
-def test_cylindrical_mixed_temporal_farfield_matches_separate_objectives_and_fd():
+@pytest.mark.parametrize("sampling_interval", [1, 2])
+def test_cylindrical_mixed_temporal_farfield_matches_separate_objectives_and_fd(
+    sampling_interval,
+):
     mp.verbosity(0)
-    far_only, weights, far = _make_problem(1)
+    far_only, weights, far = _make_problem(1, sampling_interval=sampling_interval)
     temporal = tm.PointTarget(mp.Vector3(0.95, 0, 0.35), mp.Er)
     common = dict(
         design=far_only.design,
         simulation=far_only._simulation_spec,
         t_final=far_only.t_final,
-        sampling_interval=1,
+        sampling_interval=sampling_interval,
         chunk_balancer=None,
     )
     scalarize = (

@@ -1174,6 +1174,11 @@ def _uses_material_jacobian(sim, design) -> bool:
     materials += [getattr(sim, "default_material", None)]
     materials += list(getattr(sim, "extra_materials", ()))
     for material in materials:
+        if isinstance(material, mp.MaterialGrid) and (
+            not _is_isotropic_design_medium(material.medium1)
+            or not _is_isotropic_design_medium(material.medium2)
+        ):
+            return True
         if isinstance(material, mp.Medium) and (
             not _is_isotropic_design_medium(material)
             or material.mu_offdiag != mp.Vector3()
@@ -1267,10 +1272,6 @@ def _prepare_native_material(sim, design) -> None:
         return
     for region in active_designs:
         _validate_native_material_grid(region.material_grid)
-        if getattr(region, "is_cylindrical", False):
-            raise ValueError(
-                "tensor material gradients and averaging currently require Cartesian 2D/3D"
-            )
     sim.force_all_components = True
     grids = tuple(region.material_grid for region in active_designs)
     if (
@@ -1326,7 +1327,11 @@ def _prepare_native_material(sim, design) -> None:
 
 def _native_design_components(sim, design, components):
     if _uses_material_jacobian(sim, design):
-        return (mp.Ex, mp.Ey, mp.Ez)
+        return (
+            (mp.Er, mp.Ep, mp.Ez)
+            if getattr(design, "is_cylindrical", False)
+            else (mp.Ex, mp.Ey, mp.Ez)
+        )
     return components
 
 
