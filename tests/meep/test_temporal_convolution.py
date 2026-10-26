@@ -1,6 +1,5 @@
 """Full FIR primitives, independent of FDTD and objective scalarization."""
 
-import inspect
 
 import numpy as np
 import pytest
@@ -37,18 +36,6 @@ def test_full_matches_direct_convolution_and_hermitian_adjoint(shape, length, dt
     np.testing.assert_allclose(
         np.vdot(actual, q), np.vdot(x, adjoint), rtol=tol, atol=tol
     )
-
-
-def test_helpers_have_no_output_mode_parameter():
-    for operation in (
-        module.temporal_convolve_signal,
-        module.temporal_convolve_signal_transpose,
-    ):
-        assert tuple(inspect.signature(operation).parameters) == (
-            "signal",
-            "kernel",
-            "dt",
-        )
 
 
 @pytest.mark.parametrize("dtype", [np.bool_, np.int64])

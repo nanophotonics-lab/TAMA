@@ -1,4 +1,4 @@
-"""The pure distribution must be usable before either engine is installed."""
+"""The pure distribution can be imported without Meep installed."""
 
 import subprocess
 import sys
@@ -9,30 +9,29 @@ def run(code):
     subprocess.run([sys.executable, "-c", textwrap.dedent(code)], check=True)
 
 
-def test_import_without_engines_and_explicit_selection():
+def test_import_without_meep_and_explicit_selection():
     run("""
         import importlib.abc
         import sys
 
-        class BlockEngines(importlib.abc.MetaPathFinder):
+        class BlockMeep(importlib.abc.MetaPathFinder):
             def find_spec(self, fullname, path=None, target=None):
-                if fullname.split('.')[0] in {'meep', 'fdtdx', 'jax', 'equinox', 'tama_fdtdx'}:
+                if fullname.split('.')[0] == 'meep':
                     raise ModuleNotFoundError('unavailable engine', name=fullname)
 
-        sys.meta_path.insert(0, BlockEngines())
+        sys.meta_path.insert(0, BlockMeep())
         import tama
-        assert not {'meep', 'fdtdx', 'jax', 'equinox', 'numpy', 'tama_fdtdx'} & sys.modules.keys()
+        assert not {'meep', 'numpy'} & sys.modules.keys()
         assert 'TDAObjective' in dir(tama)
-        for invalid in (None, [], 1, 'Meep', 'auto', ''):
+        for invalid in (None, [], 1, 'Meep', 'auto', 'unknown_backend', ''):
             try:
                 tama.get_backend(invalid)
             except ValueError as exc:
-                assert "'meep' or 'fdtdx'" in str(exc)
+                assert "'meep'" in str(exc)
             else:
                 raise AssertionError(invalid)
         for access, missing in (
             (lambda: tama.get_backend('meep'), {'meep'}),
-            (lambda: tama.get_backend('fdtdx'), {'fdtdx', 'jax', 'equinox'}),
             (lambda: tama.PointTarget, {'meep'}),
         ):
             try:
@@ -73,23 +72,23 @@ def test_unrelated_dependency_error_is_not_hidden():
     """)
 
 
-def test_fdtdx_engine_itself_is_required_at_selection():
+def test_native_sampler_import_guard_raises_clear_missing_extension_error():
     run("""
+        import importlib
         import importlib.abc
         import sys
 
-        class BlockFdtdx(importlib.abc.MetaPathFinder):
+        class BlockNative(importlib.abc.MetaPathFinder):
             def find_spec(self, fullname, path=None, target=None):
-                if fullname == 'fdtdx':
-                    raise ModuleNotFoundError('missing FDTDX engine', name=fullname)
+                if fullname.split('.')[0] == 'tama_meep_native':
+                    raise ModuleNotFoundError('unavailable extension', name=fullname)
 
-        sys.meta_path.insert(0, BlockFdtdx())
-        import tama
+        sys.meta_path.insert(0, BlockNative())
         try:
-            tama.get_backend('fdtdx')
-        except ModuleNotFoundError as exc:
-            assert exc.name == 'fdtdx', exc
-            assert 'tama[fdtdx]' in str(exc), exc
+            importlib.import_module('tama.native_sampler')
+        except ImportError as exc:
+            assert 'native sampler extension is not built' in str(exc)
+            assert 'install tama-meep-native' in str(exc)
         else:
-            raise AssertionError('backend selection accepted a missing FDTDX engine')
+            raise AssertionError('missing native extension must fail')
     """)

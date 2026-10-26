@@ -2,8 +2,8 @@
 
 ## Python package
 
-TAMA is a pure Python package containing both backend implementations. Installing
-it alone does not install an FDTD engine or build a native module:
+TAMA's Python package provides the Meep adjoint interface. Installing it alone
+does not install Meep or build the native sampler:
 
 ```bash
 python -m pip install .
@@ -18,7 +18,7 @@ as shown below.
 
 The conda environment and automated CI use PyMeep 1.34.0 MPICH,
 MPICH 4.3.2, mpi4py 4.1.2, the compiler and native build dependencies.
-Python 3.11, 3.12 and 3.13 are covered by the CI matrix, including the original
+Python 3.11, 3.12 and 3.13 are covered by the CI matrix, including the
 NumPy 1.26 compatibility lane. This conda lane remains on 1.34.0 until the
 Meep 1.35.0 package is available on conda-forge.
 
@@ -40,14 +40,14 @@ OpenMPI, macOS and native Windows builds are outside the validated native lane.
 The `meep` extra depends on `tama-meep-native==0.6.0a1`; it does not install
 PyMeep from PyPI. Build the native distribution locally before using the extra.
 
-### Official Meep 1.35.0
+### Meep 1.35.0
 
-To use Meep 1.35.0 before its conda package is available, build the unmodified
-[official meep-1.35.0.tar.gz release archive](https://github.com/NanoComp/meep/releases/download/v1.35.0/meep-1.35.0.tar.gz)
+To use Meep 1.35.0, build the
+[meep-1.35.0.tar.gz release archive](https://github.com/NanoComp/meep/releases/download/v1.35.0/meep-1.35.0.tar.gz)
 with the [upstream build instructions](https://meep.readthedocs.io/en/latest/Build_From_Source/).
 Install its Python module, headers and library into the same dependency environment.
 Enable MPI and use that environment's MPI compiler and libraries. The commands
-above for `environment.yml` alone still install Meep 1.34.0.
+above for `environment.yml` alone install Meep 1.34.0.
 
 After installing Meep 1.35.0, verify the imported version and rebuild TAMA's native
 module against it:
@@ -64,37 +64,9 @@ A source installation can leave older conda package metadata in place. Use the
 imported version and linked `libmeep` to identify the engine used for a benchmark.
 Keep the release archive and build options with the benchmark record.
 
-## FDTDX
-
-Use Python 3.12 or 3.13. The exact dependencies are FDTDX 0.6.2,
-JAX/JAXlib 0.11.0 and Equinox 0.13.8, with NumPy >=2 and SciPy >=1.13.
-JAX's Python requirement prevents selecting this extra on Python 3.11;
-the Meep Python 3.11 support remains available.
-
-```bash
-python -m pip install '.[fdtdx]'
-# Linux/WSL CUDA 12 setup, if not already installed in this environment:
-python -m pip install 'jax[cuda12]==0.11.0'
-JAX_PLATFORMS=cuda python -c "import jax, tama; print(jax.devices()); print(tama.get_backend('fdtdx'))"
-```
-
-The tested GPU lane uses the CUDA 12 plugin/PJRT version 0.11.0 and an NVIDIA
-driver suitable for that runtime. This command does not install the host driver.
-CPU evaluation is available for small tests; CPU offload requires an actual
-CUDA device. CUDA on native Windows is not validated; use Linux or WSL.
-FDTDX selection never falls back to Meep or silently accepts CPU for a GPU test.
-
-Float64/complex128 scenes require `jax.config.update('jax_enable_x64', True)`
-before creating native arrays. Use `False` before constructing float32/complex64
-scenes; mixed-precision field/source caches are rejected.
-
 ## Migrating an existing installation
 
-Reinstall the core package and install the new native package in the existing
-Meep environment. Root-level Meep classes and old Python submodule paths remain
-available as aliases. Old extensions under `tama/native_sampler.so` are not the
-new native package: verify the `tama_meep_native` path shown above.
-
-For FDTDX, install the core with its `fdtdx` extra. The former standalone
-`tama_fdtdx` package is not needed by this version. Scene and target conventions
-are described in [backend migration](backends.md) and [FDTDX](fdtdx.md).
+Reinstall the core package and install the separate native package in the existing
+Meep environment. Root-level Meep classes and compatibility Python submodule
+paths are available as aliases. Verify that the native module loads from
+`tama_meep_native`, rather than `tama/native_sampler.so`.

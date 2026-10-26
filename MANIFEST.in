@@ -1,4 +1,4 @@
-include LICENSE THIRD_PARTY_NOTICES.txt CITATION.cff README.md CHANGELOG.md
+include LICENSE THIRD_PARTY_NOTICES.txt CITATION.cff README.md
 include licenses/GPL-2.0-or-later.txt
 include pyproject.toml environment.yml build_native_sampler.sh
 recursive-include src/tama *.py *.pyi py.typed LICENSE THIRD_PARTY_NOTICES.txt

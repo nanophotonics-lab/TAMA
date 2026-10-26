@@ -14,24 +14,14 @@ GPL version 3 or later. The original GPL version 2 text is preserved in
 licenses/GPL-2.0-or-later.txt. The separately packaged native/meep sampler
 continues to use GPL-2.0-or-later and includes its own original LICENSE.
 
-The implementation under src/tama/backends/fdtdx is provided under
-GPL-3.0-or-later. It incorporates the TAMA_FDTDX 0.1.0 implementation and
-its TAMA integration adapter. The shared tama.nyquist module comes from
-the original GPL-2.0-or-later TAMA source identified above.
-
 External runtime dependencies retain their own licenses:
 
-- FDTDX 0.6.2: MIT; https://github.com/ymahlau/fdtdx
-- JAX 0.11.0 and JAXlib 0.11.0: Apache-2.0;
-  https://github.com/jax-ml/jax
-- Equinox 0.13.8: Apache-2.0; https://github.com/patrick-kidger/equinox
 - Meep: GPL-2.0-or-later; https://github.com/NanoComp/meep
 
-This list identifies the engine and automatic-differentiation dependencies;
-it is not an exhaustive license inventory of transitive dependencies or binary
+This list identifies the FDTD engine dependency;
+it is not an exhaustive license inventory of other dependencies or binary
 wheel contents. Refer to each dependency's distributed license and notices.
-FDTDX and Meep remain separately installed dependencies. No FDTDX engine
-implementation is vendored or patched.
+Meep is a separately installed dependency.
 
 The upstream-derived material and adjoint tests in tests/meep/test_upstream_*.py
 adapt Meep v1.34.0 tests and document comparisons with its material implementation,

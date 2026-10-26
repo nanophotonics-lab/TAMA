@@ -1,6 +1,6 @@
 # TDAObjective
 
-This guide describes the Meep backend. See [backend selection](backends.md) and [FDTDX](fdtdx.md) for the other engine.
+This guide describes the Meep backend. See [backend API](backends.md) for module selection.
 
 ## Example
 
@@ -78,7 +78,7 @@ Use autograd-compatible operations or supply its derivative through
 | `design` / `designs` | One `DesignGrid`, or an ordered sequence of independent nonoverlapping regions. Supply only one argument. The design vector and gradient concatenate flattened region arrays in that order. Required when computing a gradient; optional for value-only evaluation. |
 | `simulation` | Optional `SimulationSpec`. Fills `sim_factory` and `resolution`. Its direct `make` path enables exact indexed target transposes and is required for regional, flux, eigenmode, and near-to-far gradients. Tensor/averaging and Cartesian mirror restrictions are described in the [design guide](design-gradients.md). It is also required for cylindrical gradients and supplies their forward mode `m`. |
 | `reuse_simulation` | Reuse the forward `Simulation` for the adjoint run when explicitly set to `True`. Default is `False`; near-to-far targets always reuse it, including when this option is `False`. Requires restart-safe, time-invariant media. A cylindrical reuse changes the mode from `m` to `-m`. |
-| `target` | Optional `PointTarget`, `FieldRegionTarget`, `FluxTarget`, `EigenmodeCoefficientTarget`, or `Near2FarTarget`. Point targets fill the legacy point/source settings. Flux and eigenmode targets combine electric and magnetic sources in one adjoint run. Cylindrical surface targets require radial or axial normals and explicit `2*pi*r` quadrature; cylindrical eigenmode targets also require fixed reference fields and matching `reference_m`. See the [target guide](targets.md) for geometry and normalization. |
+| `target` | Optional `PointTarget`, `FieldRegionTarget`, `FluxTarget`, `EigenmodeCoefficientTarget`, or `Near2FarTarget`. Point targets fill the point/source settings. Flux and eigenmode targets combine electric and magnetic sources in one adjoint run. Cylindrical surface targets require radial or axial normals and explicit `2*pi*r` quadrature; cylindrical eigenmode targets also require fixed reference fields and matching `reference_m`. See the [target guide](targets.md) for geometry and normalization. |
 | `update_design` | Function that writes the flat design vector into the Meep design object. Usually calls `MaterialGrid.update_weights(...)`. |
 | `t_final` | Forward simulation end time. |
 | `sim_factory` | Function returning `mp.Simulation`. Called with no argument for the forward run and with an adjoint source list for the adjoint run. Arbitrary factories use ordinary Cartesian `mp.Source` injection and do not support cylindrical gradient evaluation. |
@@ -88,7 +88,7 @@ Use autograd-compatible operations or supply its derivative through
 | `adjoint_source_amplitude` | Logical adjoint-source amplitude. Gradient evaluation requires `1.0`; Cartesian adaptive finite-source fallback applies its effective density normalization internally. Other finite values are accepted only for value-only evaluation. |
 | `fom_fn` | Optional scalar objective `fom_fn(monitor_history, sample_dt)`. Point history has shape `(time,)`; regional history uses time as the first axis and `sample_shape` as the remaining axes; flux history is a real `(time - 1,)` signed-power trace; and eigenmode history is a complex `(time - 1,)` coefficient. For near-to-far targets, the first argument is a complex `(n_far_points, n_frequencies, 6)` spectral array instead of a time history. |
 | `adjoint_signal_fn` | Optional manual bilinear covector described in the [objective convention](targets.md#objective-conventions-and-weights). Requires `fom_fn` and must return the same shape as the callback data. A flux-history covector must be real. Near-to-far spectral covectors retain the `dt` convention described in the [near-to-far target guide](targets.md#near-to-far-targets). |
-| `dt` | Legacy expected Meep time step. The initialized simulation's `fields.dt` is authoritative; an explicit value must match it and is otherwise only a fallback for simulation doubles without `fields.dt`. |
+| `dt` | Expected Meep time step. The initialized simulation's `fields.dt` is authoritative; an explicit value must match it and is otherwise only a fallback for simulation doubles without `fields.dt`. |
 | `resolution` | Used with the simulation's Courant factor to infer a fallback time step only when the initialized simulation does not expose `fields.dt` and `dt` is omitted. |
 | `sampling_interval` | Dimensionless stride in Meep steps between stored design-grid forward-field samples. Point, regional, and constituent flux/eigenmode field histories remain full rate. Default is `1`. See [sparse Nyquist reconstruction](multi-tda-objective.md#sparse-design-history-reconstruction). |
 | `max_frequency` | Optional maximum relevant frequency in Meep inverse-time units. Computes the design-grid interval from the Nyquist criterion; cannot be combined with `sampling_interval > 1`. |

@@ -1,26 +1,22 @@
-"""Explicit backend selection without importing an unused engine."""
+"""Lazy selection of the Meep backend."""
 
 from importlib import import_module
 
 
 def get_backend(name):
     """Return a backend module without changing global state or falling back."""
-    if not isinstance(name, str) or name not in ("meep", "fdtdx"):
-        raise ValueError("backend must be 'meep' or 'fdtdx'")
+    if not isinstance(name, str) or name != "meep":
+        raise ValueError("backend must be 'meep'")
     try:
         import_module(name)
         return import_module(f".{name}", __name__)
     except ModuleNotFoundError as exc:
-        if name == "meep" and exc.name == "meep":
-            message = "The Meep backend requires pymeep in the active environment."
-        elif name == "fdtdx" and exc.name in ("fdtdx", "jax", "jaxlib", "equinox"):
-            message = (
-                "The FDTDX backend requires its optional dependencies. "
-                "Install tama[fdtdx] in a supported Python environment."
-            )
-        else:
+        if exc.name != "meep":
             raise
-        raise ModuleNotFoundError(message, name=exc.name) from exc
+        raise ModuleNotFoundError(
+            "The Meep backend requires pymeep in the active environment.",
+            name=exc.name,
+        ) from exc
 
 
 __all__ = ["get_backend"]

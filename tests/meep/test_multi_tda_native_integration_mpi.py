@@ -80,7 +80,7 @@ def _legacy_forward_loop(
     sampling_interval,
     fine_step_count,
 ):
-    """Reference the former per-step Python forward-recording path."""
+    """Reference per-step Python forward recording."""
     state = {"sample_count": 0, "design_count": 0}
     monitor_times = []
     design_capacity = fine_step_count // sampling_interval + 1
@@ -1411,13 +1411,3 @@ def test_nonunit_adjoint_amplitude_is_rejected_before_meep_sources():
         objective.evaluate(np.zeros(4), need_gradient=True)
 
     assert not adjoint_sources
-
-
-if __name__ == "__main__":
-    test_native_multi_tda_paths_match_legacy_python_paths()
-    test_simulation_spec_reuse_matches_separate_simulations()
-    test_native_nyquist_path_matches_legacy_python_paths()
-    test_multi_tda_nyquist_alignment_preserves_objective_value()
-    test_multi_tda_nyquist_gradient_matches_full_rate_after_field_decay()
-    test_complex_source_phase_preserves_multi_tda_value_and_gradient()
-    test_complex_adjoint_amplitude_reaches_forced_complex_meep_sources()
