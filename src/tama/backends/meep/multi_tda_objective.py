@@ -42,7 +42,7 @@ from .design_collection import (
     _resolve_designs,
     _collection_components as _native_design_components,
     _collection_gradient_scale as _native_design_gradient_scale,
-    _collection_uses_material_jacobian as _uses_material_jacobian,
+    _collection_requires_all_material_components as _requires_all_material_components,
 )
 from .native_design import (
     _NativeDesignAccumulator,
@@ -1726,7 +1726,7 @@ class MultiTDAObjective:
             and self._simulation_spec is not None
             and (
                 self._near2far_targets
-                or _uses_material_jacobian(self._simulation_spec, self.design)
+                or _requires_all_material_components(self._simulation_spec, self.design)
             )
         ):
             self.gradient_components = (

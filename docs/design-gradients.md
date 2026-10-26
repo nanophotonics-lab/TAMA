@@ -123,7 +123,8 @@ simulation dimensionality and monitored polarization:
 
 | Simulation / monitor polarization | Electric components used for the design gradient |
 | --- | --- |
-| Cartesian tensor, projection, or averaging path | All three constitutive rows, using `Dx`, `Dy`, and `Dz` histories |
+| Cartesian material-Jacobian path, except the uncoupled 2D case below | All three constitutive rows, using `Dx`, `Dy`, and `Dz` histories |
+| Uncoupled 2D Cartesian MaterialGrid projection or averaging | `Dz` for TMz; `Dx` and `Dy` for TEz |
 | Cylindrical tensor, projection, or averaging path | All three constitutive rows, using `Dr`, `Dp`, and `Dz` histories |
 | 2D TMz (`Ez`, `Hx`, or `Hy`) | `Ez` |
 | 2D TEz (`Hz`, `Ex`, or `Ey`) | `Ex` and `Ey` |
@@ -133,6 +134,13 @@ simulation dimensionality and monitored polarization:
 | Cylindrical `m=0` with an `Er`/`Ez`/`Hp` target | `Er` and `Ez` |
 | Cylindrical `m=0` `FluxTarget` or `EigenmodeCoefficientTarget` | `Er`, `Ep`, and `Ez` because both tangential E/H pairs are sampled |
 | Cylindrical `m=±1` with any `Er`/`Ep`/`Ez`/`Hr`/`Hp`/`Hz` target | `Er`, `Ep`, and `Ez` |
+
+The uncoupled 2D material-Jacobian case requires zero out-of-plane Bloch wavevector
+and isotropic, nondispersive dielectric and magnetic media throughout the scene,
+including both endpoints of each MaterialGrid. Material functions retain all
+three rows. When `eps_averaging` is enabled, fixed geometry outside MaterialGrid
+objects also retains all three rows because interface averaging can couple
+components. Mixed-polarization targets still require all sampled rows.
 
 ## Cylindrical Coordinates and Angular Modes
 

@@ -5,7 +5,7 @@ import numpy as np
 from .sampling_grid import (
     _native_design_components,
     _native_design_gradient_scale,
-    _uses_material_jacobian,
+    _requires_all_material_components,
 )
 
 
@@ -82,10 +82,12 @@ def _collection_gradient_scale(sim, design):
     )
 
 
-def _collection_uses_material_jacobian(sim, design):
+def _collection_requires_all_material_components(sim, design):
     if isinstance(design, _DesignCollection):
-        return any(_uses_material_jacobian(sim, region) for region in design.designs)
-    return _uses_material_jacobian(sim, design)
+        return any(
+            _requires_all_material_components(sim, region) for region in design.designs
+        )
+    return _requires_all_material_components(sim, design)
 
 
 def _region_component(design, key):
