@@ -228,8 +228,19 @@ path.
 With an MPI Meep build, `MultiTDAObjective` distributes independent band FIR
 work when histories are non-deduplicated or when deduplicated histories use
 the built-in per-band FoMs. Deduplicated histories with custom per-band FoM
-callbacks instead evaluate every band on every rank. For supported
-2D Cartesian, 3D Cartesian, and cylindrical simulations, the
+callbacks distribute FIR transforms across unique monitor channels. Every
+active rank receives each complete filtered band and invokes callbacks in the
+same order. Callbacks may use active-group collectives, but must return the
+same logical FoM and covector on every active rank.
+
+This path reuses raw-channel FFTs across bands and both evaluation passes.
+Its evaluation-local FFT cache has a 64 MiB limit per rank and uses uncached
+convolution when the required spectrum does not fit. Histories and transform
+work arrays use additional memory. It does not cache all filtered band
+histories. This reuse preserves FIR lengths, full-convolution tails, and the
+objective and gradient definitions.
+
+For supported 2D Cartesian, 3D Cartesian, and cylindrical simulations, the
 native path records rank-local target-point histories and reduces the complete
 history once per distinct target component after the forward run. Native
 `DesignGrid` histories remain rank-local, and only the completed design

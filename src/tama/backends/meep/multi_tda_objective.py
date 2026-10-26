@@ -508,6 +508,87 @@ def temporal_convolve_signal_transpose(
     )
 
 
+class _TemporalFilterCache:
+    """Reuse raw-channel FFTs within one evaluation, with a fixed byte budget."""
+
+    def __init__(self, signals, kernel_length, *, max_cache_bytes=64 * 1024**2):
+        self.signals = np.asarray(signals)
+        self.kernel_length = kernel_length
+        self.fft_length = next_fast_len(self.signals.shape[0] + kernel_length - 1)
+        self.max_cache_bytes = max_cache_bytes
+        self.cache_bytes = 0
+        self._signals = {}
+        self._kernels = {}
+
+    def convolve(self, kernel, dt, columns=None):
+        kernel = np.asarray(kernel)
+        columns = slice(None) if columns is None else columns
+        selected_columns = np.atleast_1d(np.arange(self.signals.shape[1])[columns])
+        if (
+            kernel.ndim != 1
+            or kernel.size != self.kernel_length
+            or not self.signals.shape[0]
+            or not selected_columns.size
+        ):
+            return temporal_convolve_signal(self.signals[:, selected_columns], kernel, dt)
+        output_dtype = (
+            self.signals.dtype
+            if np.issubdtype(self.signals.dtype, np.inexact)
+            else np.result_type(self.signals.dtype, kernel.dtype, np.float64)
+        )
+        if np.iscomplexobj(kernel) and not np.iscomplexobj(self.signals):
+            output_dtype = np.result_type(output_dtype, np.complex64)
+        real_itemsize = np.empty((), dtype=output_dtype).real.dtype.itemsize
+        complex_dtype = np.dtype(np.complex64 if real_itemsize <= 4 else np.complex128)
+        use_real = not np.iscomplexobj(self.signals) and not np.iscomplexobj(kernel)
+        signal_key = (use_real, complex_dtype.str)
+        transform = rfft if use_real else fft
+        if signal_key not in self._signals:
+            rows = self.fft_length // 2 + 1 if use_real else self.fft_length
+            spectrum_dtype = np.result_type(output_dtype, np.complex64)
+            required = rows * self.signals.shape[1] * spectrum_dtype.itemsize
+            if required > self.max_cache_bytes - self.cache_bytes:
+                return temporal_convolve_signal(
+                    self.signals[:, selected_columns], kernel, dt
+                )
+            spectrum = transform(self.signals, n=self.fft_length, axis=0)
+            self._signals[signal_key] = spectrum
+            self.cache_bytes += spectrum.nbytes
+        kernel_bytes = kernel.tobytes()
+        kernel_key = (signal_key, kernel.dtype.str, kernel_bytes)
+        kernel_spectrum = self._kernels.get(kernel_key)
+        if kernel_spectrum is None:
+            kernel_dtype = (
+                np.float32 if real_itemsize <= 4 else np.float64
+            ) if use_real else complex_dtype
+            kernel_spectrum = transform(
+                kernel.astype(kernel_dtype, copy=False), n=self.fft_length
+            )
+            required = kernel_spectrum.nbytes + len(kernel_bytes)
+            if required <= self.max_cache_bytes - self.cache_bytes:
+                self._kernels[kernel_key] = kernel_spectrum
+                self.cache_bytes += required
+        cached_spectrum = self._signals[signal_key]
+        columns_per_block = max(
+            1, (16 * 1024**2) // (self.fft_length * cached_spectrum.dtype.itemsize)
+        )
+        output_length = self.signals.shape[0] + kernel.size - 1
+        output = np.empty((output_length, selected_columns.size), dtype=output_dtype)
+        for first in range(0, selected_columns.size, columns_per_block):
+            last = min(first + columns_per_block, selected_columns.size)
+            # Advanced indexing copies the cached FFT before in-place multiplication.
+            spectrum = cached_spectrum[:, selected_columns[first:last]]
+            spectrum *= kernel_spectrum[:, None]
+            if use_real:
+                filtered = irfft(spectrum, n=self.fft_length, axis=0, overwrite_x=True)
+            else:
+                filtered = ifft(spectrum, axis=0, overwrite_x=True)
+            output[:, first:last] = (
+                np.asarray(filtered[:output_length], dtype=output_dtype) * dt
+            )
+        return output
+
+
 def auto_pixel_chunk(
     n_pixels: int,
     *,
@@ -3195,9 +3276,39 @@ class MultiTDAObjective:
             ),
         )
 
+    def _filter_deduplicated_channels(self, fft_cache, band_index):
+        """Assemble one filtered band while each rank transforms unique channels."""
+        monitor_indices = self._target_monitor_indices[band_index]
+        nproc = mp.count_processors()
+        owned = monitor_indices % nproc == mp.my_rank()
+        filtered = None
+        error = None
+        try:
+            local = fft_cache.convolve(
+                self.weighted_kernels[band_index],
+                self.dt,
+                columns=monitor_indices[owned] // nproc,
+            )
+            filtered = np.zeros(
+                (local.shape[0], monitor_indices.size), dtype=local.dtype
+            )
+            filtered[:, owned] = local
+        except Exception as exc:
+            error = exc
+        self._synchronize_distributed_target_error(error, "filter")
+        if nproc > 1:
+            filtered = (
+                FastFieldGrid.reduce_inplace(filtered)
+                if np.iscomplexobj(filtered)
+                else FastFieldGrid.reduce_real_inplace(filtered)
+            )
+        return filtered
+
     def _distributed_deduplicated_band_objectives(
         self,
         monitor_history: np.ndarray,
+        *,
+        fft_cache=None,
     ) -> np.ndarray:
         """Evaluate band FoMs without expanding shared monitor channels."""
         monitor_history = np.asarray(monitor_history)
@@ -3217,6 +3328,11 @@ class MultiTDAObjective:
         distribute_bands = nproc > 1 and all(
             band_fom_fn is None for band_fom_fn in fom_fns
         )
+        custom_callbacks = any(band_fom_fn is not None for band_fom_fn in fom_fns)
+        if custom_callbacks and fft_cache is None:
+            fft_cache = _TemporalFilterCache(
+                monitor_history[:, mp.my_rank() :: nproc], self.kernel_length
+            )
         transform_error = None
         raw_history = None
         filtered_raw_history = None
@@ -3226,22 +3342,32 @@ class MultiTDAObjective:
                 len(self._target_slices),
                 nproc if distribute_bands else 1,
             ):
-                raw_history = monitor_history[
-                    :,
-                    self._target_monitor_indices[band_index],
-                ]
-                filtered_raw_history = temporal_convolve_signal(
-                    raw_history,
-                    self.weighted_kernels[band_index],
-                    self.dt,
-                )
-                band_objectives[band_index], _ = (
-                    self._band_fom_value_and_adjoint_signal(
-                        filtered_raw_history,
-                        band_index,
-                        need_gradient=False,
+                if custom_callbacks:
+                    filtered_raw_history = self._filter_deduplicated_channels(
+                        fft_cache, band_index
                     )
-                )
+                else:
+                    raw_history = monitor_history[
+                        :, self._target_monitor_indices[band_index]
+                    ]
+                    filtered_raw_history = temporal_convolve_signal(
+                        raw_history, self.weighted_kernels[band_index], self.dt
+                    )
+                callback_error = None
+                try:
+                    band_objectives[band_index], _ = (
+                        self._band_fom_value_and_adjoint_signal(
+                            filtered_raw_history,
+                            band_index,
+                            need_gradient=False,
+                        )
+                    )
+                except Exception as exc:
+                    callback_error = exc
+                if custom_callbacks:
+                    self._synchronize_distributed_target_error(callback_error, "callback")
+                elif callback_error is not None:
+                    raise callback_error
         except Exception as exc:
             transform_error = exc
         raw_history = None
@@ -3278,6 +3404,8 @@ class MultiTDAObjective:
         self,
         monitor_history: np.ndarray,
         band_coeffs: np.ndarray,
+        *,
+        fft_cache=None,
     ) -> np.ndarray:
         """Pull band covectors back and sum them on shared channels."""
         monitor_history = np.asarray(monitor_history)
@@ -3294,6 +3422,11 @@ class MultiTDAObjective:
         distribute_bands = nproc > 1 and all(
             band_fom_fn is None for band_fom_fn in fom_fns
         )
+        custom_callbacks = any(band_fom_fn is not None for band_fom_fn in fom_fns)
+        if custom_callbacks and fft_cache is None:
+            fft_cache = _TemporalFilterCache(
+                monitor_history[:, mp.my_rank() :: nproc], self.kernel_length
+            )
         transform_error = None
         raw_history = None
         filtered_raw_history = None
@@ -3306,36 +3439,47 @@ class MultiTDAObjective:
                 nproc if distribute_bands else 1,
             ):
                 monitor_indices = self._target_monitor_indices[band_index]
-                raw_history = monitor_history[:, monitor_indices]
-                filtered_raw_history = temporal_convolve_signal(
-                    raw_history,
-                    self.weighted_kernels[band_index],
-                    self.dt,
-                )
-                _, filtered_adjoint = self._band_fom_value_and_adjoint_signal(
-                    filtered_raw_history,
-                    band_index,
-                    need_gradient=True,
-                    evaluate_fom=False,
-                )
-                raw_adjoint = np.conjugate(
-                    temporal_convolve_signal_transpose(
-                        np.conjugate(filtered_adjoint * band_coeffs[band_index]),
-                        self.weighted_kernels[band_index],
-                        self.dt,
+                if custom_callbacks:
+                    filtered_raw_history = self._filter_deduplicated_channels(
+                        fft_cache, band_index
                     )
-                )
-                result_dtype = np.result_type(
-                    local.dtype,
-                    raw_adjoint.dtype,
-                )
-                if result_dtype != local.dtype:
-                    local = local.astype(result_dtype)
-                for monitor_index in np.unique(monitor_indices):
-                    local[:, monitor_index] += np.sum(
-                        raw_adjoint[:, monitor_indices == monitor_index],
-                        axis=1,
+                else:
+                    raw_history = monitor_history[:, monitor_indices]
+                    filtered_raw_history = temporal_convolve_signal(
+                        raw_history, self.weighted_kernels[band_index], self.dt
                     )
+                callback_error = None
+                try:
+                    _, filtered_adjoint = self._band_fom_value_and_adjoint_signal(
+                        filtered_raw_history,
+                        band_index,
+                        need_gradient=True,
+                        evaluate_fom=False,
+                    )
+                    if custom_callbacks:
+                        owned = monitor_indices % nproc == mp.my_rank()
+                        monitor_indices = monitor_indices[owned]
+                        filtered_adjoint = filtered_adjoint[:, owned]
+                    raw_adjoint = np.conjugate(
+                        temporal_convolve_signal_transpose(
+                            np.conjugate(filtered_adjoint * band_coeffs[band_index]),
+                            self.weighted_kernels[band_index],
+                            self.dt,
+                        )
+                    )
+                    result_dtype = np.result_type(local.dtype, raw_adjoint.dtype)
+                    if result_dtype != local.dtype:
+                        local = local.astype(result_dtype)
+                    for monitor_index in np.unique(monitor_indices):
+                        local[:, monitor_index] += np.sum(
+                            raw_adjoint[:, monitor_indices == monitor_index], axis=1
+                        )
+                except Exception as exc:
+                    callback_error = exc
+                if custom_callbacks:
+                    self._synchronize_distributed_target_error(callback_error, "pullback")
+                elif callback_error is not None:
+                    raise callback_error
         except Exception as exc:
             transform_error = exc
         raw_history = None
@@ -3360,7 +3504,7 @@ class MultiTDAObjective:
             raise RuntimeError("band adjoint evaluation failed on another MPI rank")
         if requires_complex and not np.iscomplexobj(local):
             local = local.astype(np.complex128)
-        if distribute_bands:
+        if distribute_bands or (custom_callbacks and nproc > 1):
             local = (
                 FastFieldGrid.reduce_inplace(local)
                 if np.iscomplexobj(local)
@@ -4194,6 +4338,7 @@ class MultiTDAObjective:
 
             filtered_monitors = None
             filtered_adjoint_signals = None
+            deduplicated_fft_cache = None
             if distributed_history_active:
                 band_objectives = self._distributed_builtin_band_objectives(
                     distributed_history_layout
@@ -4213,9 +4358,19 @@ class MultiTDAObjective:
                     callback_error, "modal callback"
                 )
             elif self._uses_deduplicated_monitors:
-                band_objectives = self._distributed_deduplicated_band_objectives(
-                    monitor_history
-                )
+                fom_fns, _ = self._resolved_band_callbacks(validate_pairs=False)
+                if any(fom_fn is not None for fom_fn in fom_fns):
+                    deduplicated_fft_cache = _TemporalFilterCache(
+                        monitor_history[:, mp.my_rank() :: mp.count_processors()],
+                        self.kernel_length,
+                    )
+                    band_objectives = self._distributed_deduplicated_band_objectives(
+                        monitor_history, fft_cache=deduplicated_fft_cache
+                    )
+                else:
+                    band_objectives = self._distributed_deduplicated_band_objectives(
+                        monitor_history
+                    )
             else:
                 filtered_monitors = self._distributed_filter_monitor_signals(
                     monitor_history
@@ -4318,6 +4473,11 @@ class MultiTDAObjective:
                 adj_signals = self._distributed_deduplicated_adjoint_signals(
                     monitor_history,
                     band_coeffs,
+                    **(
+                        {"fft_cache": deduplicated_fft_cache}
+                        if deduplicated_fft_cache is not None
+                        else {}
+                    ),
                 )
             else:
                 adj_signals = self._filter_transpose_adjoint_signals(
@@ -4325,6 +4485,7 @@ class MultiTDAObjective:
                     band_coeffs,
                 )
             del filtered_adjoint_signals
+            deduplicated_fft_cache = None
             if not distributed_history_active:
                 del monitor_history
             del filtered_monitors
