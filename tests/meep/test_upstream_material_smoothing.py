@@ -10,20 +10,29 @@ they do not imply Bloch support in TAMA's high-level adjoint interface.
 
 import json
 import time
-from types import SimpleNamespace
 
 import meep as mp
 import numpy as np
 import pytest
 from scipy.ndimage import gaussian_filter
 
+from tama import DesignGrid
 from tama.backends.meep.sampling_grid import _prepare_native_material
 
 
-def _prepare(sim, grid, mode):
+def _prepare(sim, grid, mode, shape):
     if mode == "stock":
         return
-    _prepare_native_material(sim, SimpleNamespace(material_grid=grid))
+    block = sim.geometry[0]
+    design = DesignGrid(
+        material_grid=grid,
+        center=block.center,
+        size=block.size,
+        shape=shape,
+        background=grid.medium1,
+        design_material=grid.medium2,
+    )
+    _prepare_native_material(sim, design)
     assert sim.subpixel_tol <= 1e-8
     if mode == "near_isotropic":
         # Nonzero xy enters the custom tensor branch, unlike exact isotropy.
@@ -93,7 +102,7 @@ def _circle_frequency(resolution, weights, mode):
         ],
         k_point=mp.Vector3(0.3892, 0.1597),
     )
-    _prepare(sim, grid, mode)
+    _prepare(sim, grid, mode, (1200, 1200))
     return _mode_frequency(
         sim,
         mp.Hz,
@@ -159,7 +168,7 @@ def _sphere_frequency(mode):
         k_point=mp.Vector3(0.23, -0.17, 0.35),
     )
     if grid is not None:
-        _prepare(sim, grid, mode)
+        _prepare(sim, grid, mode, (50, 50, 50))
     return _mode_frequency(
         sim,
         mp.Ez,
