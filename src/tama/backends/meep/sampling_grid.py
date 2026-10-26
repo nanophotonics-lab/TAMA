@@ -1190,6 +1190,49 @@ def _uses_material_jacobian(sim, design) -> bool:
     return False
 
 
+def _requires_all_material_components(sim, design) -> bool:
+    """Keep polarization-specific histories only for uncoupled 2D materials."""
+    if not _uses_material_jacobian(sim, design):
+        return False
+    if (
+        design.dimensions != 2
+        or getattr(design, "is_cylindrical", False)
+        or getattr(sim, "dimensions", None) != 2
+    ):
+        return True
+    k_point = getattr(sim, "k_point", None)
+    if k_point is not None and k_point is not False and k_point.z != 0:
+        return True
+    averaging = getattr(sim, "eps_averaging", None) is not False
+    geometry_materials = [obj.material for obj in getattr(sim, "geometry", ())]
+    if averaging and any(
+        not isinstance(material, mp.MaterialGrid) for material in geometry_materials
+    ):
+        # Fixed-geometry interface averaging can introduce tensor components.
+        return True
+    materials = [design.material_grid]
+    materials += geometry_materials
+    materials += [getattr(sim, "default_material", None)]
+    materials += list(getattr(sim, "extra_materials", ()))
+    for material in materials:
+        if material is None:
+            continue
+        if isinstance(material, mp.MaterialGrid):
+            # In 2D, isotropic grid averaging has no xz/yz coupling.
+            materials.extend((material.medium1, material.medium2))
+        elif (
+            not isinstance(material, mp.Medium)
+            or not _is_isotropic_design_medium(material)
+            or material.mu_diag.x != material.mu_diag.y
+            or material.mu_diag.x != material.mu_diag.z
+            or material.mu_offdiag != mp.Vector3()
+            or material.E_susceptibilities
+            or material.H_susceptibilities
+        ):
+            return True
+    return False
+
+
 def _validate_native_material_grid(grid) -> None:
     """Reject unsupported tensors before Meep can abort or discard components."""
     # MaterialGrid encodes U_DEFAULT as 3; Meep does not export a Python enum.
@@ -1272,7 +1315,11 @@ def _prepare_native_material(sim, design) -> None:
         return
     for region in active_designs:
         _validate_native_material_grid(region.material_grid)
-    sim.force_all_components = True
+    all_components = any(
+        _requires_all_material_components(sim, region) for region in active_designs
+    )
+    if all_components:
+        sim.force_all_components = True
     grids = tuple(region.material_grid for region in active_designs)
     if (
         sim.eps_averaging
@@ -1296,7 +1343,7 @@ def _prepare_native_material(sim, design) -> None:
         for grid in grids
     )
     if not tensor_averaging:
-        if sim.fields is not None:
+        if all_components and sim.fields is not None:
             sim.fields.require_component(mp.Ez)
             sim.fields.require_component(mp.Hz)
         return
@@ -1326,7 +1373,7 @@ def _prepare_native_material(sim, design) -> None:
 
 
 def _native_design_components(sim, design, components):
-    if _uses_material_jacobian(sim, design):
+    if _requires_all_material_components(sim, design):
         return (
             (mp.Er, mp.Ep, mp.Ez)
             if getattr(design, "is_cylindrical", False)

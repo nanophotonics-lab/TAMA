@@ -19,7 +19,7 @@ from .design_collection import (
     _DesignCollection,
     _collection_components as _native_design_components,
     _collection_gradient_scale as _native_design_gradient_scale,
-    _collection_uses_material_jacobian as _uses_material_jacobian,
+    _collection_requires_all_material_components as _requires_all_material_components,
 )
 from .native_design import (
     _NativeDesignAccumulator,
@@ -588,7 +588,7 @@ class TDAObjective:
         if (
             design is not None
             and simulation is not None
-            and _uses_material_jacobian(simulation, design)
+            and _requires_all_material_components(simulation, design)
         ):
             self.gradient_components = (
                 (mp.Er, mp.Ep, mp.Ez) if self._is_cylindrical else (mp.Ex, mp.Ey, mp.Ez)
