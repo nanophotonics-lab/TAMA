@@ -1139,8 +1139,15 @@ static void native_material_row_derivatives(
         normal_magnitude =
             meep::abs(meep_geom::matgrid_grad(point, tree, object_index, material));
     }
+    // The symmetric finite-beta average for isotropic D2 Ez is smooth at zero normal.
+    const bool smooth_isotropic_ez_row =
+        voxel.dim == meep::D2 && component == meep::Ez &&
+        !tama_material_tensor::anisotropic(material->medium_1) &&
+        !tama_material_tensor::anisotropic(material->medium_2) &&
+        std::isfinite(material->beta) && material->eta == 0.5;
     const auto check_normal_branch = [&]() {
-        if (averaged_branch && projected_density > 0.0 && projected_density < 1.0 &&
+        if (!smooth_isotropic_ez_row && averaged_branch &&
+            projected_density > 0.0 && projected_density < 1.0 &&
             ((normal_magnitude < 1e-8) !=
              (meep::abs(meep_geom::matgrid_grad(point, tree, object_index, material)) <
               1e-8))) {

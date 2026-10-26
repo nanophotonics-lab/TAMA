@@ -262,11 +262,14 @@ even when the owned coordinates match; TAMA rejects that mismatch before
 gradient accumulation.
 
 Gradient evaluation rejects material-derivative stencils that cross Meep's
-zero-normal averaging branch at mixed densities. Forward evaluation remains
-available, as do clamped points whose normal remains identically zero under
-the perturbation. Unsmooth infinite-beta projection at its threshold is also rejected
-for gradients. Use finite beta and a spatially varying design for averaged
-optimization. Supported media are listed in the native-path requirements above.
+zero-normal averaging branch at mixed densities, except for the Cartesian 2D
+`Ez` row with isotropic endpoint media, finite `beta`, and `eta=0.5`. That row
+has a smooth symmetric average at zero normal. Forward evaluation is available,
+as are clamped points whose normal stays identically zero under the perturbation.
+Unsmooth infinite-beta projection at its threshold is also rejected for gradients.
+For other averaged rows, use finite beta and a spatially varying design to avoid
+zero-normal branch crossings. Supported media are listed in the native-path
+requirements above.
 
 ## Gradient Output, Storage, and Inputs
 
