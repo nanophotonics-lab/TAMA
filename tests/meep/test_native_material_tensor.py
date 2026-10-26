@@ -351,13 +351,39 @@ def test_tensor_averaging_reduces_to_meep_isotropic_operator():
     np.testing.assert_allclose(tensor, stock, rtol=1e-11, atol=1e-12)
 
 
-def test_uniform_mixed_averaged_grid_allows_forward_but_rejects_gradient():
+@pytest.mark.parametrize("case", ["tensor_xz_2d", "smooth_hz"])
+def test_uniform_mixed_averaged_grid_allows_forward_but_rejects_gradient(case):
     mp.verbosity(0)
-    objective = _make_problem("tensor_xz_2d")
+    objective = _make_problem(case)
     weights = np.full(int(np.prod(objective.design.shape)), 0.37)
     assert np.isfinite(objective.fom(weights))
     with pytest.raises(RuntimeError, match="undefined interface normal"):
         objective.fom_and_grad(weights)
+
+
+@pytest.mark.parametrize("beta, density", [(0, 0.37), (16, 0.37), (16, 0.5), (64, 0.49)])
+def test_uniform_isotropic_2d_ez_averaging_gradient_matches_fd(beta, density):
+    mp.verbosity(0)
+    objective = _make_problem("smooth_ez")
+    objective.design.material_grid.beta = beta
+    objective.design.material_grid.eta = 0.5
+    weights = np.full(int(np.prod(objective.design.shape)), density)
+    value, gradient = objective.fom_and_grad(weights)
+    gradient = np.asarray(gradient).ravel()
+    assert np.isfinite(value) and np.isfinite(gradient).all()
+    direction = gradient / np.linalg.norm(gradient)
+    differences = [
+        (
+            objective.fom(weights + h * direction)
+            - objective.fom(weights - h * direction)
+        )
+        / (2 * h)
+        for h in (2e-4, 1e-4)
+    ]
+    np.testing.assert_allclose(differences[0], differences[1], rtol=0.001, atol=1e-10)
+    np.testing.assert_allclose(
+        gradient @ direction, differences[-1], rtol=0.005, atol=1e-10
+    )
 
 
 def test_hard_projection_away_from_threshold_has_zero_gradient():
