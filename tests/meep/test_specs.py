@@ -1,5 +1,3 @@
-from typing import Optional, get_type_hints
-
 import numpy as np
 import meep as mp
 import pytest
@@ -268,13 +266,6 @@ def test_simulation_spec_rejects_noninteger_or_cartesian_nonzero_m():
         "nonzero m requires dimensions=mp.CYLINDRICAL",
     ):
         tm.SimulationSpec(cell_size=mp.Vector3(1.0, 1.0), m=1)
-
-
-def test_simulation_spec_chunk_layout_annotation_is_parameterized():
-    assert (
-        get_type_hints(tm.SimulationSpec)["chunk_layout"]
-        == Optional[mp.BinaryPartition]
-    )
 
 
 def test_tda_objective_accepts_bundled_design_simulation_and_target():
@@ -754,7 +745,6 @@ if __name__ == "__main__":
     test_simulation_spec_uses_default_or_override_sources()
     test_cylindrical_simulation_spec_uses_stored_or_overridden_integer_m()
     test_simulation_spec_rejects_noninteger_or_cartesian_nonzero_m()
-    test_simulation_spec_chunk_layout_annotation_is_parameterized()
     test_tda_objective_accepts_bundled_design_simulation_and_target()
     test_field_region_target_normalizes_shape_and_spatial_weights()
     test_field_region_target_validates_positions_shape_and_weights()

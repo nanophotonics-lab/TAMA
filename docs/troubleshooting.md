@@ -1,6 +1,6 @@
 # Troubleshooting
 
-This guide describes the Meep backend. See [backend selection](backends.md) and [FDTDX](fdtdx.md) for the other engine.
+This guide describes the Meep backend. See [backend API](backends.md) for module selection.
 
 If the Meep native sampler is unavailable or incompatible, rebuild its separate
 package inside the active Meep/MPI environment:

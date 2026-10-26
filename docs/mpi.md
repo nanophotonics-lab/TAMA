@@ -1,6 +1,6 @@
 # MPI Chunk Topology and Source-Boundary Safety
 
-This guide describes the Meep backend. See [backend selection](backends.md) and [FDTDX](fdtdx.md) for the other engine.
+This guide describes the Meep backend. See [backend API](backends.md) for module selection.
 
 For temporal targets without mirror symmetry, leave
 `SimulationSpec.chunk_layout` unset to use the default automatic chunk

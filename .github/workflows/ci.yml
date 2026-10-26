@@ -19,15 +19,22 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - python-version: "3.11"
-            numpy_spec: numpy
-          - python-version: "3.12"
-            numpy_spec: numpy
           - python-version: "3.13"
             numpy_spec: numpy
-          - python-version: "3.12"
-            numpy_spec: "numpy=1.26"
         suite: [core, single, three_frequencies, multifreq_monitor, mode_source_bandwidth]
+        include:
+          - config:
+              python-version: "3.11"
+              numpy_spec: numpy
+            suite: compatibility
+          - config:
+              python-version: "3.12"
+              numpy_spec: numpy
+            suite: compatibility
+          - config:
+              python-version: "3.12"
+              numpy_spec: "numpy=1.26"
+            suite: compatibility
     env:
       OMP_NUM_THREADS: "1"
       PYTHONPATH: ""
@@ -133,7 +140,7 @@ jobs:
             --ignore=tests/meep/test_upstream_adjoint_solver.py
 
       - name: Run upstream adjoint tests
-        if: matrix.suite != 'core'
+        if: matrix.suite != 'core' && matrix.suite != 'compatibility'
         shell: micromamba-shell {0}
         run: |
           #!/usr/bin/env bash
@@ -141,6 +148,31 @@ jobs:
           cd "$TAMA_RELEASE_SOURCE"
           python -m pytest -v --durations=10 tests/meep/test_upstream_adjoint_solver.py \
             -k "${{ matrix.suite }}"
+
+      - name: Run serial compatibility tests
+        if: matrix.suite == 'compatibility'
+        shell: micromamba-shell {0}
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "$TAMA_RELEASE_SOURCE"
+          python -m pytest -q --durations=10 \
+            tests/common \
+            tests/meep/test_backend_aliases.py \
+            tests/meep/test_native_sampler_safety.py::test_tabulated_bspline_bank_matches_scipy_and_shift \
+            tests/meep/test_native_design_finite_difference.py::test_native_multi_power_complementary_bank_matches_directional_fd
+
+      - name: Run MPI compatibility tests
+        if: matrix.suite == 'compatibility'
+        shell: micromamba-shell {0}
+        run: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          cd "$TAMA_RELEASE_SOURCE"
+          mpirun -np 2 python -m pytest -q -p no:cacheprovider \
+            tests/meep/test_active_group_reduction_mpi.py::test_inplace_reduction_reuses_buffer_and_matches_full_group_sum \
+            tests/meep/test_active_group_reduction_mpi.py::test_forced_chunked_reduction_preserves_dtype_buffer_and_sum \
+            'tests/meep/test_native_design_finite_difference.py::test_native_2d_indexed_target_on_chunk_boundary_matches_directional_fd[2-tda]'
 
       - name: Run mpi2 test group
         if: matrix.suite == 'core'
@@ -160,7 +192,7 @@ jobs:
           cd "$TAMA_RELEASE_SOURCE"
           mpirun -np 4 python -m pytest -q -p no:cacheprovider tests/meep -m mpi4
 
-  fdtdx-cpu:
+  core-package:
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     strategy:
@@ -168,9 +200,7 @@ jobs:
       matrix:
         python-version: ["3.12", "3.13"]
     env:
-      JAX_PLATFORMS: cpu
       PYTHONPATH: ""
-      MPLBACKEND: Agg
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -184,12 +214,12 @@ jobs:
           python -m build --no-isolation --outdir "$RUNNER_TEMP/dist"
           python -m twine check "$RUNNER_TEMP"/dist/*
           wheel=("$RUNNER_TEMP"/dist/tama-*-py3-none-any.whl)
-          python -m pip install "${wheel[0]}[fdtdx]"
+          python -m pip install "${wheel[0]}"
           tar -xzf "$RUNNER_TEMP"/dist/tama-*.tar.gz -C "$RUNNER_TEMP/release"
           source_dir=$(find "$RUNNER_TEMP/release" -mindepth 1 -maxdepth 1 -type d -name 'tama-*')
           echo "TAMA_RELEASE_SOURCE=${source_dir}" >> "$GITHUB_ENV"
           python -c "import importlib.util, pathlib, tama; assert importlib.util.find_spec('meep') is None; assert importlib.util.find_spec('tama_meep_native') is None; assert 'site-packages' in pathlib.Path(tama.__file__).parts"
-      - name: Run installed CPU backend and isolation checks
+      - name: Run installed package and import-isolation checks
         run: |
           cd "$TAMA_RELEASE_SOURCE"
-          python -m pytest -q tests/common tests/fdtdx -m 'not fdtdx_gpu'
+          python -m pytest -q tests/common

@@ -1,6 +1,6 @@
 # MultiTDAObjective
 
-This guide describes the Meep backend. See [backend selection](backends.md) and [FDTDX](fdtdx.md) for the other engine.
+This guide describes the Meep backend. See [backend API](backends.md) for module selection.
 
 ## Example
 
@@ -109,7 +109,7 @@ to scale each band contribution to the adjoint source. Use
 `autograd.numpy` operations and do not cast the returned value to `float`.
 
 For a non-autograd scalarization or to retain explicit derivative control,
-return the legacy manual form:
+return the manual form:
 
 ```python
 return total_fom, band_coeffs
@@ -273,13 +273,13 @@ this option does not reduce the raw target-history allocation. Inspect
 
 This option does not change custom callbacks, point/eigenmode targets,
 cylindrical runs, arbitrary factories, or mixed target sets; those cases use
-the legacy full-history path. `last_target_history_mode` reports
+the full-history path. `last_target_history_mode` reports
 `"distributed"` or `"legacy"`. For the distributed path,
 `last_target_history_layout` reports `local_unique_channels`,
 `replicated_channels`, `implicit_zero_channels`, `stored_channels`,
 `total_channels`, `block_size`, and `peak_work_columns` (spatial positions,
 not total E/H arrays), together with the exact initial `allocated_rows`,
-`history_itemsize`, `allocated_history_bytes`, and legacy-path comparison
+`history_itemsize`, `allocated_history_bytes`, and full-history comparison
 `legacy_history_bytes`. The compact raw and compact adjoint histories coexist
 during the pullback; the raw history is released before source construction.
 Adjoint source spline construction is block-staged, but the completed source
@@ -295,7 +295,7 @@ It accepts a flat history with shape
 The standalone `temporal_convolve_signal` helper also returns full convolution;
 `temporal_convolve_signal_transpose` maps its covectors back to the original
 `N` rows. The public
-`auto_pixel_chunk` helper only preserves legacy pixel-block sizing behavior;
+`auto_pixel_chunk` helper provides pixel-block sizing for compatibility;
 it does not control current objective-gradient memory.
 
 `AdaptiveSourceBoundaryDecision` is the immutable result record available as
@@ -349,12 +349,12 @@ scalarization, normalization, and simulation-restart requirements.
 | `kernel_window_params` | Required as `{"beta": value}` for `kernel_window="kaiser"`; other windows accept no parameters. Applies only to independent filters. |
 | `filter_bank` | `"independent"` (default) creates the existing per-band windowed-sinc FIRs. `"power_complementary"` constructs coordinated complementary target responses and fits each FIR on a shared frequency grid for at least two ordered, contiguous bands; it requires an odd kernel length and unit `weights`. |
 | `transition_width` | Optional total crossover width in frequency units for `filter_bank="power_complementary"`. `None` selects `2 / (kernel_length * dt)` after the authoritative Meep time step is known. |
-| `pixel_chunk` | Legacy compatibility option. Dense forward-field derivatives are now computed one time row at a time, so this value no longer controls gradient memory. |
-| `target_chunks_per_rank` | Legacy compatibility option used only to resolve `pixel_chunk="auto"`. |
-| `min_pixel_chunk`, `max_pixel_chunk` | Legacy compatibility bounds for automatic `pixel_chunk`. |
+| `pixel_chunk` | Compatibility option that does not control gradient memory. Dense forward-field derivatives are computed one time row at a time. |
+| `target_chunks_per_rank` | Compatibility option used only to resolve `pixel_chunk="auto"`. |
+| `min_pixel_chunk`, `max_pixel_chunk` | Compatibility bounds for automatic `pixel_chunk`. |
 | `adjoint_source_size` | Shared Meep source size. It may override bundled `PointTarget` sizes, but cannot be combined with a regional, flux, or eigenmode target. Otherwise each point target may use its own size. The default `mp.Vector3()` selects exact indexed injection for direct `SimulationSpec` use. Explicit nonzero Cartesian sizes or `source_boundary_mode="finite"` use ordinary sources; eligible axes may then be regularized independently. Cylindrical gradients require zero size. |
 | `adjoint_source_amplitude` | Shared logical source amplitude. It may override bundled `PointTarget` amplitudes, but cannot be combined with a regional, flux, or eigenmode target. Gradient evaluation requires every point/regional amplitude to be `1.0`; Cartesian adaptive finite-source fallback applies effective density normalization internally. Other finite values are accepted only for value-only evaluation. |
-| `dt` | Legacy expected Meep time step. The initialized simulation's `fields.dt` is authoritative; an explicit value must match it and is otherwise only a fallback for simulation doubles without `fields.dt`. |
+| `dt` | Expected Meep time step. The initialized simulation's `fields.dt` is authoritative; an explicit value must match it and is otherwise only a fallback for simulation doubles without `fields.dt`. |
 | `resolution` | Used to initialize filter metadata before evaluation when `dt` is omitted. The initialized simulation's `fields.dt` reconfigures the temporal filters and is authoritative. |
 | `sampling_interval` | Dimensionless stride in Meep steps between stored design-grid forward-field samples. Target monitors, filters, and adjoint accumulation remain full rate. Default is `1`. |
 | `max_frequency` | Optional maximum relevant frequency in Meep inverse-time units. It must cover the highest temporal band frequency and every near-to-far frequency, selects `sampling_interval` from the Nyquist criterion after `dt` is known, and cannot be combined with `sampling_interval > 1`; include a safety margin above all relevant content. |
@@ -363,14 +363,14 @@ scalarization, normalization, and simulation-restart requirements.
 | `reconstruction_half_width` | Number of sparse samples on each side of the finite sinc support. Default is `64`. |
 | `fom_fn` | Optional scalar FoM. Supply one callback for all targets or a full-target-length sequence of callbacks/`None`; `None` selects that target's default. Temporal callbacks receive `(filtered_history, sample_dt)`: point history has shape `(time,)`, regional history uses time followed by `sample_shape`, flux history is a real `(time - 1,)` power trace, and eigenmode history is a complex `(time - 1,)` coefficient. Near-to-far callbacks receive `(far_fields, sample_dt)` with shape `(n_far_points, n_frequencies, 6)`. |
 | `adjoint_signal_fn` | Optional manual continuous-time bilinear covector in the same shared-callback or band-length-sequence form. Every supplied entry requires the matching `fom_fn` and must return the same shape as its callback history. A flux-history covector must be real. |
-| `scalarization_fn` | User-defined scalarization function. An autograd-compatible function may return a scalar directly; its band coefficients are differentiated automatically. The legacy `(total_fom, band_coeffs)` and `(total_fom, band_coeffs, info)` forms provide manual derivatives. Default is the sum of the band objectives. |
+| `scalarization_fn` | User-defined scalarization function. An autograd-compatible function may return a scalar directly; its band coefficients are differentiated automatically. The manual `(total_fom, band_coeffs)` and `(total_fom, band_coeffs, info)` forms provide manual derivatives. Default is the sum of the band objectives. |
 | `history_dtype` | Real or complex floating dtype requested for temporary histories. Default `np.complex128` resolves to `np.float64` when Meep uses real forward fields; complex forward fields require a complex dtype. Native design histories are rank-local disk-backed memory maps, while target histories remain in memory. |
-| `target_history_block_size` | Optional positive number of spatial positions processed per block. `None` (default) keeps the legacy target-history path. A value opts eligible direct Cartesian built-in regional/flux objectives into unique-owner MPI storage and blockwise filter/pullback processing; unsupported target or callback combinations fall back to the legacy path. |
+| `target_history_block_size` | Optional positive number of spatial positions processed per block. `None` (default) uses the full-history path. A value opts eligible direct Cartesian built-in regional/flux objectives into unique-owner MPI storage and blockwise filter/pullback processing; unsupported target or callback combinations use the full-history path. |
 | `chunk_balancer` | Default `"auto"` creates an `AdaptiveAdjointChunkBalancer` for a direct `SimulationSpec` with `chunk_layout=None`. Mirrors and near-to-far targets disable it and reject explicit balancers. Pass `None` to opt out or an instance for custom settings. See the [MPI guide](mpi.md) for source constraints, topology preservation, and calibration over three to eight gradient evaluations. |
 
 Normalized per-band target settings are available as `target_components`,
 `target_positions`, `target_sample_shapes`, `target_spatial_weights`,
 `target_normals`,
-`adjoint_source_sizes`, and `adjoint_source_amplitudes`. The legacy singular
+`adjoint_source_sizes`, and `adjoint_source_amplitudes`. The singular compatibility
 attributes contain the common value when all bands share it and otherwise are
 `None`.

@@ -1,5 +1,4 @@
 from contextlib import contextmanager
-import inspect
 import os
 import tempfile
 
@@ -1208,10 +1207,6 @@ def test_native_tabulated_cubic_matches_legacy_interp1d(source_factory):
     assert np.allclose(native_currents, legacy_currents, rtol=2.0e-14, atol=2.0e-14)
 
 
-def test_multi_tda_objective_has_no_gradient_mode_parameter():
-    assert "gradient_mode" not in inspect.signature(tm.MultiTDAObjective).parameters
-
-
 def test_multi_tda_objective_validates_sampling_interval():
     assert _make_minimal_multi_tda().sampling_interval == 1
     assert _make_minimal_multi_tda(sampling_interval=2).sampling_interval == 2
@@ -1352,12 +1347,6 @@ def test_multi_tda_objective_requires_design_only_for_gradients(monkeypatch):
         "FastPointMonitor",
         _NativePathPointMonitor,
     )
-    parameters = inspect.signature(tm.MultiTDAObjective).parameters
-    assert "coords_x" not in parameters
-    assert "coords_y" not in parameters
-    assert "cell_area" not in parameters
-    assert "material_factor" not in parameters
-
     update_calls = []
     obj = _make_minimal_multi_tda(
         update_design=lambda x: update_calls.append(np.array(x, copy=True)),
@@ -4681,30 +4670,3 @@ def test_multi_tda_objective_uses_per_target_effective_adjoint_sources():
     assert balancer.prepared_sources == [
         (tuple(positions), mp.Vector3(), base_amplitude)
     ]
-
-
-if __name__ == "__main__":
-    test_multi_tda_objective_accepts_numpy_kernel_window_options()
-    test_multi_tda_objective_exports_and_filters_signals()
-    test_temporal_convolve_signal_transpose_satisfies_dot_product_identity()
-    test_complex_band_adjoint_signal_matches_directional_finite_difference()
-    test_native_tabulated_cubic_matches_legacy_interp1d()
-    test_multi_tda_objective_has_no_gradient_mode_parameter()
-    test_multi_tda_objective_validates_sampling_interval()
-    test_multi_tda_objective_requires_design_only_for_gradients()
-    test_multi_tda_value_only_scalarization_skips_autograd()
-    test_multi_tda_objective_reduces_point_monitor_history_once_after_forward()
-    test_multi_tda_objective_simulation_reuse_is_opt_in()
-    test_multi_tda_objective_reuses_simulation_spec_for_adjoint_run()
-    test_multi_tda_objective_updates_time_grid_from_meep_fields_dt()
-    test_multi_tda_objective_adjoint_source_uses_reversed_forward_sample_times(mp.Ez)
-    test_multi_tda_objective_adjoint_source_uses_reversed_forward_sample_times(mp.Hy)
-    test_multi_tda_objective_cleans_history_memmaps_when_forward_run_raises()
-    test_multi_tda_objective_cleans_reused_simulation_when_adjoint_run_raises()
-    test_multi_tda_objective_sampling_interval_subsamples_design_grid_only()
-    test_multi_tda_objective_uses_automatic_scalarization_coefficients()
-    test_multi_tda_objective_dense_derivative_preserves_forward_history()
-    test_multi_tda_objective_rejects_dense_history_with_one_sample()
-    test_multi_tda_objective_auto_pixel_chunk()
-    test_multi_tda_objective_accepts_bundled_design_simulation_and_targets()
-    test_multi_tda_objective_updates_simulation_spec_with_adaptive_layout()

@@ -1,8 +1,4 @@
-"""TAMA with explicit engine selection and lazy legacy Meep exports.
-
-Existing root-level classes remain the Meep API. Use ``get_backend('fdtdx')``
-for FDTDX's native scene, design and target types.
-"""
+"""Time-domain adjoint optimization with lazy Meep exports."""
 
 from importlib import import_module as _import_module
 
@@ -52,7 +48,7 @@ def __getattr__(name):
             raise
         raise ModuleNotFoundError(
             f"tama.{name} is part of the Meep backend. Install pymeep in the "
-            "active environment, or select tama.get_backend('fdtdx').",
+            "active environment.",
             name="meep",
         ) from exc
     globals()[name] = value

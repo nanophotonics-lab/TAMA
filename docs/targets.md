@@ -1,6 +1,6 @@
 # Objective Conventions and Targets
 
-This guide describes the Meep backend. See [backend selection](backends.md) and [FDTDX](fdtdx.md) for the other engine.
+This guide describes the Meep backend. See [backend API](backends.md) for module selection.
 
 ## Objective Conventions and Weights
 
@@ -80,7 +80,7 @@ Regional gradients require the direct `SimulationSpec.make` path. Each spatial
 sample receives its own time-domain adjoint waveform through the exact
 transpose of the native Yee-grid point sampler. Arbitrary `sim_factory`
 objects support value-only regional evaluation. Regional targets cannot
-be combined with the legacy `monitor_position(s)`, `component`, or shared
+be combined with the compatibility `monitor_position(s)`, `component`, or shared
 adjoint-source override arguments.
 
 The exact general regional path stores
@@ -279,7 +279,7 @@ transmission efficiency, or a PC-FIR wavelength-band energy. Supply an
 autograd-compatible `fom_fn(far_fields, dt)` to choose components, weights, or a
 different scalar objective.
 
-Manual `adjoint_signal_fn` retains the existing convention
+Manual `adjoint_signal_fn` uses the convention
 `delta FoM = dt * Re(sum(q * delta far_fields))`. Thus, for this target's
 default FoM, a manual covector is zero in the H slots and
 `conj(far_fields[..., :3]) / dt` in the E slots. The callback output must have
@@ -313,7 +313,7 @@ For cylindrical simulations, define radial or axial near-surface lines with
 `mp.R` or `mp.Z` normals. Use `mp.Vector3(r, 0, z)` for all coordinates and
 nonnegative radii. An axial cap may reach `r=0`; the axis needs no PML clearance.
 Far-field gradients support `m=-1, 0, +1`, including mixed temporal and
-near-to-far targets. The adjoint uses angular mode `-m`. Native API 16 applies
+near-to-far targets. The adjoint uses angular mode `-m`. The native sampler applies
 the radial quadrature and cylindrical Yee-cell volume. Tensor MaterialGrid
 media, subpixel averaging, and internal projection are supported. Explicit
 cylindrical symmetries remain unsupported by the design-gradient backend.

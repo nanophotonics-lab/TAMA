@@ -762,9 +762,9 @@ class MultiTDAObjective:
                 outside the requested band union. `None` selects
                 `2 / (kernel_length * dt)`. It is not used by independent
                 filters.
-            pixel_chunk: Legacy compatibility option retained for existing
-                callers. Dense forward-field derivatives are computed one
-                time row at a time and no longer use pixel blocks.
+            pixel_chunk: Compatibility option that does not control gradient
+                memory. Dense forward-field derivatives are computed one time
+                row at a time.
             target_chunks_per_rank: Legacy compatibility option used only to
                 resolve `pixel_chunk="auto"`.
             min_pixel_chunk: Legacy lower bound for automatic pixel chunk size.

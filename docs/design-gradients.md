@@ -1,6 +1,6 @@
 # Design Gradients and Grid Coordinates
 
-This guide describes the Meep backend. See [backend selection](backends.md) and [FDTDX](fdtdx.md) for the other engine.
+This guide describes the Meep backend. See [backend API](backends.md) for module selection.
 
 Use `centered_grid_coords` when a low-level field-sampling task needs a regular
 coordinate grid centered on a Meep region.
@@ -224,7 +224,7 @@ including neighboring displacement samples. The material Jacobian uses local
 finite differences of the same material evaluator, including interpolation,
 projection, and the density-dependent interface normal. This adds material
 setup cost, but does not run additional FDTD solves for each design variable.
-The complete gradient still includes the existing time-discretization and
+The complete gradient includes the time-discretization and
 adjoint-source approximations of the time-domain method.
 
 `eps_averaging` controls Meep's global subpixel averaging; `do_averaging`
@@ -263,7 +263,7 @@ discarded after that evaluation and rebuilt at the next density. Cartesian
 near-to-far evaluations also reuse these plans because they restart the same
 Meep fields. Cylindrical
 evaluations and evaluations with separate forward/adjoint simulations rebuild
-their plans as before.
+their plans.
 Separate forward/adjoint simulations must preserve the tensor-history sample
 mapping. A custom factory that changes chunk partitioning can change this mapping
 even when the owned coordinates match; TAMA rejects that mismatch before

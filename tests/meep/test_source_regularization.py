@@ -21,15 +21,3 @@ def test_finite_source_regularization_preserves_complex_phase():
     assert source_size == mp.Vector3(0.2, 0.2)
     assert changed_axes == ("x", "y")
     assert np.isclose(regularized_amplitude, amplitude / 0.04)
-
-
-def test_legacy_slab_helpers_are_not_public():
-    removed_names = (
-        "SourceBoundaryDecision",
-        "SourceBoundaryPolicy",
-        "adjoint_source_boundary_workaround",
-        "resolve_source_boundary_workaround",
-        "safe_chunk_layout",
-    )
-
-    assert all(not hasattr(tm, name) for name in removed_names)

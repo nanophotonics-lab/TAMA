@@ -15,31 +15,28 @@ python -c "import tama; assert tama.native_sampler_available()"
 `MEEP_CONDA_PREFIX` can select the environment explicitly; otherwise the build
 uses `CONDA_PREFIX`. `./build_native_sampler.sh` performs both installations with
 the selected environment's Python. Neither Meep nor this extension is required
-to install TAMA's pure Python core or run its FDTDX backend.
+to install TAMA's pure Python core.
 
-The extension installs as `tama_meep_native.native_sampler`. Legacy
+The extension installs as `tama_meep_native.native_sampler`. Compatibility
 `tama.native_sampler` and backend `tama.backends.meep.native_sampler` imports
-resolve to this same module, including the original native API capability check.
+resolve to this same module, including the native API capability check.
 Builds are tied to the selected Python, Meep, MPI and NumPy ABI; do not distribute
 a locally built wheel as a universal binary.
 
-Native API 17 stores identical tensor forward samples once while retaining every
-material-gradient contribution. Tensor plan signatures can have more rows than
-their history width and include each contribution's history-column index.
-Reinstall the Python core and extension together.
+The native sampler stores identical tensor forward samples once while retaining
+every material-gradient contribution. Tensor plan signatures can have more rows
+than their history width and include each contribution's history-column index.
 
-Native API 16 adds cylindrical near-to-far source transposes with radial
-quadrature and the actual cylindrical Yee-cell volume. Reinstall the Python
-core and extension together after updating.
+Cylindrical near-to-far source transposes use radial quadrature and the actual
+cylindrical Yee-cell volume.
 
-Native API 15 uses the discrete Yee forward difference in adjoint accumulation
-and preserves source endpoints within floating-point roundoff. Reinstall the
-Python core and extension together to keep the source timing and accumulator
-consistent.
+Adjoint accumulation uses the discrete Yee forward difference and preserves
+source endpoints within floating-point roundoff.
 
-Native API 14 added independent design-region offsets and Cartesian Mirror
-sampling, source transposes, and near-to-far source folding. It retains the
-real symmetric dielectric MaterialGrid gradients, internal projection, and
-subpixel averaging introduced in API 13. Tensor interface averaging uses
-libctlgeom's existing adaptive quadrature. Reinstall both the Python core and
-this extension after updating; an older native API is rejected.
+The sampler supports independent design-region offsets, Cartesian Mirror
+sampling, source transposes, and near-to-far source folding. Real symmetric
+dielectric MaterialGrid gradients support internal projection and subpixel
+averaging. Tensor interface averaging uses libctlgeom's adaptive quadrature.
+
+The Python package requires native API 17. Install the Python core and extension
+together. Incompatible native API versions are rejected.

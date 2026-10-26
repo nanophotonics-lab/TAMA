@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tama"
 version = "0.6.0a1"
-description = "Time-domain Adjoint with Memory-efficient Acceleration for Meep and FDTDX"
+description = "Time-domain Adjoint with Memory-efficient Acceleration for Meep"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 license = "GPL-3.0-or-later"
-license-files = ["LICENSE", "THIRD_PARTY_NOTICES.txt", "licenses/GPL-2.0-or-later.txt", "src/tama/backends/fdtdx/LICENSE"]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.txt", "licenses/GPL-2.0-or-later.txt"]
 authors = [
   { name = "JaeHyeon Park" }
 ]
@@ -32,14 +32,6 @@ classifiers = [
 
 [project.optional-dependencies]
 meep = ["tama-meep-native==0.6.0a1"]
-fdtdx = [
-  "fdtdx==0.6.2",
-  "jax==0.11.0",
-  "jaxlib==0.11.0",
-  "equinox==0.13.8",
-  "numpy>=2",
-  "scipy>=1.13",
-]
 
 [project.urls]
 Homepage = "https://github.com/nanophotonics-lab/TAMA"
@@ -63,12 +55,10 @@ include = ["tama*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.pyi", "py.typed"]
-"tama.backends.fdtdx" = ["LICENSE", "THIRD_PARTY_NOTICES.txt"]
 
 [tool.pytest.ini_options]
-addopts = "--strict-markers -m 'not fdtdx_gpu'"
+addopts = "--strict-markers"
 markers = [
-  "fdtdx_gpu: requires an actual CUDA device; run explicitly for release validation",
   "mpi2: tests scheduled with two MPI ranks",
   "mpi4: tests scheduled with four MPI ranks",
   "mpi8: tests scheduled with eight MPI ranks",
