@@ -50,9 +50,8 @@ from `native/meep` as shown above.
 
 ## License and provenance
 
-The TAMA-M distribution is licensed under **GPL-3.0-or-later**;
-see [LICENSE](LICENSE). The separate `tama-meep-native` distribution uses
-`GPL-2.0-or-later`.
+The TAMA-M Python package and `tama-meep-native` distribution are licensed under
+**GPL-3.0-only**; see [LICENSE](LICENSE).
 Meep (GPL-2.0-or-later) is a separate dependency. See
 [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt) for component provenance.
 Citation metadata is in [CITATION.cff](CITATION.cff).

@@ -1,5 +1,7 @@
-from importlib.metadata import files, metadata, version
+from importlib.metadata import PackageNotFoundError, files, metadata, version
 from pathlib import Path
+
+import pytest
 
 import tama
 
@@ -8,13 +10,19 @@ def test_package_and_distribution_versions_match():
     assert tama.__version__ == version("tama")
 
 
-def test_distribution_uses_gpl3_and_preserves_original_component_license():
-    package_metadata = metadata("tama")
+@pytest.mark.parametrize("distribution", ["tama", "tama-meep-native"])
+def test_distribution_uses_gpl3_only_and_preserves_original_component_license(distribution):
+    try:
+        package_metadata = metadata(distribution)
+    except PackageNotFoundError:
+        if distribution == "tama-meep-native":
+            pytest.skip("The native sampler is an optional distribution")
+        raise
 
-    assert package_metadata["License-Expression"] == "GPL-3.0-or-later"
+    assert package_metadata["License-Expression"] == "GPL-3.0-only"
     assert any(
         str(path).endswith("/licenses/licenses/GPL-2.0-or-later.txt")
-        for path in files("tama")
+        for path in files(distribution)
     )
 
 

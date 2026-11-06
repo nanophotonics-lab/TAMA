@@ -1,18 +1,17 @@
-TAMA licensing and component provenance
+TAMA-M licensing and component provenance
 
-The combined TAMA distribution is licensed under the GNU General Public License,
-version 3 or, at your option, any later version (GPL-3.0-or-later). The complete
-GPL version 3 text is in LICENSE, obtained without modification from:
+The TAMA-M Python package and tama-meep-native distribution are licensed under
+the GNU General Public License, version 3 only (GPL-3.0-only). The complete
+GPL version 3 text is in LICENSE and native/meep/LICENSE, obtained without modification from:
 https://www.gnu.org/licenses/gpl-3.0.txt
 
 Original TAMA source: https://github.com/nanophotonics-lab/TAMA
 Base commit: 587c3afd063cf26ca3547607d3939c91cfa78c75
 The original Meep Python implementation, shared nyquist.py and native sampler
 were provided under GPL-2.0-or-later. Those original license permissions and
-notices are preserved; the combined distribution exercises the option to use
-GPL version 3 or later. The original GPL version 2 text is preserved in
-licenses/GPL-2.0-or-later.txt. The separately packaged native/meep sampler
-continues to use GPL-2.0-or-later and includes its own original LICENSE.
+notices are preserved; these distributions exercise the option to use
+GPL version 3. The original GPL version 2 text is preserved in
+licenses/GPL-2.0-or-later.txt and native/meep/licenses/GPL-2.0-or-later.txt.
 
 External runtime dependencies retain their own licenses:
 

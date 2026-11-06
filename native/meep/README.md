@@ -1,5 +1,8 @@
 # TAMA-M native sampler
 
+The `tama-meep-native` distribution is licensed under **GPL-3.0-only**.
+See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt).
+
 This subproject builds the Meep/MPI C++ sampler separately from the
 pure Python `tama` distribution. Build it in the same conda environment that
 provides `pymeep`, MPI, NumPy, the C++ compiler, CMake, Ninja and GSL.
