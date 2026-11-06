@@ -135,7 +135,7 @@ def test_finish_forward_preserves_memmap_values_after_discard(tmp_path):
 def test_material_plan_transfer_checks_fields_and_signature(monkeypatch):
     from types import SimpleNamespace
 
-    from tama.backends.meep.sampling_grid import NativeDesignField
+    from tama.sampling_grid import NativeDesignField
 
     class Simulation:
         pass

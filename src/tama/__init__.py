@@ -1,10 +1,8 @@
-"""Time-domain adjoint optimization with lazy Meep exports."""
+"""TAMA-M: time-domain adjoint optimization for Meep."""
 
 from importlib import import_module as _import_module
 
-from .backends import get_backend
-
-__version__ = "0.6.0a1"
+__version__ = "0.7.0a1"
 
 _EXPORTS = {
     "regularize_source_size_and_amplitude": "chunking",
@@ -36,19 +34,14 @@ _EXPORTS = {
 def __getattr__(name):
     if name not in _EXPORTS:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    module = (
-        ".nyquist"
-        if _EXPORTS[name] == "nyquist"
-        else f".backends.meep.{_EXPORTS[name]}"
-    )
+    module = f".{_EXPORTS[name]}"
     try:
         value = getattr(_import_module(module, __name__), name)
     except ModuleNotFoundError as exc:
         if exc.name != "meep":
             raise
         raise ModuleNotFoundError(
-            f"tama.{name} is part of the Meep backend. Install pymeep in the "
-            "active environment.",
+            f"tama.{name} requires pymeep in the active environment.",
             name="meep",
         ) from exc
     globals()[name] = value
@@ -61,7 +54,6 @@ def __dir__():
 
 __all__ = [
     "__version__",
-    "get_backend",
     "regularize_source_size_and_amplitude",
     "AdaptiveAdjointChunkBalancer",
     "AdaptiveChunkBalanceReport",

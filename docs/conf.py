@@ -7,7 +7,7 @@ METADATA = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
     "project"
 ]
 
-project = "TAMA"
+project = "TAMA-M"
 author = ", ".join(entry["name"] for entry in METADATA["authors"])
 version = METADATA["version"]
 release = version

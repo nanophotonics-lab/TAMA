@@ -1,14 +1,14 @@
-# TAMA: Time-domain Adjoint with Memory-efficient Acceleration
+# TAMA-M: Time-domain Adjoint with Memory-efficient Acceleration for Meep
 
-TAMA provides time-domain adjoint optimization with Meep. The Python package and
+TAMA-M provides time-domain adjoint optimization with Meep. The Python package and
 Meep native sampler are built separately. This documentation describes the
-`0.6.0a1` alpha.
+`0.7.0a1` alpha.
 
 ```{toctree}
 :maxdepth: 2
 
 installation
-backends
+api
 project-layout
 design-gradients
 fabrication

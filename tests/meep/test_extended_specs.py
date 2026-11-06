@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 import tama as tm
+from tama.specs import Near2FarTarget
 
 
 def test_mirror_settings_reach_forward_and_adjoint_simulations():
@@ -33,7 +34,7 @@ def test_near2far_target_preserves_frequency_and_observation_order():
     assert target.frequencies == (0.8, 0.6)
     assert target.far_points[1].x == 1
     assert len(target.near_regions) == 1
-    assert tm.get_backend("meep").Near2FarTarget is tm.Near2FarTarget
+    assert Near2FarTarget is tm.Near2FarTarget
 
 
 @pytest.mark.parametrize(

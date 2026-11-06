@@ -18,14 +18,15 @@ def test_distribution_uses_gpl3_and_preserves_original_component_license():
     )
 
 
-def test_wheel_contains_meep_backend_and_license_files():
+def test_wheel_contains_direct_modules_and_license_files():
     package_dir = Path(tama.__file__).parent
     assert (package_dir / "py.typed").is_file()
-    assert {
-        path.name
-        for path in (package_dir / "backends").iterdir()
-        if path.is_dir() and path.name != "__pycache__"
-    } == {"meep"}
+    assert not (package_dir / "backends").exists()
+    for name in (
+        "tda_objective", "multi_tda_objective", "near2far",
+        "design_collection", "sampling_grid", "native_sampler",
+    ):
+        assert (package_dir / f"{name}.py").is_file()
     distribution_files = [str(path) for path in files("tama")]
     assert any(path.endswith("/licenses/LICENSE") for path in distribution_files)
     assert any(

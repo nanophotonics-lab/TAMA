@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 import tama as tm
-from tama.backends.meep import design_collection, sampling_grid
+from tama import design_collection, sampling_grid
 
 
 def _scene(component=mp.Ez, beta=1, coordinates="2d", eps_only=False, both_on=False):

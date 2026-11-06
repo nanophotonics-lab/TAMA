@@ -1,6 +1,6 @@
 # Design Gradients and Grid Coordinates
 
-This guide describes the Meep backend. See [backend API](backends.md) for module selection.
+This guide describes TAMA-M. See the [Python API](api.md) for imports and evaluation methods.
 
 Use `centered_grid_coords` when a low-level field-sampling task needs a regular
 coordinate grid centered on a Meep region.
@@ -18,7 +18,7 @@ These coordinates can be passed directly to `FastFieldGrid` or
 The two low-level grid classes require an initialized, nonsymmetric 2D
 Cartesian simulation and sample a regular point grid.
 
-When `DesignGrid` is supplied, TAMA instead discovers the native Yee sites
+When `DesignGrid` is supplied, TAMA-M instead discovers the native Yee sites
 for every electric component required by the design gradient. The user supplies
 the physical center and size of the design region without component-specific
 shifts or pixel grouping. During the adjoint run, each Yee-site contribution is
@@ -98,7 +98,7 @@ near-to-far targets require Meep's default partitioning.
 
 Each independent design Block must map onto itself under every mirror. Its
 density array must be reflection symmetric, and its fixed endpoint tensors
-must be invariant under the same reflection. TAMA checks these design
+must be invariant under the same reflection. TAMA-M checks these design
 conditions at evaluation. Mirrors that exchange two independent regions are
 rejected. Fixed geometry and forward sources must also obey the requested
 symmetry and phase.
@@ -108,7 +108,7 @@ design grid must have an even number of samples along each mirror axis
 (a singleton axis is also allowed). Odd sample counts greater than one place
 an interpolation knot on the mirror plane. Meep's one-sided interface normal
 there can produce an averaged tensor that breaks reflection symmetry, so
-TAMA rejects this combination. Without MaterialGrid averaging, odd counts
+TAMA-M rejects this combination. Without MaterialGrid averaging, odd counts
 remain supported.
 
 The returned full-shaped density gradient is distributed over reflection
@@ -230,7 +230,7 @@ adjoint-source approximations of the time-domain method.
 `eps_averaging` controls Meep's global subpixel averaging; `do_averaging`
 requests MaterialGrid interface averaging when global averaging is enabled.
 Internal `beta` projection also applies when averaging is disabled. For
-anisotropic MaterialGrid endpoints, TAMA supplies interface-normal tensor
+anisotropic MaterialGrid endpoints, TAMA-M supplies interface-normal tensor
 averaging. It reduces to harmonic normal and arithmetic tangential averaging
 for isotropic endpoints. Forward,
 adjoint, and FoM-only evaluations use the same material operator.
@@ -239,19 +239,19 @@ The tensor mixing rule follows
 [Meep's subpixel smoothing guide](https://meep.readthedocs.io/en/latest/Subpixel_Smoothing/)
 describes the isotropic reduction and averaging controls.
 
-TAMA initializes this tensor operator before creating Meep fields. A custom
+TAMA-M initializes this tensor operator before creating Meep fields. A custom
 `sim_factory` must return an uninitialized simulation when anisotropic
 MaterialGrid averaging is enabled. Rebuild the Meep native extension together
 with the Python package; this path requires native API 17.
 
-In 3D, scalar-isotropic MaterialGrid averaging also uses TAMA's normalized
+In 3D, scalar-isotropic MaterialGrid averaging also uses TAMA-M's normalized
 volume-averaging kernel and requires an uninitialized simulation from a custom
 `sim_factory`. This corrects the averaging-kernel normalization in stock Meep
 1.34.0, so existing 3D averaged MaterialGrid results can change. Geometric
 objects continue to use Meep's own averaging, and zero-normal MaterialGrid
 points retain their pointwise material evaluation.
 
-For active MaterialGrid averaging, TAMA limits `subpixel_tol` to `1e-8`,
+For active MaterialGrid averaging, TAMA-M limits `subpixel_tol` to `1e-8`,
 preserving stricter factory settings. Forward initialization and the local
 material Jacobian use that same tolerance. This tighter tolerance increases
 material setup cost. A factory must return an uninitialized simulation if this tolerance
@@ -266,7 +266,7 @@ evaluations and evaluations with separate forward/adjoint simulations rebuild
 their plans.
 Separate forward/adjoint simulations must preserve the tensor-history sample
 mapping. A custom factory that changes chunk partitioning can change this mapping
-even when the owned coordinates match; TAMA rejects that mismatch before
+even when the owned coordinates match; TAMA-M rejects that mismatch before
 gradient accumulation.
 
 Gradient evaluation rejects material-derivative stencils that cross Meep's
@@ -289,11 +289,11 @@ design, z is fastest; for a cylindrical `(nr, nz)` design, z is fastest. If
 mapping, apply that mapping's transpose or vector-Jacobian product outside the
 objective. MaterialGrid's internal projection and averaging derivatives are
 already included, so do not apply their VJP a second time. The [periodic fabrication filter](fabrication.md)
-documents TAMA's external conic filter, tanh projection, and their VJPs for
+documents TAMA-M's external conic filter, tanh projection, and their VJPs for
 full-cell periodic designs.
 
 Forward design-field histories are stored as temporary, rank-local memory maps.
-When Meep initializes real fields, TAMA automatically uses the real
+When Meep initializes real fields, TAMA-M automatically uses the real
 counterpart of `history_dtype` (`complex128` to `float64`, for example) for
 the raw design and target-field histories. Complex forward Meep fields require
 a complex `history_dtype`; explicitly requesting a real dtype then raises an
@@ -391,7 +391,7 @@ weights instead.
 factory: no argument creates the forward simulation, and an explicit source list
 creates the adjoint simulation. Its `courant` input defaults to Meep's default
 `0.5`; set it explicitly only when the simulation requires a different Courant
-factor. TAMA reads the resulting time step from the initialized Meep fields.
+factor. TAMA-M reads the resulting time step from the initialized Meep fields.
 The default `k_point=False` preserves Meep's perfect-metal boundaries; set
 `k_point=mp.Vector3()` explicitly for normal-incidence Gamma-point periodic
 boundaries. For an x-y-periodic 3D unit cell, combine this with z-directed PML

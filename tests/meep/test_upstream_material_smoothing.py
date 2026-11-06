@@ -17,7 +17,7 @@ import pytest
 from scipy.ndimage import gaussian_filter
 
 from tama import DesignGrid
-from tama.backends.meep.sampling_grid import _prepare_native_material
+from tama.sampling_grid import _prepare_native_material
 
 
 def _prepare(sim, grid, mode, shape):

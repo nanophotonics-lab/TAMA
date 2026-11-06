@@ -29,7 +29,7 @@ from .design_collection import (
 )
 from . import native_sampler
 from .objectives import _adjoint_source_time
-from ...nyquist import _aligned_run_until
+from .nyquist import _aligned_run_until
 
 
 def farfield_intensity(fields, dt):

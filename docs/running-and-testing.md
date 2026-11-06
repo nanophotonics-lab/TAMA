@@ -24,7 +24,7 @@ the Python and NumPy compatibility lanes and the weekly MPI-8 job.
 ## Release checks
 
 Releases require clean source-distribution builds, installed-artifact import
-checks, compatibility module identities, and Meep regression tests including
+checks, public API imports, and Meep regression tests including
 MPI, cylindrical gradients, finite differences, and sparse reconstruction.
 Benchmark claims require warmed repeated timing and actual memory measurements;
 diagnostic solver timings do not suffice.

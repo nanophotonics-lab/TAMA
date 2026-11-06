@@ -158,7 +158,7 @@ jobs:
           cd "$TAMA_RELEASE_SOURCE"
           python -m pytest -q --durations=10 \
             tests/common \
-            tests/meep/test_backend_aliases.py \
+            tests/meep/test_public_api.py \
             tests/meep/test_native_sampler_safety.py::test_tabulated_bspline_bank_matches_scipy_and_shift \
             tests/meep/test_native_design_finite_difference.py::test_native_multi_power_complementary_bank_matches_directional_fd
 

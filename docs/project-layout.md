@@ -1,7 +1,7 @@
 # Project layout
 
 ```text
-TAMA/
+TAMA-M/
 ├── pyproject.toml                 # pure Python tama distribution
 ├── native/meep/
 │   ├── pyproject.toml             # tama-meep-native distribution
@@ -9,10 +9,12 @@ TAMA/
 │   ├── native_sampler.cpp         # C++ sampler
 │   └── src/tama_meep_native/
 ├── src/tama/
-│   ├── __init__.py                # lazy compatibility exports and get_backend
+│   ├── __init__.py                # lazy public API exports
 │   ├── nyquist.py                 # reconstruction coefficients
-│   ├── backends/meep/             # Meep backend implementation
-│   └── ...                       # compatibility aliases for Meep module paths
+│   ├── specs.py                   # scene and design specifications
+│   ├── tda_objective.py           # single-target objective
+│   ├── multi_tda_objective.py     # multiple-target objective
+│   └── ...                       # sampling, sources, gradients, and MPI support
 ├── tests/common/
 ├── tests/meep/
 ├── examples/                     # Meep examples
@@ -20,5 +22,4 @@ TAMA/
 ```
 
 Meep is installed separately. The Python package and native sampler use its
-Python and C++ APIs. Compatibility modules are aliases to the Meep backend
-modules, not copies of the algorithms.
+Python and C++ APIs. Numerical implementations reside directly in `src/tama`.

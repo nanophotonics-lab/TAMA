@@ -275,7 +275,7 @@ def _inverse_cylindrical_tensor(
     )
     try:
         if native:
-            from tama.backends.meep.sampling_grid import _prepare_native_material
+            from tama.sampling_grid import _prepare_native_material
 
             _prepare_native_material(simulation, design)
         simulation.init_sim()
@@ -478,7 +478,7 @@ def _fixed_tensor_background(kind, *, overlap_pml=False, dispersive=False):
 
 @pytest.mark.parametrize("kind", ["medium", "material_grid"])
 def test_cylindrical_fixed_tensor_background_matches_two_step_fd(kind):
-    from tama.backends.meep.sampling_grid import _uses_material_jacobian
+    from tama.sampling_grid import _uses_material_jacobian
 
     mp.verbosity(0)
     objective = _fixed_tensor_background(kind)

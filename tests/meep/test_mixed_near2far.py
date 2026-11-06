@@ -9,8 +9,8 @@ import numpy as np
 import pytest
 
 import tama as tm
-from tama.backends.meep import multi_tda_objective as multi_module
-from tama.backends.meep import near2far as far_module
+from tama import multi_tda_objective as multi_module
+from tama import near2far as far_module
 
 
 def _problem(kind="field"):

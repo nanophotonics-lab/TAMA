@@ -1,6 +1,6 @@
 # Objective Conventions and Targets
 
-This guide describes the Meep backend. See [backend API](backends.md) for module selection.
+This guide describes TAMA-M. See the [Python API](api.md) for imports and evaluation methods.
 
 ## Objective Conventions and Weights
 
@@ -22,7 +22,7 @@ be real. The same convention applies to `TDAObjective` and each band of
 `FieldRegionTarget.adjoint_source_amplitude` are logical settings. Gradient
 evaluation requires both to remain at `1.0`, because any other public scaling
 would scale the returned derivative without changing the FoM. When the
-adaptive Cartesian fallback expands a point source, TAMA applies the required
+adaptive Cartesian fallback expands a point source, TAMA-M applies the required
 finite-source density normalization to the effective source internally.
 Other finite real or complex settings are accepted only for value-only
 evaluation, where no adjoint source is created.
@@ -134,7 +134,7 @@ For ordinary Cartesian real fields this is the sampled signed power through the
 supplied quadrature. For complex fields, and especially a single cylindrical
 `exp(i*m*phi)` field, it is a modal Poynting functional rather than an
 automatically normalized total physical power. The supplied cylindrical
-`2*pi*r` factor performs the azimuthal integral once. TAMA inserts no
+`2*pi*r` factor performs the azimuthal integral once. TAMA-M inserts no
 additional phasor-style factor of `1/2`; apply any source, one-sided-mode, or
 multi-`m` physical normalization externally.
 
@@ -211,7 +211,7 @@ bypasses MPB and does not require `mode_region` or `frequency`; the mapping must
 contain exactly both tangential E/H pairs, with zero arrays for a physically
 absent pair. `reference_m` is specific to cylindrical fields. For a Cartesian
 target without fixed fields, the explicit positions must lie in the
-axis-aligned `mode_region`. On the first evaluation, TAMA uses Meep's
+axis-aligned `mode_region`. On the first evaluation, TAMA-M uses Meep's
 MPB-backed `get_eigenmode()` to solve the requested propagation direction and
 stores only the sampled NumPy field profile. For mode fields `(E_m, H_m)`, its power
 normalization and public
@@ -286,7 +286,7 @@ default FoM, a manual covector is zero in the H slots and
 the same shape as `far_fields`.
 
 Meep supplies the forward DFT, Green-function transform, and spatial source
-pullback. TAMA transposes the finite-time Fourier sum into time-domain electric
+pullback. TAMA-M transposes the finite-time Fourier sum into time-domain electric
 and magnetic currents, then uses its native design-history gradient.
 Near-field DFTs remain full rate
 (`decimation_factor=1`); `sampling_interval` only reduces stored design-field
@@ -304,7 +304,7 @@ with half a grid cell of clearance from PML and cell boundaries. They must
 lie in the same homogeneous, isotropic,
 lossless exterior medium used by the Green function. The far points must be
 in that exterior region. Check this material condition when constructing the
-simulation. TAMA does not inspect the exterior geometry.
+simulation. TAMA-M does not inspect the exterior geometry.
 Cartesian 2D/3D, cylindrical coordinates, and independent design regions are
 supported. Cartesian simulations also support compatible mirror symmetries.
 Nonzero Bloch wavevectors and periodic-image sums are not supported.
@@ -316,7 +316,7 @@ Far-field gradients support `m=-1, 0, +1`, including mixed temporal and
 near-to-far targets. The adjoint uses angular mode `-m`. The native sampler applies
 the radial quadrature and cylindrical Yee-cell volume. Tensor MaterialGrid
 media, subpixel averaging, and internal projection are supported. Explicit
-cylindrical symmetries remain unsupported by the design-gradient backend.
+cylindrical symmetries remain unsupported by the design-gradient implementation.
 
 Near-to-far gradients require direct `SimulationSpec` use and restart-safe,
 time-invariant simulation state. The adjoint always restarts the forward

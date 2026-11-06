@@ -1,15 +1,17 @@
-# Meep backend API
+# Python API
 
 ```python
-import tama
-tm = tama.get_backend("meep")
+import tama as tm
 ```
 
-The result is the Meep backend module. Selection does not change global state.
-Plain `import tama` does not import Meep. Root exports such as
-`tama.TDAObjective` and `tama.DesignGrid` refer to Meep classes.
-Compatibility Python submodule paths are aliases to the backend modules,
-preserving class identity and monkeypatch behavior.
+TAMA-M uses the Python package `tama`. Importing the package loads a lightweight
+interface. Accessing exports such as `tm.TDAObjective` and `tm.DesignGrid` loads
+their Meep modules. Direct module imports are also available:
+
+```python
+from tama.tda_objective import TDAObjective
+from tama.specs import DesignGrid, SimulationSpec
+```
 
 ## Evaluation contract
 
@@ -30,6 +32,7 @@ coordinates and units follow Meep conventions. See the
 
 ## Package layout
 
-Meep source modules are under `tama.backends.meep`, with the aliases described
-above. The compiled sampler is packaged as `tama_meep_native`. Build it from
+The numerical modules are under `tama`, including `tama.tda_objective`,
+`tama.multi_tda_objective`, and `tama.specs`.
+The compiled sampler is packaged as `tama_meep_native`. Build it from
 `native/meep` after installing the core package. See [installation](installation.md).

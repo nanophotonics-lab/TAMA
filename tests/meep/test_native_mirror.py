@@ -258,7 +258,7 @@ def test_mirror_rejects_inactive_or_invalid_direction(direction):
 def test_mirror_mpi2_rejects_different_monitor_identity(mismatch):
     if mp.count_processors() != 2:
         pytest.skip("requires exactly two MPI ranks")
-    from tama.backends.meep import native_sampler
+    from tama import native_sampler
 
     objective = _problem(mirror=True)
     objective.design.update_weights(np.full(20, 0.4))

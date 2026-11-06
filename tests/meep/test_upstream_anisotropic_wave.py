@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 
 import tama as tm
-from tama.backends.meep.sampling_grid import _prepare_native_material
+from tama.sampling_grid import _prepare_native_material
 
 
 @pytest.mark.parametrize("material", ["medium", "grid_off", "grid_on"])

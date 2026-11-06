@@ -9,7 +9,7 @@ import pytest
 import scipy.interpolate as spi
 
 from tama import native_sampler
-from tama.backends.meep.sampling_grid import (
+from tama.sampling_grid import (
     _prepare_native_material,
     _validate_native_material_grid,
 )

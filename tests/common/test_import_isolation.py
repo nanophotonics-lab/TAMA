@@ -9,9 +9,10 @@ def run(code):
     subprocess.run([sys.executable, "-c", textwrap.dedent(code)], check=True)
 
 
-def test_import_without_meep_and_explicit_selection():
+def test_import_without_meep():
     run("""
         import importlib.abc
+        import importlib.util
         import sys
 
         class BlockMeep(importlib.abc.MetaPathFinder):
@@ -23,24 +24,16 @@ def test_import_without_meep_and_explicit_selection():
         import tama
         assert not {'meep', 'numpy'} & sys.modules.keys()
         assert 'TDAObjective' in dir(tama)
-        for invalid in (None, [], 1, 'Meep', 'auto', 'unknown_backend', ''):
-            try:
-                tama.get_backend(invalid)
-            except ValueError as exc:
-                assert "'meep'" in str(exc)
-            else:
-                raise AssertionError(invalid)
-        for access, missing in (
-            (lambda: tama.get_backend('meep'), {'meep'}),
-            (lambda: tama.PointTarget, {'meep'}),
-        ):
-            try:
-                access()
-            except ModuleNotFoundError as exc:
-                assert exc.name in missing, exc
-                assert 'backend' in str(exc), exc
-            else:
-                raise AssertionError(missing)
+        assert not hasattr(tama, 'get_backend')
+        assert 'get_backend' not in tama.__all__
+        assert importlib.util.find_spec('tama.backends') is None
+        try:
+            tama.PointTarget
+        except ModuleNotFoundError as exc:
+            assert exc.name == 'meep', exc
+            assert 'requires pymeep' in str(exc), exc
+        else:
+            raise AssertionError('missing Meep must fail')
         try:
             tama.nonexistent_attribute
         except AttributeError:

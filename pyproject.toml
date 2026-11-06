@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tama"
-version = "0.6.0a1"
-description = "Time-domain Adjoint with Memory-efficient Acceleration for Meep"
+version = "0.7.0a1"
+description = "TAMA-M: Time-domain Adjoint with Memory-efficient Acceleration for Meep"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 license = "GPL-3.0-or-later"
@@ -31,7 +31,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-meep = ["tama-meep-native==0.6.0a1"]
+meep = ["tama-meep-native==0.7.0a1"]
 
 [project.urls]
 Homepage = "https://github.com/nanophotonics-lab/TAMA"

@@ -1,1 +1,1 @@
-"""Meep/MPI native sampler for TAMA; built against the active environment."""
+"""Meep/MPI native sampler for TAMA-M; built against the active environment."""

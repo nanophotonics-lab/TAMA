@@ -1,4 +1,4 @@
-"""Small 3D TAMA optimization.
+"""Small 3D TAMA-M optimization.
 
 Run from the repository root, for example:
 

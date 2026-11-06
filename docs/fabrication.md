@@ -1,8 +1,8 @@
 # Periodic Fabrication Filter
 
-This guide describes the Meep backend. See [backend API](backends.md) for module selection.
+This guide describes TAMA-M. See the [Python API](api.md) for imports and evaluation methods.
 
-TAMA exposes a normalized conic density filter and its discrete transpose for
+TAMA-M exposes a normalized conic density filter and its discrete transpose for
 full-cell periodic `MaterialGrid` designs. Array axes follow `DesignGrid.shape`:
 `(x, y)` in 2D and `(x, y, z)` in 3D. Reshape a flat optimizer vector in NumPy
 C order before filtering.
@@ -83,7 +83,7 @@ double-precision stability threshold) makes the projection and its VJP exact
 identities. In this example, use `MaterialGrid(beta=0, do_averaging=False)`
 because the external projection is applied before `DesignGrid.update_weights`.
 The Cartesian native gradient also supports MaterialGrid's internal projection
-and averaging. When using those options, TAMA includes their derivatives;
+and averaging. When using those options, TAMA-M includes their derivatives;
 apply only the VJPs of mappings that you perform outside the MaterialGrid.
 
 ## RGB Router Example

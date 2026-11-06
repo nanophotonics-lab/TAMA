@@ -1,6 +1,6 @@
 # Troubleshooting
 
-This guide describes the Meep backend. See [backend API](backends.md) for module selection.
+This guide describes TAMA-M. See the [Python API](api.md) for imports and evaluation methods.
 
 If the Meep native sampler is unavailable or incompatible, rebuild its separate
 package inside the active Meep/MPI environment:

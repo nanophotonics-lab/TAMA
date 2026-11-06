@@ -1,6 +1,6 @@
 # MultiTDAObjective
 
-This guide describes the Meep backend. See [backend API](backends.md) for module selection.
+This guide describes TAMA-M. See the [Python API](api.md) for imports and evaluation methods.
 
 ## Example
 
@@ -12,12 +12,12 @@ the [mixed-target example](targets.md#near-to-far-targets) also includes a
 
 Wavelengths use Meep length units with `c=1`, so a band
 `(lambda_min, lambda_max)` maps to frequencies
-`(1 / lambda_max, 1 / lambda_min)` in cycles per Meep time unit. TAMA uses
+`(1 / lambda_max, 1 / lambda_min)` in cycles per Meep time unit. TAMA-M uses
 the Fourier convention `sum_n h[n] * exp(-2*pi*i*f*tau[n]) * dt` and NumPy's
 `sinc(x) = sin(pi*x)/(pi*x)`. In the default independent mode, each real,
 centered windowed-sinc FIR is normalized to unit response magnitude at the
 band center. Floating histories are filtered by zero-padded FFT/IFFT linear
-convolution. TAMA always retains all `N + K - 1`
+convolution. TAMA-M always retains all `N + K - 1`
 samples for an `N`-sample raw history and a `K`-tap FIR, including both tails.
 This is offline linear filtering, not circular convolution or a causal source
 filter. The full output sample times are
@@ -172,7 +172,7 @@ floor(1 / (2 * f_max * dt))
 ```
 
 `f_max` must be strictly below the full-rate temporal Nyquist frequency
-`1 / (2 * dt)` or TAMA raises `ValueError`.
+`1 / (2 * dt)` or TAMA-M raises `ValueError`.
 
 For `MultiTDAObjective`, `max_frequency` must be at least
 `max(1 / lambda_min)` over all temporal wavelength bands and at least every
@@ -188,7 +188,7 @@ design history. Objectives containing near-to-far targets align both
 value-only and gradient recording endpoints to the same sparse-history step,
 which can extend the run by up to `K-1` Meep steps.
 
-Temporal filters also remain full rate. During the adjoint run, TAMA
+Temporal filters also remain full rate. During the adjoint run, TAMA-M
 reconstructs the forward field at every fine
 time step with configurable finite-windowed sinc interpolation. The native
 `DesignGrid` path then applies the forward time difference `(E[n+1]-E[n])/dt`

@@ -241,7 +241,7 @@ def _inverse_tensor_field(
     )
     try:
         if mode == "tama":
-            from tama.backends.meep.sampling_grid import _prepare_native_material
+            from tama.sampling_grid import _prepare_native_material
 
             _prepare_native_material(sim, design)
         elif mode == "tensor":
@@ -429,7 +429,7 @@ def test_reused_tensor_simulation_matches_fresh_after_design_update(case):
 
 @pytest.mark.parametrize("case", ["tensor_hz", "tensor_xz_2d"])
 def test_reused_tensor_material_plans_are_built_once_per_evaluation(monkeypatch, case):
-    from tama.backends.meep import sampling_grid
+    from tama import sampling_grid
 
     objective = _make_problem(case, reuse_simulation=True)
     weights, direction = _design_and_direction(objective)
@@ -452,7 +452,7 @@ def test_reused_tensor_material_plans_are_built_once_per_evaluation(monkeypatch,
 
 
 def test_tensor_history_stores_shared_forward_samples_once():
-    from tama.backends.meep.sampling_grid import NativeDesignField
+    from tama.sampling_grid import NativeDesignField
 
     objective = _make_problem("tensor_hz")
     weights, _ = _design_and_direction(objective)
@@ -478,7 +478,7 @@ def test_tensor_history_stores_shared_forward_samples_once():
 
 
 def test_tensor_history_rejects_different_shared_sample_mapping():
-    from tama.backends.meep.sampling_grid import NativeDesignField
+    from tama.sampling_grid import NativeDesignField
 
     mp.verbosity(0)
     signature = None
@@ -534,7 +534,7 @@ def test_averaging_quadrature_tolerance_cap_preserves_stricter_values(
     requested,
     expected,
 ):
-    from tama.backends.meep.sampling_grid import _prepare_native_material
+    from tama.sampling_grid import _prepare_native_material
 
     objective = _make_problem("smooth_hz")
     objective.design.material_grid.do_averaging = do_averaging
@@ -550,7 +550,7 @@ def test_averaging_quadrature_tolerance_cap_preserves_stricter_values(
 
 @pytest.mark.parametrize("initialize_fields", [False, True])
 def test_loose_averaging_tolerance_requires_fresh_simulation(initialize_fields):
-    from tama.backends.meep.sampling_grid import _prepare_native_material
+    from tama.sampling_grid import _prepare_native_material
 
     mp.verbosity(0)
     objective = _make_problem("smooth_hz")

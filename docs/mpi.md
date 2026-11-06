@@ -1,13 +1,13 @@
 # MPI Chunk Topology and Source-Boundary Safety
 
-This guide describes the Meep backend. See [backend API](backends.md) for module selection.
+This guide describes TAMA-M. See the [Python API](api.md) for imports and evaluation methods.
 
 For temporal targets without mirror symmetry, leave
 `SimulationSpec.chunk_layout` unset to use the default automatic chunk
 balancer. In MPI, before the first value or gradient evaluation, this path performs
 one source-free Meep initialization, captures Meep's native
 `BinaryPartition`, and projects only its split positions onto safe Meep grid
-planes. Serial execution skips this probe. TAMA preserves Cartesian mixed-axis
+planes. Serial execution skips this probe. TAMA-M preserves Cartesian mixed-axis
 trees and cylindrical R-Z trees.
 
 Mirror symmetry and near-to-far targets disable `chunk_balancer="auto"` and
@@ -49,14 +49,14 @@ indexed path, as does every constituent E/H sample of a `FluxTarget` or
 Cartesian point-target sizes,
 `source_boundary_mode="finite"`, and arbitrary `sim_factory` inputs use
 ordinary `mp.Source` objects instead. Do not also list indexed target positions
-in `protected_points` or `source_volumes`; TAMA retains these as permanent
+in `protected_points` or `source_volumes`; TAMA-M retains these as permanent
 constraints.
 
-During three to eight successful gradient evaluations, TAMA combines Meep's
-per-rank timing with TAMA's rank-local sampling, reconstruction, and
+During three to eight successful gradient evaluations, TAMA-M combines Meep's
+per-rank timing with TAMA-M's rank-local sampling, reconstruction, and
 gradient-accumulation time. A split-position candidate selected after one
 evaluation is measured by the next evaluation within the fixed Meep topology.
-TAMA freezes the best measured layout after two consecutive observations are
+TAMA-M freezes the best measured layout after two consecutive observations are
 within the imbalance threshold or fail to improve the best critical-rank work
 by at least 1%. A trial that is 2% or more slower than the best is rolled back without
 ending calibration; the best measured layout is frozen after eight
@@ -107,7 +107,7 @@ chunk_balancer = tm.AdaptiveAdjointChunkBalancer(
 ```
 
 Finite-source regularization cannot fix a structurally infeasible partition,
-such as a tree that leaves too few grid cells for `min_chunk_cells`. TAMA
+such as a tree that leaves too few grid cells for `min_chunk_cells`. TAMA-M
 raises an error in that case. During later workload rebalancing, an unsafe
 proposal is rejected and the last safe mixed layout is retained. After a
 gradient evaluation, `objective.last_chunk_balance` contains the latest
@@ -122,5 +122,5 @@ or replace `last_chunk_balance`.
 For callers constructing low-level Meep sources directly,
 `regularize_source_size_and_amplitude` remains available for explicit finite
 source normalization. Objective users should instead select
-`AdaptiveAdjointChunkBalancer(source_boundary_mode="finite")` so TAMA applies
+`AdaptiveAdjointChunkBalancer(source_boundary_mode="finite")` so TAMA-M applies
 the normalization internally.

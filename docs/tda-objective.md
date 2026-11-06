@@ -1,6 +1,6 @@
 # TDAObjective
 
-This guide describes the Meep backend. See [backend API](backends.md) for module selection.
+This guide describes TAMA-M. See the [Python API](api.md) for imports and evaluation methods.
 
 ## Example
 

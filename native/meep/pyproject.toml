@@ -4,8 +4,8 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "tama-meep-native"
-version = "0.6.0a1"
-description = "Meep/MPI native sampler for TAMA"
+version = "0.7.0a1"
+description = "Meep/MPI native sampler for TAMA-M"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 license = { text = "GPL-2.0-or-later" }

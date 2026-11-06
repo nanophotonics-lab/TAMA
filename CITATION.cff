@@ -1,10 +1,11 @@
 cff-version: 1.2.0
 message: >-
-  If you use TAMA in research, cite this software and record the version
+  If you use TAMA-M in research, cite this software and record the version
   and exact source revision used in your work.
-title: "TAMA: Time-domain Adjoint with Memory-efficient Acceleration"
+title: "TAMA-M: Time-domain Adjoint with Memory-efficient Acceleration for Meep"
 type: software
-version: "0.6.0a1"
+version: "0.7.0a1"
+date-released: "2026-11-06"
 authors:
   - family-names: Park
     given-names: JaeHyeon
